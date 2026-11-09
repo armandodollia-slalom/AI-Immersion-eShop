@@ -198,14 +198,14 @@
     "semantic_hash": "83c7552b39f563a721ed31e5885b8eb1"
   },
   "src/Catalog.API/Catalog.API.json": {
-    "mtime": 1794249427.2271228,
-    "seen": 1794253042.910092,
+    "mtime": 1794261277.4930432,
+    "seen": 1794261740.543215,
     "ast_hash": "b881d575059e2e5ff627df930a63cc79",
     "semantic_hash": "b881d575059e2e5ff627df930a63cc79"
   },
   "src/Catalog.API/Catalog.API_v2.json": {
-    "mtime": 1794249427.2327871,
-    "seen": 1794253042.910093,
+    "mtime": 1794261277.4988449,
+    "seen": 1794261740.5432162,
     "ast_hash": "e12d524cd0ad504392b56fa8898ec7cc",
     "semantic_hash": "e12d524cd0ad504392b56fa8898ec7cc"
   },
@@ -3924,9 +3924,9 @@
     "semantic_hash": "3d8f49f0d6ee99c704d2abe4d88de422"
   },
   "src/eShop.AppHost/AppHost.cs": {
-    "mtime": 1794253036.8866284,
-    "seen": 1794253042.9104462,
-    "ast_hash": "ce885a68a028f5cd6e659222c5020de2",
+    "mtime": 1794261221.4083254,
+    "seen": 1794261740.5520298,
+    "ast_hash": "9d8891905d44006aad1022eecc2e9f79",
     "semantic_hash": ""
   },
   "src/eShop.AppHost/Extensions.cs": {
@@ -6090,15 +6090,15 @@
     "semantic_hash": ""
   },
   "deploy/teststack/docker-compose.yaml": {
-    "mtime": 1794253036.9437282,
-    "seen": 1794253042.910536,
-    "ast_hash": "189ccbb7d6e4705b58627ffe7100c949",
+    "mtime": 1794261236.6706204,
+    "seen": 1794261740.554092,
+    "ast_hash": "ba15c95a6604b02f518b4e63702564da",
     "semantic_hash": ""
   },
   "testing/README.md": {
-    "mtime": 1794253402.4110708,
-    "seen": 1794253413.436225,
-    "ast_hash": "aa897ca94ad7a520a5e3f8fbe5698559",
+    "mtime": 1794261488.3811383,
+    "seen": 1794261740.554183,
+    "ast_hash": "37aeb52b1fe38a5d330dc22cc0747473",
     "semantic_hash": ""
   },
   "testing/scenarios/_base/scenario.yaml": {
@@ -6141,6 +6141,150 @@
     "mtime": 1794253036.9595492,
     "seen": 1794253042.910544,
     "ast_hash": "c904e9d7edc216f01e5410ffa0de5a9b",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/auth-basket-helpers.ts": {
+    "mtime": 1794260181.9696467,
+    "seen": 1794260660.246967,
+    "ast_hash": "6f267c5c170da595f4a6b408e8b734b7",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/auth-identity-api.spec.ts": {
+    "mtime": 1794260371.7605648,
+    "seen": 1794260660.246968,
+    "ast_hash": "0c74b525aea68f255be73054df8e798f",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/auth-login.spec.ts": {
+    "mtime": 1794260322.7767417,
+    "seen": 1794260660.246968,
+    "ast_hash": "282ba8ee8e432f07114045330f401b39",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/basket-api.spec.ts": {
+    "mtime": 1794260491.5782228,
+    "seen": 1794260660.246969,
+    "ast_hash": "850914be51c8dd939ab10a5e58cb66c1",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/basket-cart.spec.ts": {
+    "mtime": 1794260845.133054,
+    "seen": 1794260868.52218,
+    "ast_hash": "6019a7b86ef5f12f9683cbf36ae6630a",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/catalog-admin.spec.ts": {
+    "mtime": 1794260365.3303258,
+    "seen": 1794260660.246971,
+    "ast_hash": "da5f34f6cff0c80c48e6c2c4ec1fc695",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/catalog-api.spec.ts": {
+    "mtime": 1794260276.017634,
+    "seen": 1794260660.2469718,
+    "ast_hash": "b1c5c959b79f39881b60838b0e949189",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/catalog-browse.spec.ts": {
+    "mtime": 1794260173.8184798,
+    "seen": 1794260660.2469718,
+    "ast_hash": "efb0ec5b3fdb25b7dedac8f65aeb760f",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/catalog-mobile-bff.spec.ts": {
+    "mtime": 1794260407.924298,
+    "seen": 1794260660.246989,
+    "ast_hash": "a03a96b6e6ee59dc045865040536dabc",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/catalog-paging.spec.ts": {
+    "mtime": 1794260206.5829303,
+    "seen": 1794260660.24699,
+    "ast_hash": "7b15c6ef3cd5e391b2c8a54f75b2e6f7",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/ordering-api.spec.ts": {
+    "mtime": 1794260403.0397372,
+    "seen": 1794260660.247005,
+    "ast_hash": "c6b5857ea0220435a46df0a821fa5dfd",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/ordering-checkout.spec.ts": {
+    "mtime": 1794260442.1168535,
+    "seen": 1794260660.247006,
+    "ast_hash": "eac2a10538f0bb42879af8706bd09af1",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/ordering-helpers.ts": {
+    "mtime": 1794260274.6532805,
+    "seen": 1794260660.247007,
+    "ast_hash": "c8f65122b93215f35b6dce99688c3670",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/ordering-pipeline.spec.ts": {
+    "mtime": 1794260572.492041,
+    "seen": 1794260660.247007,
+    "ast_hash": "8d4ee9490c63bdac1649d79a7b0e3937",
+    "semantic_hash": ""
+  },
+  "e2e/teststack/webhooks-subscriptions.spec.ts": {
+    "mtime": 1794261463.5041108,
+    "seen": 1794261740.542919,
+    "ast_hash": "f8f986bd8bb90767b8a757f6bc8eb1cf",
+    "semantic_hash": ""
+  },
+  "testing/flows/catalog.md": {
+    "mtime": 1794260531.5731745,
+    "seen": 1794260660.2590568,
+    "ast_hash": "5c346716eb2572e1112228f65b73e961",
+    "semantic_hash": ""
+  },
+  "testing/flows/identity-basket.md": {
+    "mtime": 1794260856.7388618,
+    "seen": 1794260868.534802,
+    "ast_hash": "f3b0f759c75097a9f4fd79c8973b9e16",
+    "semantic_hash": ""
+  },
+  "testing/scenarios/auth-lockout/scenario.yaml": {
+    "mtime": 1794259996.6639268,
+    "seen": 1794260660.2590752,
+    "ast_hash": "5fe71a08b402e0c2a43ee35af2d8adb6",
+    "semantic_hash": ""
+  },
+  "testing/scenarios/basket-edge/scenario.yaml": {
+    "mtime": 1794259996.6641784,
+    "seen": 1794260660.259076,
+    "ast_hash": "64435d9c187b81d8a94ce080fbece325",
+    "semantic_hash": ""
+  },
+  "testing/scenarios/catalog-pictures/scenario.yaml": {
+    "mtime": 1794260101.2535334,
+    "seen": 1794260660.259093,
+    "ast_hash": "13a45540b66e3bc6d089e4f0d1acc99b",
+    "semantic_hash": ""
+  },
+  "testing/scenarios/ordering-stock/scenario.yaml": {
+    "mtime": 1794260183.5495145,
+    "seen": 1794260660.259157,
+    "ast_hash": "76f84d5f7b649272fb1999ae1b43b48d",
+    "semantic_hash": ""
+  },
+  "testing/scenarios/ordering-two-buyers/scenario.yaml": {
+    "mtime": 1794260183.5191147,
+    "seen": 1794260660.2591581,
+    "ast_hash": "6a79457775cb5581da30abeaa4cd4f0e",
+    "semantic_hash": ""
+  },
+  "testing/scenarios/webhooks-subscriptions/scenario.yaml": {
+    "mtime": 1794260183.5809577,
+    "seen": 1794260660.2591748,
+    "ast_hash": "18c6fc629ee8943bca89dfe096591a17",
+    "semantic_hash": ""
+  },
+  "testing/flows/ordering.md": {
+    "mtime": 1794261488.3806477,
+    "seen": 1794261740.55421,
+    "ast_hash": "0342ecf74c22e8af26cb2c06740ba0a7",
     "semantic_hash": ""
   }
 }

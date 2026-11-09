@@ -1,16 +1,16 @@
 # Graph Report - AI-Immersion-eShop  (2026-11-09)
 
 ## Corpus Check
-- 812 files · ~780,071 words
+- 832 files · ~804,229 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6389 nodes · 9799 edges · 531 communities (383 shown, 122 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 641 edges (avg confidence: 0.78)
+- 6547 nodes · 10055 edges · 550 communities (399 shown, 124 thin omitted)
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 641 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `35743036`
+- Built from commit: `d8cfe4bf`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,54 +19,54 @@
 - EFLoginService
 - GracePeriodManagerService
 - eShop.Identity.API.Models.AccountViewModels
-- MauiApplication
+- .CreateMauiApp
 - system_globalization
 - BasketState
 - ContentPageBase
-- ClientApp/MauiProgram.cs
+- eShop.ClientApp.Models.Basket
 - ConsentViewModel
 - AppHostConfigurationTests
 - MockViewModel
 - IndexViewModel
 - SettingsViewModel
 - CatalogService
-- .CreateMauiApp
+- ClientApp/MauiProgram.cs
 - ConsentViewModel
-- .AddAndSaveEventAsync
+- OrderingApiTests
 - Webhooks.API.IntegrationEvents
-- WebApp/Components/Layout/UserMenu.razor
+- WebApp/Extensions/Extensions.cs
 - DeviceController
 - ValueObjectA
-- eShop.ServiceDefaults
+- Identity.API/GlobalUsings.cs
 - LoginViewModel
 - CatalogApiTests
 - Basket
 - .RegisterViewModels
 - ApplicationUser
-- Basket.UnitTests/BasketServiceTests.cs
+- OrderStartedIntegrationEventHandler
 - system
 - package.json
 - GrantViewModel
 - IdentifiedCommandHandler
 - IntegrationEvent
-- IRequest
+- @playwright/test
 - IdentityServerHost.Quickstart.UI
 - TestServerCallContext
 - CatalogItemViewModel
 - ChatState
 - IntegrationEventLogEntry
 - MockSettingsService
-- HybridApp/Components/Pages/Catalog/Catalog.razor
+- ordering-helpers.ts
 - ProfileViewModel
 - Catalog.API/GlobalUsings.cs
-- system_reflection
+- Catalog.API read flows
 - groups
 - OrderingContext
 - ClientApp.csproj
 - CatalogViewModel
 - http
 - StackConfig
-- system_security_claims
+- .AddMigration
 - Order
 - eShop.ClientApp.Services
 - eShop.Catalog.API.IntegrationEvents.Events
@@ -76,30 +76,30 @@
 - Entity
 - chat-dock.js
 - Migration
-- eShop.Ordering.Domain.Events
-- .OnModelCreating
+- INotification
+- eShop.Ordering.Infrastructure.EntityConfigurations
 - BasketItem
 - .GetCardTypesAsync
-- OrdersWebApiTest
-- .Handle
+- OrderServices
+- OrderStatusChangedToPaidIntegrationEvent
 - IBasketRepository
-- eShop.ClientApp.Services.Identity
+- auth-basket-helpers.ts
 - HybridApp/Platforms/iOS/Program.cs
 - AccountController
-- CustomerBasket
+- RedisBasketRepository
 - Order
 - jobs
 - CatalogAI
 - rules
-- Identity.API/GlobalUsings.cs
+- EventBusRabbitMQ/GlobalUsings.cs
 - LoginViewModel
-- .MapOrdersApiV1
+- .IsBusyFor
 - OrderDraftDTO
 - eShop.Ordering.API.Application.Validations
 - BadgeView
 - .PublishesConfiguredPaymentOutcome
 - Position
-- CatalogServices
+- CatalogItem
 - App
 - aspire router skill
 - ContentPage
@@ -109,7 +109,7 @@
 - Aspireify Skill
 - github-actions-azure-csharp.yml
 - AppHostConfigurationTests.cs
-- CampaignItem
+- Campaign
 - .SenderPostsPayloadAndTokenToEveryReceiver
 - ClientRequest
 - ContentPageBase
@@ -125,21 +125,21 @@
 - UserInfo
 - SettingsService
 - .SendAll
-- OrderingApiTests
+- eShop.ClientApp.Models.Catalog
 - FadeInAnimation
 - steps
 - IIntegrationEventHandler
 - .BuildModel
 - steps
-- WebApp/Components/_Imports.razor
+- BasketCheckoutInfo
 - foundation
-- .ReloadData
+- .OnPropertyChanged
 - CatalogContext
 - OrderCheckout
-- .CombineUri
+- IIdentityService
 - PaymentMethod
-- eShop.ClientApp.Views
-- BasketItem
+- basket-cart.spec.ts
+- Ordering and webhook flows
 - OrderBuilder
 - Checkout.razor
 - Extensions
@@ -148,7 +148,7 @@
 - Identity.API.csproj
 - Chatbot.razor
 - ScopeViewModel
-- OrderStatusChangedToPaidIntegrationEvent
+- .AddEventBusSubscriptions
 - OrderStatusChangedToStockConfirmedIntegrationEvent
 - ContentView
 - .CancelOrderAsync
@@ -165,37 +165,37 @@
 - App
 - OrderItem
 - playwright-cli Skill
-- WebhooksClient
+- WebhookResponse
 - OrderRepository
 - eShop.ServiceDefaults.csproj
 - UserToken
 - ISettingsService
-- BasketCheckoutInfo
+- Identity and basket flows
 - catalog-sort.js
 - system_text_json
 - AnimationBase
 - ContentPageBase
 - RabbitMQEventBus
-- .UpdateBasket
+- CustomerBasket
 - .PublishEventsThroughEventBusAsync
 - .WaitAsync
 - pr-validation.yml
-- eShop.Ordering.Domain.Seedwork
+- IDisposable
 - PermissionStatus
 - steps
-- System.ComponentModel.DataAnnotations
+- eShop.Catalog.API
 - ContentView
-- eShop.ClientApp.Models.User
+- .CombineUri
 - OpenApiOptionsExtensions
-- eShop.WebApp.Services.OrderStatus.IntegrationEvents
-- eShop.WebhookClient.Services
+- IntegrationEvent
+- WebhookData
 - on
 - CatalogIntegrationEventService
 - steps
 - CheckoutViewModel
 - OrderDetailViewModel
 - https
-- Controller
+- HomeController
 - PostgresStore
 - WebApp/Components/Pages/Item/ItemPage.razor
 - chat-eyes.js
@@ -217,24 +217,24 @@
 - Address
 - with
 - HybridApp.csproj
-- .AddEventBusSubscriptions
+- OrderStatusChangedToAwaitingValidationIntegrationEvent
 - ContentPage
 - INavigationService
 - .AddApplicationServices
-- OrderStatusChangedToSubmittedIntegrationEvent
-- ContentPageBase
+- eShop.WebApp.Services.OrderStatus.IntegrationEvents
+- BasketItem
 - ExternalController
-- .Handle_return_false_if_order_is_not_persisted
-- eShop.WebAppComponents.Services
+- .GetAsync
+- WebApp/Components/_Imports.razor
 - .ColorTo
 - aspire-deployment skill
-- AppHost Wiring and API Lookup Reference
+- BasketItem
 - CatalogMockService
 - BasketService
 - PaymentInfo
-- eShop.ClientApp.BasketGrpcClient
+- .UpdateItem
 - CartPage.razor
-- Webhooks.API/GlobalUsings.cs
+- CatalogServices
 - Webhooks.API.csproj
 - OrderStatusChangedToCancelledIntegrationEvent
 - TestStack
@@ -242,17 +242,17 @@
 - Order
 - WebhookSubscriptionRequest
 - Basket.API.csproj
-- OrderStartedIntegrationEventHandler
-- OrderStatusChangedToPaidIntegrationEvent
+- .RegisterAppServices
+- .Handle
 - IAppEnvironmentService
-- eShop.Identity.API.Data
+- ApplicationDbContext
 - OrderMockService
 - ContentPageBase
 - OrderingService
 - OrderStatusChangedToAwaitingValidationDomainEvent
-- IdentifiedCommandHandlerTest
+- IntegrationEventLogEF/GlobalUsings.cs
 - eShop.ClientApp.Validations
-- Products
+- ContentPageBase
 - Buyer
 - WebhookClient/Components/_Imports.razor
 - eShop.AppHost.csproj
@@ -260,13 +260,13 @@
 - Catalog.API.csproj
 - OrderingApiFixture
 - IntegrationEventLogService
-- .RegisterAppServices
+- WebhookClient/Components/Layout/UserMenu.razor
 - IIntegrationEventHandler
-- .Handle
+- CardType
 - MainViewModel
 - eShop.Ordering.API.Application.IntegrationEvents.EventHandling
 - .Handle
-- .GetAsync
+- .AddAndSaveEventAsync
 - .GetSubscriptionsOfType
 - WebhooksContext
 - eShop.ClientApp.Animations.Base
@@ -275,12 +275,12 @@
 - ScenarioParserTests
 - eShop.HybridApp
 - Targeted Advertising Profiles: Tying New Users to Advertising Identity
-- eShop.Ordering.API.Application.Commands
+- IRequest
 - WebhookClient.csproj
 - Oswald Font Family
 - Home.razor
 - FixUriService
-- .SendAsync
+- Initial
 - eShop.slnx
 - CartMenu.razor
 - card-tilt.js
@@ -288,25 +288,25 @@
 - BasketItem
 - ValidatableObject
 - eShop Reference Application (AdventureWorks)
-- .AddRabbitMqEventBus
+- .ToErrors
 - .AddNew
 - eShop.ClientApp.Controls
 - CatalogApiFixture
 - EventBusRabbitMQ.csproj
-- Task
+- CatalogItem
 - RedisFixture
 - Pages/Catalog/CatalogSearch.razor
 - BuyerRepository
 - chat-fab.js
-- .GetConfirmedGracePeriodOrdersAsync
+- HybridApp/Components/Pages/Item/ItemPage.razor
 - Outbox
-- .ToErrors
+- Webhooks.API.Services
 - eShop.ClientApp
 - AutoAuthorizeMiddleware
 - .Handle
 - IdentityService
 - BasketStateChangedSubscription
-- RelayCommand
+- .AddApplicationServices
 - .LoadingPage
 - CatalogService
 - SetPaidOrderStatusCommand
@@ -318,16 +318,16 @@
 - .RunAsync
 - WebApp/Components/Layout/MainLayout.razor
 - eShop test stack
-- system_text_json_serialization
-- ProductCountChangedMessage
-- deploy
-- IRequestHandler
+- IOrderService
+- eShop.ServiceDefaults
+- .CreateHost
+- auth-login.spec.ts
 - setup.sh
 - CustomTabbedPage
 - IOpenUrlService
 - HybridApp/Components/Layout/HeaderBar.razor
 - HybridApp/Components/Layout/MainLayout.razor
-- OrderServices
+- HybridApp/Components/Routes.razor
 - .SetExceptionTags
 - WebApp/Components/Layout/HeaderBar.razor
 - WebApp/Components/Routes.razor
@@ -336,19 +336,19 @@
 - FixOrderitemseqSchema
 - UseEnumForOrderStatus
 - TabParameter.cs
-- WebhooksApiTests
+- ICatalogService
 - Spectral OpenAPI Lint Ruleset
 - Product photo: black ski goggles with iridescent lens
 - Product photo: black rugged outdoor sports watch
-- .AddMigration
-- ConfigurationExtensions.cs
+- ILocationService
+- .AddDefaultAuthentication
 - ResilientTransaction
 - Banner 1: ASP.NET Core on Windows, Linux, OSX
-- EventBusBuilderExtensions.cs
+- .InvokeAsync
 - .AddApplicationServices
 - page-transitions.js
 - Error.razor
-- MockNavigationService
+- eShop.ClientApp.Services.Identity
 - Ordering.API/GlobalUsings.cs
 - ShowChatbotButton.razor
 - Common.cs
@@ -359,21 +359,21 @@
 - Product photo: white snowboard with eagle and mountain graphics
 - Product photo: navy hiking backpack with buckle straps
 - Product photo: black hooded puffer jacket
-- CatalogRoot
-- IDialogService
+- system_text_json_serialization
+- .SendAsync
 - HybridApp Blazor WebView Host Page (index.html)
 - Identity.API Logo ([eShop] OnContainers wordmark, white)
 - Identity.API Header Logo (mountain/tree emblem with wordmark, black)
 - Main Banner Text ('T-SHIRTS ... THIS WEEKEND')
-- InitialMigration
+- Controller
 - WebApp/Components/App.razor
-- ValueObject
+- AddWebhook.razor
 - WebhookClient/Components/App.razor
 - DiagnosticsViewModel
 - ErrorViewModel
 - pre-commit
 - RedirectViewModel
-- Initial
+- Catalog flows
 - Product photo: orange/grey smart puffer jacket with holographic touch controls
 - Product photo: green trail running shoes
 - Product photo: handheld GPS cycling computer held in hand
@@ -416,7 +416,7 @@
 - UserCodeConfirmation.cshtml
 - Grants/Index.cshtml
 - Home/Index.cshtml
-- Main.cs
+- .GetConfirmedGracePeriodOrdersAsync
 - _ScopeListItem.cshtml
 - Identity.API Icon (jpg)
 - Green Down Arrow Chevron Icon
@@ -454,7 +454,7 @@
 - Product photo: red climbing harness on mannequin
 - Product photo: orange waterproof roll-top pannier bag
 - OrderPaymentFailedIntegrationEventHandler
-- OrderPaymentSucceededIntegrationEventHandler
+- Products
 - Arrow Left Icon (back navigation)
 - Cart Icon (shopping bag)
 - Close Icon (X in circle)
@@ -483,43 +483,61 @@
 - Filters Icon
 - Trash Icon
 - User Icon
-- OrderStockConfirmedIntegrationEventHandler
-- .ToOrderItemDTO
+- MockNavigationService
+- .Handle
 - OrdersRefreshOnStatusChange.razor
-- CatalogItemViewModelTests
-- eShop.Basket.API.Extensions
+- HybridApp/Components/Pages/Catalog/Catalog.razor
+- Basket.UnitTests/BasketServiceTests.cs
 - ClientApp.UnitTests
 - BeginAnimation
-- with
-- C# AppHost Authoring Reference
-- MainActivity
-- WebNavigatingEventArgsConverter
+- CatalogRoot
+- Initial
+- .CreateHost
+- cart-helpers.ts
 - Orders.razor
 - StoryBoard
-- IntegrationEvent
-- .DeserializeMessage
+- MauiApplication
+- Main.cs
 - .DispatchDomainEventsAsync
-- WebhookResponse
+- ShipOrderCommand
 - graphify knowledge graph (graphify-out/)
-- BackgroundTaskOptions
-- deploy
-- env
-- .GetEasing
-- CatalogType
-- .ApplyQueryAttributes
-- WebhookClientOptions
+- order-lifecycle.spec.ts
+- GracePeriodConfirmedIntegrationEventHandler
+- OrderStockRejectedIntegrationEventHandler
+- ProcessConsentResult
+- .GetItemPictureById
+- .GetCatalogFacets
+- eShop.WebhookClient.Services
 - WebHookReceived
 - WebhookSubscriptionRequest
 - WebhookType
-- .DisabledCatalogAIReturnsNullForEveryEmbeddingOperation
+- WebApp/Components/Layout/UserMenu.razor
 - NotFound.razor
-- EventBusOptions
-- RabbitMQTelemetry
-- PaymentMethodEntityTypeConfiguration
+- .ToOrderItemDTO
+- WebApp flows
+- EventBusBuilderExtensions.cs
 - User/LogIn.razor
 - Pages/LogIn.razor
 - CatalogListItem.razor
 - _Layout.cshtml
+- CampaignItem
+- eShop.Basket.API.Extensions
+- ValueObject
+- LoginPanel
+- CardTypeEntityTypeConfiguration
+- MainActivity
+- ObservableCollectionEx.cs
+- .MapCatalogApi
+- BackgroundTaskOptions
+- ConfigurationExtensions.cs
+- eShop.ClientApp.BasketGrpcClient
+- .MapOrdersApiV1
+- IdentityMockService
+- IRequestProvider
+- .OnModelCreating
+- HttpRequestExceptionEx
+- PaymentMethodEntityTypeConfiguration
+- ClientRequestEntityTypeConfiguration
 
 ## God Nodes (most connected - your core abstractions)
 1. `CatalogViewModel` - 48 edges
@@ -542,8 +560,8 @@
   AGENTS.md → CLAUDE.md
 - `Dependabot config (NuGet + npm groups)` --conceptually_related_to--> `Aspire CLI`  [AMBIGUOUS]
   .github/dependabot.yml → README.md
-- `Azure Pipelines CI (1ES template)` --conceptually_related_to--> `eShop Reference Application (AdventureWorks)`  [INFERRED]
-  ci.yml → README.md
+- `Deploy to Azure Container Apps` --conceptually_related_to--> `Azure deployment reference`  [INFERRED]
+  README.md → .github/skills/aspire-deployment/references/azure.md
 
 ## Import Cycles
 - None detected.
@@ -577,7 +595,7 @@
 - **HybridApp UI icon set** — src_hybridapp_wwwroot_icons_arrow_left, src_hybridapp_wwwroot_icons_cart, src_hybridapp_wwwroot_icons_close, src_hybridapp_wwwroot_icons_filters, src_hybridapp_wwwroot_icons_trash, src_hybridapp_wwwroot_icons_user [INFERRED 0.85]
 - **WebApp UI Icon Set** — src_webapp_wwwroot_icons_arrow_left, src_webapp_wwwroot_icons_cart, src_webapp_wwwroot_icons_close, src_webapp_wwwroot_icons_filters, src_webapp_wwwroot_icons_trash, src_webapp_wwwroot_icons_user [INFERRED 0.85]
 
-## Communities (531 total, 122 thin omitted)
+## Communities (550 total, 124 thin omitted)
 
 ### Community 0 - "DebuggerNonUserCodeAttribute"
 Cohesion: 0.05
@@ -595,25 +613,25 @@ Nodes (15): BackgroundService, IntegrationEvent, Task, IEventBus, GracePeriodCon
 Cohesion: 0.04
 Nodes (40): eShop.Identity.API.Models.AccountViewModels, ForgotPasswordViewModel, Email, LoggedOutViewModel, ClientName, PostLogoutRedirectUri, SignOutIframeUrl, LoginViewModel (+32 more)
 
-### Community 4 - "MauiApplication"
-Cohesion: 0.29
-Nodes (5): MauiApplication, MauiApp, MainApplication, MauiApp, MainApplication
+### Community 4 - ".CreateMauiApp"
+Cohesion: 0.14
+Nodes (8): eShop.HybridApp.Services, IProductImageUrlProvider, MauiApp, MauiProgram, MauiApp, MauiApp, CatalogJsonContext, ProductImageUrlProvider
 
 ### Community 5 - "system_globalization"
-Cohesion: 0.07
-Nodes (27): BaseConverter, BaseConverterOneWay, communitytoolkit_maui_converters, eShop.ClientApp.Converters, microsoft_maui_controls, CultureInfo, DoesNotHaveCountConverter, DefaultConvertReturnValue (+19 more)
+Cohesion: 0.06
+Nodes (32): BaseConverter, BaseConverterOneWay, communitytoolkit_maui_converters, eShop.ClientApp.Converters, IValueConverter, microsoft_maui_controls, CultureInfo, DoesNotHaveCountConverter (+24 more)
 
 ### Community 6 - "BasketState"
-Cohesion: 0.09
-Nodes (28): BasketStateChangedSubscription, eshop_basket_api_grpc_basket_basketclient, eshop_basket_api_grpc_basketitem, GrpcBasketClient, BasketItem, Id, OldUnitPrice, ProductId (+20 more)
+Cohesion: 0.15
+Nodes (16): BasketStateChangedSubscription, GrpcBasketClient, CustomerBasketResponse, IReadOnlyCollection, List, Task, BasketQuantity, BasketService (+8 more)
 
 ### Community 7 - "ContentPageBase"
 Cohesion: 0.07
-Nodes (28): ApplyFilterCommand, BadgeCount, IsFiltering, SelectCatalogBrandCommand, SelectCatalogTypeCommand, Selected, Value, ViewBasketCommand (+20 more)
+Nodes (27): ApplyFilterCommand, BadgeCount, IsFiltering, SelectCatalogBrandCommand, SelectCatalogTypeCommand, Selected, Value, ViewBasketCommand (+19 more)
 
-### Community 8 - "ClientApp/MauiProgram.cs"
-Cohesion: 0.13
-Nodes (12): communitytoolkit_maui, eShop.ClientApp.Services.Order, eShop.ClientApp.Services.Catalog, eShop.ClientApp.Services.OpenUrl, eShop.ClientApp.Models.Basket, eShop.ClientApp.Services.RequestProvider, eShop.ClientApp.Helpers, eShop.ClientApp.Services.FixUri (+4 more)
+### Community 8 - "eShop.ClientApp.Models.Basket"
+Cohesion: 0.14
+Nodes (10): eShop.ClientApp.Services.Order, eShop.ClientApp.Models.Basket, eShop.ClientApp.Services.RequestProvider, eShop.ClientApp.Models.Orders, eShop.ClientApp.Services.Basket, google_protobuf, grpc_net_client, CardType (+2 more)
 
 ### Community 9 - "ConsentViewModel"
 Cohesion: 0.06
@@ -632,32 +650,32 @@ Cohesion: 0.06
 Nodes (28): eShop.Identity.API.Models.ManageViewModels, AddPhoneNumberViewModel, PhoneNumber, ChangePasswordViewModel, ConfirmPassword, NewPassword, OldPassword, ICollection (+20 more)
 
 ### Community 13 - "SettingsViewModel"
-Cohesion: 0.05
+Cohesion: 0.06
 Nodes (25): LocationAlways, LocationWhenInUse, ICommand, Task, SettingsViewModel, AllowGpsLocation, DescriptionAllowGpsLocation, DescriptionUseAzureServices (+17 more)
 
 ### Community 14 - "CatalogService"
-Cohesion: 0.10
-Nodes (20): CatalogItem, IReadOnlyList, CatalogFacetCount, CatalogFacets, List, CatalogBrand, CatalogItem, CatalogItemType (+12 more)
+Cohesion: 0.27
+Nodes (6): CatalogItem, HttpClient, IEnumerable, List, Task, CatalogService
 
-### Community 15 - ".CreateMauiApp"
+### Community 15 - "ClientApp/MauiProgram.cs"
 Cohesion: 0.14
-Nodes (8): eShop.HybridApp.Services, IProductImageUrlProvider, MauiApp, MauiProgram, MauiApp, MauiApp, CatalogJsonContext, ProductImageUrlProvider
+Nodes (10): communitytoolkit_maui, eShop.ClientApp.Views, eShop.ClientApp.Services.Theme, eShop.ClientApp.Services.OpenUrl, identitymodel_client, identitymodel_oidcclient, identitymodel_oidcclient_browser, identitymodel_oidcclient_browser_ibrowser (+2 more)
 
 ### Community 16 - "ConsentViewModel"
-Cohesion: 0.07
-Nodes (29): HttpGet, HttpPost, IActionResult, ProcessConsentResult, Task, ValidateAntiForgeryToken, IEnumerable, ConsentInputModel (+21 more)
+Cohesion: 0.08
+Nodes (27): AuthorizationRequest, ConsentViewModel, HttpGet, HttpPost, IActionResult, IEventService, IIdentityServerInteractionService, ILogger (+19 more)
 
-### Community 17 - ".AddAndSaveEventAsync"
-Cohesion: 0.14
-Nodes (12): eShop.Ordering.API.Application.IntegrationEvents, Guid, IntegrationEvent, Task, IOrderingIntegrationEventService, IEventBus, IIntegrationEventLogService, ILogger (+4 more)
+### Community 17 - "OrderingApiTests"
+Cohesion: 0.27
+Nodes (5): Fact, HttpClient, Task, WebApplicationFactory, OrderingApiTests
 
 ### Community 18 - "Webhooks.API.IntegrationEvents"
 Cohesion: 0.13
 Nodes (12): Webhooks.API.IntegrationEvents, IEnumerable, OrderStatusChangedToPaidIntegrationEvent, ILogger, IWebhooksRetriever, IWebhooksSender, Task, OrderStatusChangedToPaidIntegrationEventHandler (+4 more)
 
-### Community 19 - "WebApp/Components/Layout/UserMenu.razor"
-Cohesion: 0.07
-Nodes (27): microsoft_aspnetcore_antiforgery, Microsoft.AspNetCore.Authentication, microsoft_aspnetcore_authentication_cookies, Microsoft.AspNetCore.Authentication.OpenIdConnect, microsoft_aspnetcore_components_authorization, microsoft_aspnetcore_components_server, microsoft_identitymodel_jsonwebtokens, LogOutAsync (+19 more)
+### Community 19 - "WebApp/Extensions/Extensions.cs"
+Cohesion: 0.15
+Nodes (12): microsoft_aspnetcore_antiforgery, Microsoft.AspNetCore.Authentication, microsoft_aspnetcore_authentication_cookies, Microsoft.AspNetCore.Authentication.OpenIdConnect, microsoft_aspnetcore_components_authorization, microsoft_aspnetcore_components_server, microsoft_identitymodel_jsonwebtokens, HttpContext (+4 more)
 
 ### Community 20 - "DeviceController"
 Cohesion: 0.10
@@ -667,57 +685,57 @@ Nodes (23): DeviceFlowAuthorizationRequest, IdentityServerOptions, IDeviceFlowIn
 Cohesion: 0.08
 Nodes (25): ComplexObject, eShop.Ordering.UnitTests.Domain.SeedWork, DynamicData, IEquatable, Guid, IEnumerable, List, TestMethod (+17 more)
 
-### Community 22 - "eShop.ServiceDefaults"
-Cohesion: 0.08
-Nodes (30): eShop.WebhookClient.Endpoints, eShop.ServiceDefaults, Microsoft.Extensions.DependencyInjection, eShop.OrderProcessor.Extensions, eShop.EventBusRabbitMQ, Microsoft.Extensions.Configuration, eShop.WebhookClient.Extensions, Microsoft.AspNetCore.Hosting (+22 more)
+### Community 22 - "Identity.API/GlobalUsings.cs"
+Cohesion: 0.07
+Nodes (37): Microsoft.Extensions.DependencyInjection, eShop.EventBusRabbitMQ, Microsoft.Extensions.Configuration, Microsoft.AspNetCore.Hosting, Microsoft.Extensions.Hosting, duende_identitymodel, duende_identityserver, duende_identityserver_configuration (+29 more)
 
 ### Community 23 - "LoginViewModel"
 Cohesion: 0.14
 Nodes (13): IDictionary, RelayCommand, Task, LoginViewModel, IsLogin, IsValid, LoginUrl, MockSignInCommand (+5 more)
 
 ### Community 24 - "CatalogApiTests"
-Cohesion: 0.09
-Nodes (40): ApiVersion, eShop.Catalog.API.Model, InlineData, CatalogBrand, Brand, Id, Vector, CatalogItem (+32 more)
+Cohesion: 0.08
+Nodes (43): ApiVersion, IClassFixture, InlineData, CatalogBrand, Brand, Id, Vector, CatalogItem (+35 more)
 
 ### Community 25 - "Basket"
 Cohesion: 0.17
 Nodes (23): AsyncUnaryCall, CallOptions, DeserializationContext, grpc, IMessage, Marshaller, Method, SerializationContext (+15 more)
 
 ### Community 26 - ".RegisterViewModels"
-Cohesion: 0.11
-Nodes (18): CarouselView, CarouselViewHandler2, CatalogItemViewModel, CatalogViewModel, CheckoutViewModel, CollectionView, CollectionViewHandler2, MainViewModel (+10 more)
+Cohesion: 0.12
+Nodes (17): CarouselView, CarouselViewHandler2, CatalogItemViewModel, CatalogViewModel, CheckoutViewModel, CollectionView, CollectionViewHandler2, MainViewModel (+9 more)
 
 ### Community 27 - "ApplicationUser"
 Cohesion: 0.05
 Nodes (34): ApplicationDbContext, eShop.Identity.API, eShop.Identity.API.Models, IDbSeeder, IdentityUser, ApplicationUser, CardHolderName, CardNumber (+26 more)
 
-### Community 28 - "Basket.UnitTests/BasketServiceTests.cs"
-Cohesion: 0.20
-Nodes (7): eShop.Basket.API.Repositories, eShop.Basket.UnitTests.Helpers, eShop.Basket.API.Grpc, eShop.Basket.UnitTests, eShop.Basket.API.Model, grpc_core, BasketSerializationContext
+### Community 28 - "OrderStartedIntegrationEventHandler"
+Cohesion: 0.15
+Nodes (12): eShop.Basket.API.IntegrationEvents.EventHandling.Events, eShop.Basket.API.IntegrationEvents.EventHandling, JsonSerializerContext, IHostApplicationBuilder, Extensions, IntegrationEventContext, ILogger, Task (+4 more)
 
 ### Community 29 - "system"
-Cohesion: 0.23
-Nodes (13): eShop.Catalog.API.Infrastructure, eShop.Catalog.API.Infrastructure.Migrations, eShop.Ordering.Infrastructure, Webhooks.API.Migrations, Ordering.Infrastructure.Migrations, eShop.Identity.API.Data.Migrations, microsoft_entityframeworkcore, microsoft_entityframeworkcore_infrastructure (+5 more)
+Cohesion: 0.19
+Nodes (15): eShop.Catalog.API.Infrastructure, Webhooks.API.Infrastructure, eShop.Catalog.API.Infrastructure.Migrations, eShop.Ordering.Infrastructure, eShop.Identity.API.Data, Webhooks.API.Migrations, Ordering.Infrastructure.Migrations, eShop.Identity.API.Data.Migrations (+7 more)
 
 ### Community 30 - "package.json"
-Cohesion: 0.06
-Nodes (35): addProductToCart(), emptyCart(), removeFirstCartItem(), expectOrder(), orderRow(), orders, parseDisplayedDate(), pipelineOrder (+27 more)
+Cohesion: 0.11
+Nodes (18): author, description, devDependencies, dotenv, @playwright/test, @types/node, directories, test (+10 more)
 
 ### Community 31 - "GrantViewModel"
 Cohesion: 0.08
 Nodes (25): IResourceStore, GrantsViewModel, HttpGet, HttpPost, IActionResult, IClientStore, IEventService, IIdentityServerInteractionService (+17 more)
 
 ### Community 32 - "IdentifiedCommandHandler"
-Cohesion: 0.13
-Nodes (15): CreateOrderIdentifiedCommandHandler, Guid, IdentifiedCommand, Command, Id, CancellationToken, ILogger, IMediator (+7 more)
+Cohesion: 0.09
+Nodes (22): CreateOrderIdentifiedCommandHandler, Guid, IdentifiedCommand, Command, Id, CancellationToken, ILogger, IMediator (+14 more)
 
 ### Community 33 - "IntegrationEvent"
 Cohesion: 0.06
-Nodes (29): eShop.Ordering.API.Application.IntegrationEvents.Events, IntegrationEvent, GracePeriodConfirmedIntegrationEvent, OrderId, OrderPaymentFailedIntegrationEvent, OrderId, OrderPaymentSucceededIntegrationEvent, OrderId (+21 more)
+Nodes (34): eShop.Ordering.API.Application.IntegrationEvents.Events, IntegrationEvent, GracePeriodConfirmedIntegrationEvent, OrderId, OrderPaymentFailedIntegrationEvent, OrderId, OrderPaymentSucceededIntegrationEvent, OrderId (+26 more)
 
-### Community 34 - "IRequest"
-Cohesion: 0.22
-Nodes (7): IRequest, CancelOrderCommand, CancellationToken, IOrderRepository, Task, CancelOrderCommandHandler, CancelOrderIdentifiedCommandHandler
+### Community 34 - "@playwright/test"
+Cohesion: 0.08
+Nodes (11): newItem, Facets, Item, Page, carolLines, loadScenario(), teststack, STORAGE_STATE (+3 more)
 
 ### Community 35 - "IdentityServerHost.Quickstart.UI"
 Cohesion: 0.07
@@ -728,12 +746,12 @@ Cohesion: 0.07
 Nodes (25): AuthContext, ContextPropagationOptions, ContextPropagationToken, ServerCallContext, Status, CancellationToken, DateTime, Dictionary (+17 more)
 
 ### Community 37 - "CatalogItemViewModel"
-Cohesion: 0.12
-Nodes (16): AddCatalogItemCommand, CatalogItem.CatalogBrand.Brand, CatalogItem.Description, CatalogItem.Name, CatalogItem.PictureUri, CatalogItem.Price, DismissCommand, RelayCommand (+8 more)
+Cohesion: 0.08
+Nodes (23): AddCatalogItemCommand, CatalogItem.CatalogBrand.Brand, CatalogItem.Description, CatalogItem.Name, CatalogItem.PictureUri, CatalogItem.Price, DismissCommand, CatalogItem (+15 more)
 
 ### Community 38 - "ChatState"
-Cohesion: 0.09
-Nodes (19): ChatMessage, ChatOptions, Description, IChatClient, Action, ClaimsPrincipal, Exception, IBasketState (+11 more)
+Cohesion: 0.13
+Nodes (14): ChatMessage, ChatOptions, Description, IChatClient, Action, ClaimsPrincipal, Exception, IBasketState (+6 more)
 
 ### Community 39 - "IntegrationEventLogEntry"
 Cohesion: 0.08
@@ -743,21 +761,21 @@ Nodes (22): eShop.IntegrationEventLogEF, EventStateEnum, InProgress, NotPublishe
 Cohesion: 0.08
 Nodes (23): ISettingsService, MockSettingsService, AllowGpsLocation, AuthAccessToken, AuthIdToken, AuthorizeEndpoint, CallbackUri, ClientId (+15 more)
 
-### Community 41 - "HybridApp/Components/Pages/Catalog/Catalog.razor"
-Cohesion: 0.25
-Nodes (7): NavLink, GetVisiblePageIndexes, OnParametersSetAsync, CatalogListItem, NavigationManager, PageTitle, SectionContent
+### Community 41 - "ordering-helpers.ts"
+Cohesion: 0.12
+Nodes (23): aliceOrders, harness, accessToken(), ALICE_ID, bearer(), BOB_ID, CATALOG_URL, changeStatus() (+15 more)
 
 ### Community 42 - "ProfileViewModel"
 Cohesion: 0.09
 Nodes (22): DoesNotHaveCountConverter, LogoutCommand, OrderDetailCommand, Orders, Orders.Count, SelectedOrder, IList, Order (+14 more)
 
 ### Community 43 - "Catalog.API/GlobalUsings.cs"
-Cohesion: 0.09
-Nodes (22): asp_versioning_conventions, eShop.OrderProcessor.Events, eShop.EventBus.Events, eShop.PaymentProcessor.IntegrationEvents.EventHandling, eShop.PaymentProcessor, eShop.OrderProcessor.Services, eShop.PaymentProcessor.IntegrationEvents.Events, eShop.Identity.API.Configuration (+14 more)
+Cohesion: 0.11
+Nodes (18): asp_versioning_conventions, eShop.OrderProcessor.Events, eShop.EventBus.Events, eShop.PaymentProcessor.IntegrationEvents.EventHandling, eShop.PaymentProcessor, eShop.OrderProcessor.Services, eShop.PaymentProcessor.IntegrationEvents.Events, Webhooks.API (+10 more)
 
-### Community 44 - "system_reflection"
-Cohesion: 0.29
-Nodes (4): IHostEnvironment, HostEnvironmentExtensions, system_linq_expressions, system_reflection
+### Community 44 - "Catalog.API read flows"
+Cohesion: 0.22
+Nodes (9): API versioning and routing errors, Batch get by ids, Brands, types and facets, Catalog.API read flows, Get one item, Item pictures, List items, Semantic search with AI disabled (+1 more)
 
 ### Community 45 - "groups"
 Cohesion: 0.04
@@ -772,8 +790,8 @@ Cohesion: 0.11
 Nodes (18): CommunityToolkit.Maui (9.1.1), CommunityToolkit.Mvvm (8.3.2), Grpc.Net.Client (2.67.0), IdentityModel (7.0.0), IdentityModel.OidcClient (6.0.0), net10.0, net10.0-android, net10.0-ios (+10 more)
 
 ### Community 48 - "CatalogViewModel"
-Cohesion: 0.16
-Nodes (13): IReadOnlyList, CatalogViewModel, Brands, CanFilter, Products, SelectedBrand, SelectedType, Types (+5 more)
+Cohesion: 0.15
+Nodes (14): IReadOnlyList, CatalogViewModel, ApplyFilterCommand, Brands, CanFilter, Products, SelectedBrand, SelectedType (+6 more)
 
 ### Community 49 - "http"
 Cohesion: 0.08
@@ -783,21 +801,21 @@ Nodes (25): ASPNETCORE_ENVIRONMENT, applicationUrl, commandName, dotnetRunMessag
 Cohesion: 0.05
 Nodes (45): JsonSerializerOptions, List, ComposeConfig, EnvFile, File, Project, HiLoSequenceConfig, Column (+37 more)
 
-### Community 51 - "system_security_claims"
-Cohesion: 0.08
-Nodes (17): eShop.WebApp.Chatbot, eShop.Webhooks.FunctionalTests, MarkupString, microsoft_aspnetcore_components, Microsoft.Extensions.AI, ClaimsPrincipal, ClaimsPrincipalExtensions, GeneratedRegex (+9 more)
+### Community 51 - ".AddMigration"
+Cohesion: 0.23
+Nodes (11): ActivitySource, CancellationToken, Func, IConfiguration, ILogger, IServiceCollection, IServiceProvider, Task (+3 more)
 
 ### Community 52 - "Order"
 Cohesion: 0.08
-Nodes (27): eShop.Ordering.API.Application.Queries, microsoft_aspnetcore_http_httpresults, nsubstitute_exceptionextensions, DateTime, List, Order, City, Country (+19 more)
+Nodes (26): eShop.Ordering.API.Application.Queries, nsubstitute_exceptionextensions, DateTime, List, Order, City, Country, Date (+18 more)
 
 ### Community 53 - "eShop.ClientApp.Services"
 Cohesion: 0.18
 Nodes (12): communitytoolkit_mvvm_messaging, eShop.ClientApp.Services, eShop.ClientApp.Services.AppEnvironment, eShop.ClientApp.Services.Settings, eShop.ClientApp.Services.Location, eShop.ClientApp.Messages, eShop.ClientApp.ViewModels, eShop.ClientApp.ViewModels.Base (+4 more)
 
 ### Community 54 - "eShop.Catalog.API.IntegrationEvents.Events"
-Cohesion: 0.13
-Nodes (12): eShop.Catalog.API.IntegrationEvents.Events, Task, ConfirmedOrderStockItem, IEnumerable, OrderStatusChangedToAwaitingValidationIntegrationEvent, IEnumerable, OrderStatusChangedToPaidIntegrationEvent, OrderStockConfirmedIntegrationEvent (+4 more)
+Cohesion: 0.10
+Nodes (17): eShop.Catalog.API.IntegrationEvents.Events, CatalogContext, ICatalogIntegrationEventService, ILogger, OrderStatusChangedToAwaitingValidationIntegrationEvent, Task, OrderStatusChangedToAwaitingValidationIntegrationEventHandler, ConfirmedOrderStockItem (+9 more)
 
 ### Community 55 - "Ordering.API.csproj"
 Cohesion: 0.08
@@ -808,8 +826,8 @@ Cohesion: 0.12
 Nodes (25): eShop Reference Application Architecture Diagram, Aspire Orchestration, Basket API (gRPC, Redis), Blazor Web App, Catalog API, Event Bus (RabbitMQ), Identity API, Mobile BFF (Mobile API) (+17 more)
 
 ### Community 57 - "CreateOrderCommand"
-Cohesion: 0.08
-Nodes (24): DateTime, IEnumerable, List, CreateOrderCommand, CardExpiration, CardHolderName, CardNumber, CardSecurityNumber (+16 more)
+Cohesion: 0.12
+Nodes (17): DateTime, IEnumerable, List, CreateOrderCommand, CardExpiration, CardHolderName, CardNumber, CardSecurityNumber (+9 more)
 
 ### Community 58 - "Entity"
 Cohesion: 0.22
@@ -821,39 +839,39 @@ Nodes (24): applyGeom(), close(), consumeDeepLink(), init(), isOpen(), onDragEnd
 
 ### Community 60 - "Migration"
 Cohesion: 0.14
-Nodes (10): Migration, MigrationBuilder, Vector, ModelBuilder, Vector, Initial, MigrationBuilder, ModelBuilder (+2 more)
+Nodes (10): Migration, MigrationBuilder, ModelBuilder, Vector, RemoveHiLoAndIndexCatalogName, DateTimeOffset, MigrationBuilder, DateTimeOffset (+2 more)
 
-### Community 61 - "eShop.Ordering.Domain.Events"
+### Community 61 - "INotification"
 Cohesion: 0.10
-Nodes (17): eShop.Ordering.Domain.Events, INotification, PaymentMethod, BuyerAndPaymentMethodVerifiedDomainEvent, Buyer, OrderId, Payment, Order (+9 more)
+Nodes (16): INotification, PaymentMethod, BuyerAndPaymentMethodVerifiedDomainEvent, Buyer, OrderId, Payment, Order, OrderCancelledDomainEvent (+8 more)
 
-### Community 62 - ".OnModelCreating"
-Cohesion: 0.11
-Nodes (14): eShop.Ordering.Infrastructure.EntityConfigurations, Buyer, EntityTypeBuilder, BuyerEntityTypeConfiguration, CardType, EntityTypeBuilder, CardTypeEntityTypeConfiguration, ClientRequest (+6 more)
+### Community 62 - "eShop.Ordering.Infrastructure.EntityConfigurations"
+Cohesion: 0.29
+Nodes (4): eShop.Ordering.Infrastructure.EntityConfigurations, EntityTypeBuilder, OrderItem, OrderItemEntityTypeConfiguration
 
 ### Community 63 - "BasketItem"
 Cohesion: 0.11
 Nodes (19): BasketItem, HasNewPrice, Id, OldUnitPrice, PictureUrl, ProductId, ProductName, Quantity (+11 more)
 
 ### Community 64 - ".GetCardTypesAsync"
-Cohesion: 0.12
-Nodes (15): IEnumerable, IOrderQueries, IEnumerable, Order, Task, IOrderQueries, CardType, IEnumerable (+7 more)
+Cohesion: 0.17
+Nodes (11): IEnumerable, Order, Task, IOrderQueries, CardType, IEnumerable, Order, OrderingContext (+3 more)
 
-### Community 65 - "OrdersWebApiTest"
-Cohesion: 0.20
-Nodes (15): ShipOrderCommand, BadRequest, CancelOrderCommand, CreateOrderCommand, IdentifiedCommand, IEnumerable, IIdentityService, ILogger (+7 more)
+### Community 65 - "OrderServices"
+Cohesion: 0.14
+Nodes (22): IIdentityService, ILogger, IMediator, IOrderQueries, OrderServices, Logger, Mediator, Queries (+14 more)
 
-### Community 66 - ".Handle"
-Cohesion: 0.12
-Nodes (17): OrderStatusChangedToAwaitingValidationDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderStatusChangedToAwaitingValidationDomainEventHandler (+9 more)
+### Community 66 - "OrderStatusChangedToPaidIntegrationEvent"
+Cohesion: 0.09
+Nodes (24): OrderStatusChangedToAwaitingValidationDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderStatusChangedToAwaitingValidationDomainEventHandler (+16 more)
 
 ### Community 67 - "IBasketRepository"
 Cohesion: 0.38
 Nodes (6): IBasketRepository, CustomerBasketResponse, Task, TestMethod, BasketServiceTests, TestContext
 
-### Community 68 - "eShop.ClientApp.Services.Identity"
-Cohesion: 0.23
-Nodes (6): ClientApp.UnitTests.ViewModels, ClientApp.UnitTests.Mocks, eShop.ClientApp.Services.Identity, IDialogService, MockDialogService, Task
+### Community 68 - "auth-basket-helpers.ts"
+Cohesion: 0.20
+Nodes (12): BASKET_GRPC_URL, basketCall(), decodeItems(), encodeItems(), getTokens(), GrpcResult, HttpResult, IDENTITY_URL (+4 more)
 
 ### Community 69 - "HybridApp/Platforms/iOS/Program.cs"
 Cohesion: 0.15
@@ -863,9 +881,9 @@ Nodes (6): objcruntime, Program, Program, Program, Program, uikit
 Cohesion: 0.14
 Nodes (16): IAuthenticationHandlerProvider, IAuthenticationSchemeProvider, ApplicationUser, HttpGet, HttpPost, IActionResult, IClientStore, IEventService (+8 more)
 
-### Community 71 - "CustomerBasket"
-Cohesion: 0.15
-Nodes (15): IClassFixture, IDatabase, RedisKey, List, CustomerBasket, BuyerId, Items, Task (+7 more)
+### Community 71 - "RedisBasketRepository"
+Cohesion: 0.28
+Nodes (9): IDatabase, RedisKey, IConnectionMultiplexer, ILogger, Task, RedisBasketRepository, Fact, Task (+1 more)
 
 ### Community 72 - "Order"
 Cohesion: 0.10
@@ -877,19 +895,23 @@ Nodes (34): include, extends, parameters, template, displayName, job, steps, tim
 
 ### Community 74 - "CatalogAI"
 Cohesion: 0.10
-Nodes (17): eShop.Catalog.API.Services, Embedding, IEmbeddingGenerator, IEnumerable, ILogger, IReadOnlyList, IWebHostEnvironment, ValueTask (+9 more)
+Nodes (18): eShop.Catalog.API.Services, Embedding, IEmbeddingGenerator, Microsoft.Extensions.AI, IEnumerable, ILogger, IReadOnlyList, IWebHostEnvironment (+10 more)
 
 ### Community 75 - "rules"
 Cohesion: 0.08
 Nodes (27): description, given, message, severity, then, extends, schema, description (+19 more)
 
-### Community 76 - "Identity.API/GlobalUsings.cs"
-Cohesion: 0.13
-Nodes (14): duende_identitymodel, duende_identityserver, duende_identityserver_configuration, duende_identityserver_events, duende_identityserver_extensions, duende_identityserver_models, duende_identityserver_services, duende_identityserver_stores (+6 more)
+### Community 76 - "EventBusRabbitMQ/GlobalUsings.cs"
+Cohesion: 0.12
+Nodes (13): MarkupString, microsoft_aspnetcore_components, microsoft_extensions_logging, polly, rabbitmq_client_events, rabbitmq_client_exceptions, GeneratedRegex, Regex (+5 more)
 
 ### Community 77 - "LoginViewModel"
 Cohesion: 0.10
 Nodes (17): LoginViewModel, ExternalProvider, AuthenticationScheme, DisplayName, LoginInputModel, Password, RememberLogin, ReturnUrl (+9 more)
+
+### Community 78 - ".IsBusyFor"
+Cohesion: 0.17
+Nodes (8): CatalogType, Func, CatalogItem, RelayCommand, Task, CatalogBrandSelectionViewModel, CatalogTypeSelectionViewModel, SelectionViewModel
 
 ### Community 79 - "OrderDraftDTO"
 Cohesion: 0.13
@@ -911,21 +933,21 @@ Nodes (16): IEventBus, ILogger, IOptionsMonitor, OrderStatusChangedToStockConfir
 Cohesion: 0.06
 Nodes (24): eShop.Catalog.API.Infrastructure.Exceptions, Webhooks.API.Exceptions, eShop.ClientApp.Models.Location, eShop.ClientApp.Exceptions, Exception, CatalogDomainException, ServiceAuthenticationException, Content (+16 more)
 
-### Community 84 - "CatalogServices"
-Cohesion: 0.09
-Nodes (42): Created, FileStreamHttpResult, IFileProvider, LayoutView, NoContent, PaginationRequest, ProblemDetails, ProducesResponseType&lt;byte[]&gt; (+34 more)
+### Community 84 - "CatalogItem"
+Cohesion: 0.44
+Nodes (9): PaginationRequest, ProducesResponseType&lt;ProblemDetails&gt;, RedirectToRouteHttpResult, List, Ok, PaginatedItems, Task, CatalogApi (+1 more)
 
 ### Community 85 - "App"
 Cohesion: 0.22
 Nodes (5): AppThemeChangedEventArgs, Application, AppAction, Task, App
 
 ### Community 86 - "aspire router skill"
-Cohesion: 0.19
-Nodes (17): Aspire CLI, Dependabot config (NuGet + npm groups), Diagnostics Bridge (local vs deployed), Monitoring reference, Playwright handoff reference, aspire-monitoring skill, Aspire agent workflows reference, App commands reference (+9 more)
+Cohesion: 0.18
+Nodes (18): Aspire CLI, Dependabot config (NuGet + npm groups), aspire new templates reference, aspire-init skill, Diagnostics Bridge (local vs deployed), Monitoring reference, Playwright handoff reference, aspire-monitoring skill (+10 more)
 
 ### Community 87 - "ContentPage"
-Cohesion: 0.17
-Nodes (11): DescriptionUseAzureServices, GatewayBasketEndpoint, GatewayCatalogEndpoint, GatewayOrdersEndpoint, IdentityEndpoint, TitleUseAzureServices, ToggleMockServicesCommand, UseAzureServices (+3 more)
+Cohesion: 0.11
+Nodes (15): DescriptionUseAzureServices, GatewayBasketEndpoint, GatewayCatalogEndpoint, GatewayOrdersEndpoint, IdentityEndpoint, TitleUseAzureServices, ToggleMockServicesCommand, UseAzureServices (+7 more)
 
 ### Community 88 - ".AddApplicationServices"
 Cohesion: 0.12
@@ -936,24 +958,24 @@ Cohesion: 0.14
 Nodes (18): Stopwatch, CancellationToken, IEnumerable, IReadOnlyList, JsonArray, List, Task, TimeSpan (+10 more)
 
 ### Community 90 - ".LogOrderStatusUpdated"
-Cohesion: 0.18
-Nodes (10): BuyerAndPaymentMethodVerifiedDomainEvent, LoggerMessage, CancellationToken, ILogger, IOrderRepository, Task, UpdateOrderWhenBuyerAndPaymentMethodVerifiedDomainEventHandler, ILogger (+2 more)
+Cohesion: 0.39
+Nodes (4): LoggerMessage, ILogger, OrderStatus, OrderingApiTrace
 
 ### Community 91 - "Aspireify Skill"
-Cohesion: 0.13
-Nodes (21): aspire init workflow reference, aspire new templates reference, aspire-init skill, Full-solution C# AppHosts Reference, Large Solution Triage and Core Loop Wiring, Legacy IHostBuilder vs IHostApplicationBuilder Detection, Nested global.json for Mixed SDK Repos, OpenTelemetry Setup for Non-.NET Services (+13 more)
+Cohesion: 0.07
+Nodes (37): aspire init workflow reference, Aspire 13.3 Breaking Changes reference, AppHost Wiring and API Lookup Reference, Tiered Resource Modeling Preference (First-party > Community Toolkit > Raw), Prefer HTTPS and Aspire-Managed Ports, Persistent Container Lifetime and Stale Volume Auth Failures, Avoid Secrets in WithArgs, WaitFor / WaitForCompletion Dependency Ordering (+29 more)
 
 ### Community 92 - "github-actions-azure-csharp.yml"
-Cohesion: 0.20
-Nodes (9): jobs, name, on, push, workflow_dispatch, permissions, contents, id-token (+1 more)
+Cohesion: 0.11
+Nodes (18): env, environment, name, runs-on, DOTNET_CLI_TELEMETRY_OPTOUT, DOTNET_NOLOGO, DOTNET_SKIP_FIRST_TIME_EXPERIENCE, name (+10 more)
 
 ### Community 93 - "AppHostConfigurationTests.cs"
-Cohesion: 0.12
-Nodes (15): aspire_hosting, aspire_hosting_applicationmodel, aspire_hosting_dotnet, aspire_hosting_eventing, aspire_hosting_foundry, aspire_hosting_lifecycle, aspire_hosting_yarp, aspire_hosting_yarp_transforms (+7 more)
+Cohesion: 0.18
+Nodes (10): aspire_hosting_dotnet, aspire_hosting_eventing, aspire_hosting_foundry, aspire_hosting_lifecycle, aspire_hosting_yarp, aspire_hosting_yarp_transforms, eShop.AppHost, eShop.AppHost.UnitTests (+2 more)
 
-### Community 94 - "CampaignItem"
-Cohesion: 0.08
-Nodes (24): eShop.ClientApp.Models.Marketing, DateTime, Campaign, Description, From, Id, Name, PictureUri (+16 more)
+### Community 94 - "Campaign"
+Cohesion: 0.25
+Nodes (8): DateTime, Campaign, Description, From, Id, Name, PictureUri, To
 
 ### Community 95 - ".SenderPostsPayloadAndTokenToEveryReceiver"
 Cohesion: 0.15
@@ -964,8 +986,8 @@ Cohesion: 0.14
 Nodes (13): DateTime, Guid, ClientRequest, Id, Name, Time, Guid, Task (+5 more)
 
 ### Community 97 - "ContentPageBase"
-Cohesion: 0.11
-Nodes (15): IsMock, SettingsCommand, SignInCommand, IsMock, SettingsCommand, SignInCommand, Banner, ContentPageBase (+7 more)
+Cohesion: 0.15
+Nodes (10): SettingsCommand, SignInCommand, SettingsCommand, SignInCommand, Banner, ContentPageBase, IsBusy, LoginViewModel (+2 more)
 
 ### Community 98 - "ScenarioParser"
 Cohesion: 0.14
@@ -973,7 +995,7 @@ Nodes (18): JsonNode, Steps, GeneratedRegex, HashSet, IReadOnlyCollection, IRead
 
 ### Community 99 - "StackContext"
 Cohesion: 0.12
-Nodes (17): ConnectionMultiplexer, rabbitmq_client_exceptions, stackexchange_redis, CancellationToken, IConnection, IReadOnlyCollection, IReadOnlyList, Task (+9 more)
+Nodes (17): ConnectionMultiplexer, rabbitmq_client, stackexchange_redis, CancellationToken, IConnection, IReadOnlyCollection, IReadOnlyList, Task (+9 more)
 
 ### Community 100 - "eShop.TestStack"
 Cohesion: 0.10
@@ -984,20 +1006,20 @@ Cohesion: 0.15
 Nodes (11): eShop.Catalog.API.Infrastructure.EntityConfigurations, IEntityTypeConfiguration, ModelBuilder, CatalogBrand, EntityTypeBuilder, CatalogBrandEntityTypeConfiguration, EntityTypeBuilder, CatalogItemEntityTypeConfiguration (+3 more)
 
 ### Community 102 - "steps"
-Cohesion: 0.22
-Nodes (9): steps, Azure__Location, Azure__ResourceGroup, Azure__SubscriptionId, Parameters__admin_password, env, name, run (+1 more)
+Cohesion: 0.13
+Nodes (15): steps, Azure__Location, Azure__ResourceGroup, Azure__SubscriptionId, Parameters__admin_password, env, name, run (+7 more)
 
 ### Community 103 - "github-actions-azure-typescript.yml"
-Cohesion: 0.20
-Nodes (9): jobs, name, on, push, workflow_dispatch, permissions, contents, id-token (+1 more)
+Cohesion: 0.13
+Nodes (14): environment, name, runs-on, name, jobs, deploy, name, on (+6 more)
 
 ### Community 104 - "RequestProvider"
 Cohesion: 0.26
 Nodes (8): HttpContent, JsonContent, Lazy, HttpClient, HttpMessageHandler, HttpResponseMessage, Task, RequestProvider
 
 ### Community 105 - "ViewModelBase"
-Cohesion: 0.10
-Nodes (19): IQueryAttributable, ObservableObject, IAsyncRelayCommand, Task, IViewModelBase, InitializeAsyncCommand, IsBusy, IsInitialized (+11 more)
+Cohesion: 0.12
+Nodes (15): IQueryAttributable, IAsyncRelayCommand, Task, IViewModelBase, InitializeAsyncCommand, IsBusy, IsInitialized, NavigationService (+7 more)
 
 ### Community 106 - ".AddApplicationServices"
 Cohesion: 0.06
@@ -1015,41 +1037,41 @@ Nodes (18): SettingsService, AllowGpsLocation, AuthorizeEndpoint, CallbackUri, C
 Cohesion: 0.14
 Nodes (13): IEnumerable, Task, WebhookData, WebhookSubscription, IWebhooksSender, HttpClient, IEnumerable, IHttpClientFactory (+5 more)
 
-### Community 110 - "OrderingApiTests"
-Cohesion: 0.27
-Nodes (5): Fact, HttpClient, Task, WebApplicationFactory, OrderingApiTests
+### Community 110 - "eShop.ClientApp.Models.Catalog"
+Cohesion: 0.15
+Nodes (7): eShop.ClientApp.Services.Catalog, eShop.ClientApp.Models.Marketing, eShop.ClientApp.Services.FixUri, eShop.ClientApp.Models.Catalog, CatalogType, Id, Type
 
 ### Community 111 - "FadeInAnimation"
-Cohesion: 0.14
-Nodes (14): Animation, FadeDirection, BindableProperty, Task, FadeDirection, Down, Up, FadeInAnimation (+6 more)
+Cohesion: 0.16
+Nodes (12): FadeDirection, BindableProperty, Task, FadeDirection, Down, Up, FadeInAnimation, Direction (+4 more)
 
 ### Community 112 - "steps"
 Cohesion: 0.13
 Nodes (14): jobs, lint, runs-on, steps, name, on, pull_request, permissions (+6 more)
 
 ### Community 113 - "IIntegrationEventHandler"
-Cohesion: 0.40
-Nodes (3): IntegrationEvent, Task, IIntegrationEventHandler
+Cohesion: 0.22
+Nodes (6): IntegrationEvent, Task, IIntegrationEventHandler, ILogger, OrderStatusNotificationService, OrderStatusChangedToShippedIntegrationEventHandler
 
 ### Community 114 - ".BuildModel"
 Cohesion: 0.10
 Nodes (16): ModelSnapshot, DateTime, Guid, ModelBuilder, Vector, CatalogContextModelSnapshot, DateTimeOffset, ModelBuilder (+8 more)
 
 ### Community 115 - "steps"
-Cohesion: 0.22
-Nodes (9): steps, name, run, uses, with, client-id, node-version, subscription-id (+1 more)
+Cohesion: 0.14
+Nodes (14): steps, Azure__Location, Azure__ResourceGroup, Azure__SubscriptionId, Parameters__admin_password, env, name, run (+6 more)
 
-### Community 116 - "WebApp/Components/_Imports.razor"
-Cohesion: 0.11
-Nodes (13): eShop.WebApp.Services, eShop.WebApp, eShop.WebApp.Components, Microsoft.AspNetCore.Authorization, Microsoft.AspNetCore.Components.Forms, Microsoft.AspNetCore.Components.Routing, Microsoft.AspNetCore.Components.Sections, Microsoft.AspNetCore.Components.Web (+5 more)
+### Community 116 - "BasketCheckoutInfo"
+Cohesion: 0.13
+Nodes (15): DateTime, Guid, BasketCheckoutInfo, Buyer, CardExpiration, CardHolderName, CardNumber, CardSecurityNumber (+7 more)
 
 ### Community 117 - "foundation"
 Cohesion: 0.18
 Nodes (8): foundation, MauiUIApplicationDelegate, MauiApp, AppDelegate, MauiApp, AppDelegate, AppDelegate, AppDelegate
 
-### Community 118 - ".ReloadData"
-Cohesion: 0.18
-Nodes (10): ObservableCollection, PropertyChangedEventArgs, Action, Func, IEnumerable, IList, Task, ObservableCollectionEx (+2 more)
+### Community 118 - ".OnPropertyChanged"
+Cohesion: 0.23
+Nodes (8): ObservableCollection, PropertyChangedEventArgs, Action, Func, IEnumerable, IList, Task, ObservableCollectionEx
 
 ### Community 119 - "CatalogContext"
 Cohesion: 0.09
@@ -1059,21 +1081,21 @@ Nodes (21): CatalogSourceEntry, CatalogBrand, CatalogType, DbSet, CatalogContext
 Cohesion: 0.12
 Nodes (17): DateTime, Guid, IList, OrderCheckout, Buyer, CardExpiration, CardHolderName, CardNumber (+9 more)
 
-### Community 121 - ".CombineUri"
-Cohesion: 0.14
-Nodes (13): UriHelper, CancelOrderCommand, OrderNumber, CatalogItem, IEnumerable, Task, CatalogService, IEnumerable (+5 more)
+### Community 121 - "IIdentityService"
+Cohesion: 0.20
+Nodes (8): CancelOrderCommand, OrderNumber, Task, IIdentityService, IEnumerable, Order, Task, OrderService
 
 ### Community 122 - "PaymentMethod"
 Cohesion: 0.19
 Nodes (8): DateTime, DateTime, PaymentMethod, CardType, ArgumentNullException, OrderingDomainException, TestMethod, BuyerAggregateTest
 
-### Community 123 - "eShop.ClientApp.Views"
-Cohesion: 0.10
-Nodes (13): ContentPage, eShop.ClientApp.Views, microsoft_maui_controls_maps, microsoft_maui_controls_maps_map, microsoft_maui_maps, Object, PinClickedEventArgs, ContentPageBase (+5 more)
+### Community 123 - "basket-cart.spec.ts"
+Cohesion: 0.12
+Nodes (9): redisBasket(), BACKPACK, BOOTS, POLES, redisQuantities(), userPage(), userPage(), userPage() (+1 more)
 
-### Community 124 - "BasketItem"
-Cohesion: 0.15
-Nodes (12): BasketItem, Id, OldUnitPrice, PictureUrl, ProductId, ProductName, Quantity, UnitPrice (+4 more)
+### Community 124 - "Ordering and webhook flows"
+Cohesion: 0.14
+Nodes (14): Cancel and ship, Card type lookup, Checkout from the shopping bag, Create order through the API, Draft order, Known issues, Order list and order details, Order status pipeline (+6 more)
 
 ### Community 125 - "OrderBuilder"
 Cohesion: 0.25
@@ -1104,12 +1126,12 @@ Cohesion: 0.15
 Nodes (12): IJSObjectReference, IJSRuntime, ILoggerFactory, OnAfterRenderAsync, OnInitializedAsync, AuthenticationStateProvider, BasketState, CatalogService (+4 more)
 
 ### Community 132 - "ScopeViewModel"
-Cohesion: 0.11
-Nodes (17): ApiScope, AuthorizationRequest, ConsentViewModel, IdentityResource, IEventService, IIdentityServerInteractionService, ILogger, ParsedScopeValue (+9 more)
+Cohesion: 0.15
+Nodes (11): ApiScope, IdentityResource, ParsedScopeValue, ScopeViewModel, ScopeViewModel, Checked, Description, DisplayName (+3 more)
 
-### Community 133 - "OrderStatusChangedToPaidIntegrationEvent"
-Cohesion: 0.18
-Nodes (9): ILogger, OrderStatusNotificationService, Task, OrderStatusChangedToPaidIntegrationEventHandler, OrderStatusChangedToPaidIntegrationEvent, BuyerIdentityGuid, BuyerName, OrderId (+1 more)
+### Community 133 - ".AddEventBusSubscriptions"
+Cohesion: 0.16
+Nodes (10): IEventBusBuilder, ILogger, OrderStatusNotificationService, Task, OrderStatusChangedToPaidIntegrationEventHandler, OrderStatusChangedToPaidIntegrationEvent, BuyerIdentityGuid, BuyerName (+2 more)
 
 ### Community 134 - "OrderStatusChangedToStockConfirmedIntegrationEvent"
 Cohesion: 0.18
@@ -1120,8 +1142,8 @@ Cohesion: 0.33
 Nodes (5): OrderDate, OrderNumber, OrderStatus, ContentView, Total
 
 ### Community 136 - ".CancelOrderAsync"
-Cohesion: 0.17
-Nodes (16): CreateOrderRequest, BadRequest, BasketItem, CancelOrderCommand, CreateOrderDraftCommand, DateTime, Guid, List (+8 more)
+Cohesion: 0.19
+Nodes (14): BadRequest, CancelOrderCommand, CreateOrderDraftCommand, Guid, IEnumerable, IOrderQueries, Ok, OrderDraftDTO (+6 more)
 
 ### Community 137 - "steps"
 Cohesion: 0.22
@@ -1132,8 +1154,8 @@ Cohesion: 0.24
 Nodes (6): SetStockConfirmedOrderStatusCommand, CancellationToken, IOrderRepository, Task, SetStockConfirmedOrderStatusCommandHandler, SetStockConfirmedOrderStatusIdentifiedCommandHandler
 
 ### Community 139 - "SetStockRejectedOrderStatusCommand"
-Cohesion: 0.22
-Nodes (7): List, SetStockRejectedOrderStatusCommand, CancellationToken, IOrderRepository, Task, SetStockRejectedOrderStatusCommandHandler, SetStockRejectedOrderStatusIdentifiedCommandHandler
+Cohesion: 0.12
+Nodes (11): eShop.Ordering.UnitTests.Application, List, SetStockRejectedOrderStatusCommand, CancellationToken, IOrderRepository, Task, SetStockRejectedOrderStatusCommandHandler, SetStockRejectedOrderStatusIdentifiedCommandHandler (+3 more)
 
 ### Community 140 - "Address"
 Cohesion: 0.20
@@ -1160,8 +1182,8 @@ Cohesion: 0.22
 Nodes (8): name, on, pull_request, push, branches, paths, branches, paths
 
 ### Community 146 - "HooksRepository"
-Cohesion: 0.24
-Nodes (9): ConcurrentDictionary, ConcurrentQueue, OnChangeSubscription, IEnumerable, HooksRepository, Task, TestMethod, WebhookClientTests (+1 more)
+Cohesion: 0.29
+Nodes (8): ConcurrentDictionary, ConcurrentQueue, OnChangeSubscription, HooksRepository, Task, TestMethod, WebhookClientTests, TestContext
 
 ### Community 147 - "App"
 Cohesion: 0.12
@@ -1175,9 +1197,9 @@ Nodes (12): Entity, CancellationToken, RequestHandlerDelegate, Task, OrderItem, 
 Cohesion: 0.24
 Nodes (12): Inspecting Element Attributes, Running and Debugging Playwright Tests, Request Mocking, Running Custom Playwright Code, Browser Session Management, Spec-driven Testing (Plan/Generate/Heal), Seed Test Concept, Storage State Management (+4 more)
 
-### Community 150 - "WebhooksClient"
-Cohesion: 0.29
-Nodes (5): HttpClient, HttpResponseMessage, IEnumerable, Task, WebhooksClient
+### Community 150 - "WebhookResponse"
+Cohesion: 0.15
+Nodes (10): DateTime, WebhookResponse, Date, DestUrl, Token, HttpClient, HttpResponseMessage, IEnumerable (+2 more)
 
 ### Community 151 - "OrderRepository"
 Cohesion: 0.13
@@ -1195,37 +1217,37 @@ Nodes (9): DateTimeOffset, UserToken, AccessToken, ExpiresAt, IdToken, RefreshTo
 Cohesion: 0.13
 Nodes (15): ISettingsService, AllowGpsLocation, CallbackUri, ClientId, ClientSecret, DefaultEndpoint, GatewayBasketEndpointBase, GatewayCatalogEndpointBase (+7 more)
 
-### Community 155 - "BasketCheckoutInfo"
-Cohesion: 0.13
-Nodes (15): DateTime, Guid, BasketCheckoutInfo, Buyer, CardExpiration, CardHolderName, CardNumber, CardSecurityNumber (+7 more)
+### Community 155 - "Identity and basket flows"
+Cohesion: 0.11
+Nodes (18): Account lockout, Add to bag from an item page, Basket gRPC API, Basket persistence and isolation, Bugs found, Empty bag view, Identity and basket flows, Identity.API OIDC discovery and tokens (+10 more)
 
 ### Community 156 - "catalog-sort.js"
 Cohesion: 0.28
 Nodes (13): activeOption(), applySort(), comparatorFor(), move(), observeCatalog(), open(), readPref(), reflect() (+5 more)
 
 ### Community 157 - "system_text_json"
-Cohesion: 0.11
-Nodes (16): asp_versioning, asp_versioning_http, HttpRequestException, HttpStatusCode, microsoft_aspnetcore_mvc_testing, polly, rabbitmq_client, rabbitmq_client_events (+8 more)
+Cohesion: 0.09
+Nodes (19): asp_versioning, asp_versioning_http, aspire_hosting, aspire_hosting_applicationmodel, eShop.Webhooks.FunctionalTests, eShop.Basket.FunctionalTests, eShop.Catalog.FunctionalTests, eShop.Ordering.FunctionalTests (+11 more)
 
 ### Community 158 - "AnimationBase"
 Cohesion: 0.23
 Nodes (9): BindableObject, BindableProperty, Task, VisualElement, AnimationBase, Delay, Duration, RepeatForever (+1 more)
 
 ### Community 159 - "ContentPageBase"
-Cohesion: 0.15
-Nodes (12): ShippingAddress.Country, ShippingAddress.State, ShippingAddress.Street, ShippingAddress.ZipCode, ContentPageBase, CheckoutCommand, IsBusy, Order.OrderDate (+4 more)
+Cohesion: 0.13
+Nodes (13): ShippingAddress.Country, ShippingAddress.State, ShippingAddress.Street, ShippingAddress.ZipCode, ContentPageBase, CheckoutCommand, IsBusy, Order.OrderDate (+5 more)
 
 ### Community 160 - "RabbitMQEventBus"
-Cohesion: 0.15
-Nodes (12): BrokerUnreachableException, IChannel, IEventBus, IHostedService, ResiliencePipeline, SocketException, EventBusSubscriptionInfo, ILogger (+4 more)
+Cohesion: 0.05
+Nodes (38): BasicDeliverEventArgs, BrokerUnreachableException, IChannel, IEventBus, IHostedService, ResiliencePipeline, SocketException, IServiceCollection (+30 more)
 
-### Community 161 - ".UpdateBasket"
-Cohesion: 0.17
-Nodes (14): AllowAnonymous, BasketBase, DoesNotReturn, RpcException, CustomerBasket, CustomerBasketResponse, DeleteBasketRequest, DeleteBasketResponse (+6 more)
+### Community 161 - "CustomerBasket"
+Cohesion: 0.12
+Nodes (19): AllowAnonymous, BasketBase, DoesNotReturn, RpcException, CustomerBasket, CustomerBasketResponse, DeleteBasketRequest, DeleteBasketResponse (+11 more)
 
 ### Community 162 - ".PublishEventsThroughEventBusAsync"
-Cohesion: 0.24
-Nodes (7): eShop.IntegrationEventLogEF.Services, Guid, IEnumerable, IntegrationEventLogEntry, Task, IIntegrationEventLogService, Guid
+Cohesion: 0.12
+Nodes (16): eShop.IntegrationEventLogEF.Services, Guid, IDbContextTransaction, IEnumerable, IntegrationEvent, IntegrationEventLogEntry, Task, IIntegrationEventLogService (+8 more)
 
 ### Community 163 - ".WaitAsync"
 Cohesion: 0.20
@@ -1235,9 +1257,9 @@ Nodes (14): Checks, Healed, Ready, CancellationToken, Dictionary, Func, HttpClie
 Cohesion: 0.25
 Nodes (7): name, on, pull_request, push, paths-ignore, branches, paths-ignore
 
-### Community 165 - "eShop.Ordering.Domain.Seedwork"
-Cohesion: 0.18
-Nodes (8): eShop.Ordering.Domain.Seedwork, IDisposable, IAggregateRoot, IRepository, UnitOfWork, CancellationToken, Task, IUnitOfWork
+### Community 165 - "IDisposable"
+Cohesion: 0.28
+Nodes (6): IDisposable, IRepository, UnitOfWork, CancellationToken, Task, IUnitOfWork
 
 ### Community 166 - "PermissionStatus"
 Cohesion: 0.14
@@ -1247,45 +1269,45 @@ Nodes (12): eShop.ClientApp.Models.Permissions, Permission, Location, LocationAl
 Cohesion: 0.25
 Nodes (8): jobs, test, name, run, shell, uses, runs-on, steps
 
-### Community 168 - "System.ComponentModel.DataAnnotations"
-Cohesion: 0.08
-Nodes (16): asp_versioning_apiexplorer, eShop.Catalog.API, microsoft_aspnetcore_authorization, microsoft_aspnetcore_mvc_apiexplorer, microsoft_aspnetcore_mvc_infrastructure, microsoft_aspnetcore_openapi, microsoft_extensions_fileproviders, microsoft_extensions_primitives (+8 more)
+### Community 168 - "eShop.Catalog.API"
+Cohesion: 0.40
+Nodes (4): eShop.Catalog.API, CatalogOptions, PicBaseUrl, UseCustomizationData
 
 ### Community 169 - "ContentView"
 Cohesion: 0.25
 Nodes (7): ContentView, ToUpperConverter, PictureUrl, ProductName, Quantity, Total, UnitPrice
 
-### Community 170 - "eShop.ClientApp.Models.User"
-Cohesion: 0.11
-Nodes (9): eShop.ClientApp.Models.User, identitymodel_client, identitymodel_oidcclient, identitymodel_oidcclient_browser, identitymodel_oidcclient_browser_ibrowser, LogoutParameter, Logout, Task (+1 more)
+### Community 170 - ".CombineUri"
+Cohesion: 0.49
+Nodes (4): CatalogItem, IEnumerable, Task, CatalogService
 
 ### Community 171 - "OpenApiOptionsExtensions"
-Cohesion: 0.08
-Nodes (22): ApiVersionDescription, BrowserOptions, BrowserResult, IAuthorizeData, IBrowser, IOpenApiDocumentTransformer, ObsoleteAttribute, OpenApiDocument (+14 more)
+Cohesion: 0.13
+Nodes (13): ApiVersionDescription, IAuthorizeData, IOpenApiDocumentTransformer, ObsoleteAttribute, OpenApiDocument, OpenApiDocumentTransformerContext, OpenApiOptions, SecuritySchemeDefinitionsTransformer (+5 more)
 
-### Community 172 - "eShop.WebApp.Services.OrderStatus.IntegrationEvents"
-Cohesion: 0.18
-Nodes (10): eShop.WebApp.Services.OrderStatus.IntegrationEvents, ILogger, OrderStatusNotificationService, Task, OrderStatusChangedToShippedIntegrationEventHandler, OrderStatusChangedToShippedIntegrationEvent, BuyerIdentityGuid, BuyerName (+2 more)
+### Community 172 - "IntegrationEvent"
+Cohesion: 0.17
+Nodes (10): DateTime, Guid, IntegrationEvent, CreationDate, Id, OrderStatusChangedToShippedIntegrationEvent, BuyerIdentityGuid, BuyerName (+2 more)
 
-### Community 173 - "eShop.WebhookClient.Services"
-Cohesion: 0.18
-Nodes (7): eShop.WebhookClient.Services, DateTime, WebhookData, Payload, Type, When, system_collections_concurrent
+### Community 173 - "WebhookData"
+Cohesion: 0.33
+Nodes (5): DateTime, WebhookData, Payload, Type, When
 
 ### Community 174 - "on"
 Cohesion: 0.29
 Nodes (7): on, pull_request, push, branches, paths-ignore, branches, paths-ignore
 
 ### Community 175 - "CatalogIntegrationEventService"
-Cohesion: 0.13
-Nodes (13): eShop.Catalog.API.IntegrationEvents, CatalogContext, IEventBus, IIntegrationEventLogService, ILogger, IntegrationEvent, Task, CatalogIntegrationEventService (+5 more)
+Cohesion: 0.16
+Nodes (11): eShop.Catalog.API.IntegrationEvents, CatalogContext, IEventBus, IIntegrationEventLogService, ILogger, IntegrationEvent, Task, CatalogIntegrationEventService (+3 more)
 
 ### Community 176 - "steps"
 Cohesion: 0.29
 Nodes (7): jobs, test, name, run, uses, runs-on, steps
 
 ### Community 177 - "CheckoutViewModel"
-Cohesion: 0.21
-Nodes (10): Address, IEnumerable, List, Order, OrderItem, RelayCommand, Task, CheckoutViewModel (+2 more)
+Cohesion: 0.13
+Nodes (14): Task, DialogService, Task, IDialogService, Address, IEnumerable, List, Order (+6 more)
 
 ### Community 178 - "OrderDetailViewModel"
 Cohesion: 0.06
@@ -1295,9 +1317,9 @@ Nodes (34): IsSubmittedOrder, Order.ShippingCity, Order.ShippingCountry, Order.S
 Cohesion: 0.15
 Nodes (12): ASPNETCORE_ENVIRONMENT, DOTNET_DASHBOARD_OTLP_ENDPOINT_URL, DOTNET_ENVIRONMENT, DOTNET_RESOURCE_SERVICE_ENDPOINT_URL, applicationUrl, commandName, dotnetRunMessages, environmentVariables (+4 more)
 
-### Community 180 - "Controller"
-Cohesion: 0.11
-Nodes (13): Controller, IActionResult, Task, DiagnosticsController, ErrorMessage, ErrorViewModel, Error, IActionResult (+5 more)
+### Community 180 - "HomeController"
+Cohesion: 0.17
+Nodes (9): ErrorMessage, ErrorViewModel, Error, IActionResult, IIdentityServerInteractionService, ILogger, IWebHostEnvironment, Task (+1 more)
 
 ### Community 181 - "PostgresStore"
 Cohesion: 0.24
@@ -1344,15 +1366,15 @@ Cohesion: 0.22
 Nodes (20): teststack script, build_images(), build_loader(), compose(), content_hash(), fail(), images_hash(), images_present() (+12 more)
 
 ### Community 192 - "WebhooksApiFixture"
-Cohesion: 0.12
-Nodes (14): IGrantUrlTesterService, RabbitMQServerResource, Program, Action, IApplicationBuilder, IHost, IHostBuilder, IResourceBuilder (+6 more)
+Cohesion: 0.25
+Nodes (6): RabbitMQServerResource, Program, IResourceBuilder, PostgresServerResource, ValueTask, WebhooksApiFixture
 
 ### Community 193 - "EventBusSubscriptionInfo"
 Cohesion: 0.22
 Nodes (8): IJsonTypeInfoResolver, Dictionary, Type, EventBusSubscriptionInfo, EventTypes, JsonSerializerOptions, Action, EventBusBuilderExtensions
 
 ### Community 194 - "SelectTryResult"
-Cohesion: 0.27
+Cohesion: 0.24
 Nodes (9): SelectTryResult, Exception, Func, IEnumerable, LinqSelectExtensions, SelectTryResult, CaughtException, Result (+1 more)
 
 ### Community 195 - "playwright.yml"
@@ -1368,7 +1390,7 @@ Cohesion: 0.12
 Nodes (15): eShop.Ordering.API.Application.Behaviors, IPipelineBehavior, IValidator, CancellationToken, ILogger, RequestHandlerDelegate, Task, LoggingBehavior (+7 more)
 
 ### Community 198 - "OrderItem"
-Cohesion: 0.18
+Cohesion: 0.17
 Nodes (10): Guid, OrderItem, Discount, OrderId, PictureUrl, ProductId, ProductName, Quantity (+2 more)
 
 ### Community 199 - "Address"
@@ -1383,9 +1405,9 @@ Nodes (6): with, dotnet-version, name, node-version, path, retention-days
 Cohesion: 0.12
 Nodes (14): Microsoft.AspNetCore.Components.Web, Microsoft.AspNetCore.Components.WebView.Maui (9.0.30), Microsoft.Extensions.Http (9.0.0), net10.0-android, net10.0-ios, net10.0-maccatalyst, net10.0-windows10.0.19041.0, $(TargetFrameworks) (+6 more)
 
-### Community 202 - ".AddEventBusSubscriptions"
+### Community 202 - "OrderStatusChangedToAwaitingValidationIntegrationEvent"
 Cohesion: 0.18
-Nodes (9): IEventBusBuilder, ILogger, OrderStatusNotificationService, OrderStatusChangedToAwaitingValidationIntegrationEventHandler, OrderStatusChangedToAwaitingValidationIntegrationEvent, BuyerIdentityGuid, BuyerName, OrderId (+1 more)
+Nodes (9): ILogger, OrderStatusNotificationService, Task, OrderStatusChangedToAwaitingValidationIntegrationEventHandler, OrderStatusChangedToAwaitingValidationIntegrationEvent, BuyerIdentityGuid, BuyerName, OrderId (+1 more)
 
 ### Community 203 - "ContentPage"
 Cohesion: 0.14
@@ -1399,41 +1421,41 @@ Nodes (10): IActivationState, Window, Shell, AppShell, IDictionary, Task, INavig
 Cohesion: 0.11
 Nodes (16): GrantUrlTesterService, ProductPriceChangedIntegrationEventHandler, IEventBusBuilder, IGrantUrlTesterService, IHostApplicationBuilder, IWebhooksRetriever, IWebhooksSender, OrderStatusChangedToPaidIntegrationEvent (+8 more)
 
-### Community 206 - "OrderStatusChangedToSubmittedIntegrationEvent"
+### Community 206 - "eShop.WebApp.Services.OrderStatus.IntegrationEvents"
 Cohesion: 0.18
-Nodes (9): ILogger, OrderStatusNotificationService, Task, OrderStatusChangedToSubmittedIntegrationEventHandler, OrderStatusChangedToSubmittedIntegrationEvent, BuyerIdentityGuid, BuyerName, OrderId (+1 more)
+Nodes (10): eShop.WebApp.Services.OrderStatus.IntegrationEvents, ILogger, OrderStatusNotificationService, Task, OrderStatusChangedToSubmittedIntegrationEventHandler, OrderStatusChangedToSubmittedIntegrationEvent, BuyerIdentityGuid, BuyerName (+2 more)
 
-### Community 207 - "ContentPageBase"
-Cohesion: 0.17
-Nodes (10): AddCommand, BasketItems, BasketItems.Count, AddCommand, CheckoutCommand, ContentPageBase, CheckoutCommand, SelectedItem (+2 more)
+### Community 207 - "BasketItem"
+Cohesion: 0.11
+Nodes (15): eShop.WebApp.Services, BasketItem, Id, OldUnitPrice, ProductId, ProductName, Quantity, UnitPrice (+7 more)
 
 ### Community 208 - "ExternalController"
-Cohesion: 0.11
-Nodes (23): claims, provider, providerUserId, ApplicationUser, AuthenticationProperties, Claim, HttpGet, IActionResult (+15 more)
+Cohesion: 0.13
+Nodes (19): claims, provider, providerUserId, ApplicationUser, AuthenticationProperties, Claim, HttpGet, IActionResult (+11 more)
 
-### Community 209 - ".Handle_return_false_if_order_is_not_persisted"
-Cohesion: 0.14
-Nodes (13): CreateOrderCommandHandler, Buyer, ArgumentNullException, Buyer, CreateOrderCommand, Dictionary, IIdentityService, ILogger (+5 more)
+### Community 209 - ".GetAsync"
+Cohesion: 0.09
+Nodes (23): CreateOrderCommandHandler, CancellationToken, IIdentityService, ILogger, IMediator, IOrderingIntegrationEventService, Task, CreateOrderCommandHandler (+15 more)
 
-### Community 210 - "eShop.WebAppComponents.Services"
-Cohesion: 0.08
-Nodes (22): eShop.WebAppComponents.Catalog, eShop.WebAppComponents.Services, eShop.WebAppComponents.Item, eShop.HybridApp.Components, Microsoft.AspNetCore.Components.Forms, Microsoft.AspNetCore.Components.Routing, Microsoft.AspNetCore.Components.Sections, Microsoft.AspNetCore.Components.Web (+14 more)
+### Community 210 - "WebApp/Components/_Imports.razor"
+Cohesion: 0.06
+Nodes (28): eShop.WebAppComponents.Catalog, eShop.WebAppComponents.Services, eShop.WebAppComponents.Item, eShop.HybridApp.Components, eShop.WebApp, Microsoft.AspNetCore.Components.Forms, Microsoft.AspNetCore.Components.Routing, Microsoft.AspNetCore.Components.Sections (+20 more)
 
 ### Community 211 - ".ColorTo"
-Cohesion: 0.31
-Nodes (7): Expression, Action, Color, Easing, Func, Task, VisualElementExtensions
+Cohesion: 0.23
+Nodes (9): Animation, Expression, Action, Color, Easing, Func, Task, VisualElementExtensions (+1 more)
 
 ### Community 212 - "aspire-deployment skill"
-Cohesion: 0.31
-Nodes (9): AWS deployment reference, Azure deployment reference, CI/CD and GitHub Actions deployment reference, Docker Compose deployment reference, JavaScript app deployment reference, Kubernetes and AKS deployment reference, Common deployment preflight reference, aspire-deployment skill (+1 more)
+Cohesion: 0.36
+Nodes (8): AWS deployment reference, Azure deployment reference, CI/CD and GitHub Actions deployment reference, Docker Compose deployment reference, JavaScript app deployment reference, Kubernetes and AKS deployment reference, Common deployment preflight reference, aspire-deployment skill
 
-### Community 213 - "AppHost Wiring and API Lookup Reference"
-Cohesion: 0.20
-Nodes (11): AppHost Wiring and API Lookup Reference, Tiered Resource Modeling Preference (First-party > Community Toolkit > Raw), Prefer HTTPS and Aspire-Managed Ports, Persistent Container Lifetime and Stale Volume Auth Failures, Avoid Secrets in WithArgs, WaitFor / WaitForCompletion Dependency Ordering, WithReference vs WithEnvironment, Docker Compose Migration Reference (+3 more)
+### Community 213 - "BasketItem"
+Cohesion: 0.15
+Nodes (12): BasketItem, Id, OldUnitPrice, PictureUrl, ProductId, ProductName, Quantity, UnitPrice (+4 more)
 
 ### Community 214 - "CatalogMockService"
-Cohesion: 0.07
-Nodes (29): ClientApp.UnitTests.Services, CatalogBrand, Brand, Id, CatalogItem, CatalogBrand, CatalogBrandId, CatalogType (+21 more)
+Cohesion: 0.12
+Nodes (15): ClientApp.UnitTests.Services, CatalogBrand, Brand, Id, CatalogItem, IEnumerable, List, Task (+7 more)
 
 ### Community 215 - "BasketService"
 Cohesion: 0.20
@@ -1443,13 +1465,17 @@ Nodes (9): ClientBaseConfiguration, GrpcChannel, BasketClient, BasketItem, IEnum
 Cohesion: 0.18
 Nodes (11): CardType, Guid, PaymentInfo, CardHolderName, CardNumber, CardType, Expiration, ExpirationMonth (+3 more)
 
+### Community 217 - ".UpdateItem"
+Cohesion: 0.38
+Nodes (7): Created, NoContent, ProblemDetails, BadRequest, HttpContext, Results, NotFound
+
 ### Community 218 - "CartPage.razor"
 Cohesion: 0.18
 Nodes (10): CurrentOrPendingQuantity, OnInitializedAsync, AntiforgeryToken, BasketItem, BasketState, IProductImageUrlProvider, NavigationManager, PageTitle (+2 more)
 
-### Community 219 - "Webhooks.API/GlobalUsings.cs"
-Cohesion: 0.12
-Nodes (12): Webhooks.API.Services, Webhooks.API, IEndpointRouteBuilder, RouteGroupBuilder, WebhookType, WebHooksApi, IHttpClientFactory, ILogger (+4 more)
+### Community 219 - "CatalogServices"
+Cohesion: 0.18
+Nodes (11): CatalogServices, CatalogAI, Context, EventService, Logger, Options, CatalogContext, CatalogOptions (+3 more)
 
 ### Community 220 - "Webhooks.API.csproj"
 Cohesion: 0.13
@@ -1479,49 +1505,49 @@ Nodes (9): IValidatableObject, IEnumerable, ValidationContext, ValidationResult,
 Cohesion: 0.12
 Nodes (14): Aspire.StackExchange.Redis, Grpc.AspNetCore, Microsoft.Extensions.Identity.Stores, net10.0, Microsoft.NET.Sdk.Web, net10.0, Aspire.Hosting.Redis, xunit.v3.mtp-v2 (+6 more)
 
-### Community 227 - "OrderStartedIntegrationEventHandler"
-Cohesion: 0.15
-Nodes (12): eShop.Basket.API.IntegrationEvents.EventHandling.Events, eShop.Basket.API.IntegrationEvents.EventHandling, JsonSerializerContext, IHostApplicationBuilder, Extensions, IntegrationEventContext, ILogger, Task (+4 more)
+### Community 227 - ".RegisterAppServices"
+Cohesion: 0.20
+Nodes (7): HttpMessageHandler, IBrowser, IdentityService, Color, ITheme, Color, Theme
 
-### Community 228 - "OrderStatusChangedToPaidIntegrationEvent"
-Cohesion: 0.12
-Nodes (15): OrderStatusChangedToPaidDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderStatusChangedToPaidDomainEventHandler (+7 more)
+### Community 228 - ".Handle"
+Cohesion: 0.22
+Nodes (8): OrderStatusChangedToPaidDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderStatusChangedToPaidDomainEventHandler
 
 ### Community 229 - "IAppEnvironmentService"
-Cohesion: 0.11
-Nodes (16): AppEnvironmentService, BasketService, CatalogService, IdentityService, OrderService, IAppEnvironmentService, BasketService, CatalogService (+8 more)
+Cohesion: 0.14
+Nodes (10): AppEnvironmentService, BasketService, CatalogService, IdentityService, OrderService, IAppEnvironmentService, BasketService, CatalogService (+2 more)
 
-### Community 230 - "eShop.Identity.API.Data"
-Cohesion: 0.29
-Nodes (5): eShop.Identity.API.Data, IdentityDbContext, ApplicationUser, ModelBuilder, ApplicationDbContext
+### Community 230 - "ApplicationDbContext"
+Cohesion: 0.33
+Nodes (4): IdentityDbContext, ApplicationUser, ModelBuilder, ApplicationDbContext
 
 ### Community 231 - "OrderMockService"
 Cohesion: 0.21
 Nodes (10): DateTime, IEnumerable, List, Order, Task, OrderMockService, OrdersServiceTests, ISettingsService (+2 more)
 
 ### Community 232 - "ContentPageBase"
-Cohesion: 0.14
-Nodes (14): Address, Description, Location, Stores, IEnumerable, Location, Task, MapViewModel (+6 more)
+Cohesion: 0.09
+Nodes (20): Address, Description, Location, Stores, microsoft_maui_controls_maps, microsoft_maui_controls_maps_map, microsoft_maui_maps, Object (+12 more)
 
 ### Community 233 - "OrderingService"
 Cohesion: 0.24
 Nodes (7): CreateOrderRequest, DateTime, Guid, HttpClient, Task, OrderingService, OrderRecord
 
 ### Community 234 - "OrderStatusChangedToAwaitingValidationDomainEvent"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): IEnumerable, OrderItem, OrderStatusChangedToAwaitingValidationDomainEvent, OrderId, OrderItems
 
-### Community 235 - "IdentifiedCommandHandlerTest"
-Cohesion: 0.13
-Nodes (11): eShop.Ordering.UnitTests.Application, CreateOrderCommand, Dictionary, IdentifiedCommandHandler, ILogger, IMediator, IRequestManager, IdentifiedCommandHandlerTest (+3 more)
+### Community 235 - "IntegrationEventLogEF/GlobalUsings.cs"
+Cohesion: 0.18
+Nodes (7): IHostEnvironment, microsoft_entityframeworkcore_storage, HostEnvironmentExtensions, system_componentmodel_dataannotations_schema, system_data_common, system_linq_expressions, system_reflection
 
 ### Community 236 - "eShop.ClientApp.Validations"
 Cohesion: 0.20
 Nodes (5): eShop.ClientApp.Validations, IsNotNullOrEmptyRule, ValidationMessage, IValidationRule, ValidationMessage
 
-### Community 237 - "Products"
-Cohesion: 0.25
-Nodes (8): Products, SelectedProduct, ViewCatalogItemCommand, SelectedProduct, ViewCatalogItemCommand, Products, SelectedItem, CollectionView
+### Community 237 - "ContentPageBase"
+Cohesion: 0.17
+Nodes (10): AddCommand, BasketItems, BasketItems.Count, AddCommand, CheckoutCommand, ContentPageBase, CheckoutCommand, SelectedItem (+2 more)
 
 ### Community 238 - "Buyer"
 Cohesion: 0.17
@@ -1544,24 +1570,24 @@ Cohesion: 0.11
 Nodes (17): Microsoft.Extensions.ApiDescription.Server, Pgvector, Pgvector.EntityFrameworkCore, net10.0, Asp.Versioning.Http, Aspire.Azure.AI.OpenAI, Aspire.Npgsql.EntityFrameworkCore.PostgreSQL, CommunityToolkit.Aspire.OllamaSharp (+9 more)
 
 ### Community 243 - "OrderingApiFixture"
-Cohesion: 0.15
-Nodes (13): IStartupFilter, ProjectResource, IHost, IHostBuilder, IResourceBuilder, PostgresServerResource, Task, ValueTask (+5 more)
+Cohesion: 0.18
+Nodes (9): ProjectResource, IResourceBuilder, PostgresServerResource, Task, ValueTask, OrderingApiFixture, IdentityApi, IdentityDB (+1 more)
 
 ### Community 244 - "IntegrationEventLogService"
 Cohesion: 0.24
 Nodes (9): EventStateEnum, Guid, IDbContextTransaction, IEnumerable, IntegrationEvent, IntegrationEventLogEntry, Task, Type (+1 more)
 
-### Community 245 - ".RegisterAppServices"
-Cohesion: 0.11
-Nodes (14): eShop.ClientApp.Services.Theme, HttpMessageHandler, IBrowser, IdentityService, Location, Task, ILocationService, Location (+6 more)
+### Community 245 - "WebhookClient/Components/Layout/UserMenu.razor"
+Cohesion: 0.20
+Nodes (8): LogIn, AntiforgeryToken, Authorized, AuthorizeView, NavigationManager, NotAuthorized, system_net_http_json, System.Web
 
 ### Community 246 - "IIntegrationEventHandler"
-Cohesion: 0.15
-Nodes (12): eShop.Catalog.API.IntegrationEvents.EventHandling, IIntegrationEventHandler, CatalogContext, ICatalogIntegrationEventService, ILogger, OrderStatusChangedToAwaitingValidationIntegrationEvent, OrderStatusChangedToAwaitingValidationIntegrationEventHandler, CatalogContext (+4 more)
+Cohesion: 0.22
+Nodes (7): eShop.Catalog.API.IntegrationEvents.EventHandling, IIntegrationEventHandler, CatalogContext, ILogger, OrderStatusChangedToPaidIntegrationEvent, Task, OrderStatusChangedToPaidIntegrationEventHandler
 
-### Community 247 - ".Handle"
-Cohesion: 0.14
-Nodes (8): eShop.Ordering.API.Application.DomainEventHandlers, OrderStartedDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, Task, ValidateOrAddBuyerAggregateWhenOrderStartedDomainEventHandler
+### Community 247 - "CardType"
+Cohesion: 0.22
+Nodes (8): microsoft_aspnetcore_http_httpresults, CreateOrderRequest, BasketItem, DateTime, List, CardType, Id, Name
 
 ### Community 248 - "MainViewModel"
 Cohesion: 0.28
@@ -1569,30 +1595,34 @@ Nodes (6): RelayCommand, Task, MainViewModel, MainViewModelTests, INavigationSer
 
 ### Community 249 - "eShop.Ordering.API.Application.IntegrationEvents.EventHandling"
 Cohesion: 0.15
-Nodes (11): eShop.Ordering.API.Application.IntegrationEvents.EventHandling, GracePeriodConfirmedIntegrationEvent, ILogger, IMediator, Task, GracePeriodConfirmedIntegrationEventHandler, ILogger, IMediator (+3 more)
+Nodes (11): eShop.Ordering.API.Application.IntegrationEvents.EventHandling, ILogger, IMediator, OrderPaymentSucceededIntegrationEvent, Task, OrderPaymentSucceededIntegrationEventHandler, ILogger, IMediator (+3 more)
 
 ### Community 250 - ".Handle"
-Cohesion: 0.14
-Nodes (13): OrderCancelledDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderCancelledDomainEventHandler (+5 more)
+Cohesion: 0.11
+Nodes (15): BuyerAndPaymentMethodVerifiedDomainEvent, eShop.Ordering.API.Application.DomainEventHandlers, INotificationHandler, OrderStartedDomainEvent, CancellationToken, ILogger, IOrderRepository, Task (+7 more)
 
-### Community 251 - ".GetAsync"
-Cohesion: 0.17
-Nodes (11): OrderStatusChangedToStockConfirmedDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderStatusChangedToStockConfirmedDomainEventHandler (+3 more)
+### Community 251 - ".AddAndSaveEventAsync"
+Cohesion: 0.14
+Nodes (12): OrderStatusChangedToStockConfirmedDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderStatusChangedToStockConfirmedDomainEventHandler (+4 more)
 
 ### Community 252 - ".GetSubscriptionsOfType"
 Cohesion: 0.14
 Nodes (11): IEnumerable, Task, WebhookSubscription, WebhookType, IWebhooksRetriever, IEnumerable, Task, WebhooksContext (+3 more)
 
 ### Community 253 - "WebhooksContext"
-Cohesion: 0.22
-Nodes (8): Webhooks.API.Infrastructure, DbContext, DbContextOptions, DbSet, ModelBuilder, WebhookSubscription, WebhooksContext, Subscriptions
+Cohesion: 0.25
+Nodes (7): DbContext, DbContextOptions, DbSet, ModelBuilder, WebhookSubscription, WebhooksContext, Subscriptions
+
+### Community 254 - "eShop.ClientApp.Animations.Base"
+Cohesion: 0.16
+Nodes (6): eShop.ClientApp.Animations, eShop.ClientApp.Animations.Base, eShop.ClientApp.Helpers, Easing, EasingHelper, UriHelper
 
 ### Community 255 - "SwipeView"
 Cohesion: 0.15
 Nodes (11): DeleteCommand, HasNewPrice, OldUnitPrice, SwipeView, ToUpperConverter, PictureUrl, ProductName, Quantity (+3 more)
 
 ### Community 256 - "OrderStatusChangedToShippedIntegrationEventHandler"
-Cohesion: 0.15
+Cohesion: 0.17
 Nodes (11): OrderStatusChangedToShippedIntegrationEvent, ILogger, IWebhooksRetriever, IWebhooksSender, Task, OrderStatusChangedToShippedIntegrationEventHandler, DateTime, WebhookData (+3 more)
 
 ### Community 257 - "ScenarioParserTests"
@@ -1607,9 +1637,9 @@ Nodes (7): android_app, android_content_pm, android_os, android_runtime, eShop.H
 Cohesion: 0.18
 Nodes (10): Amazon, Compliance Requirements, Core Pattern (applies to all three platforms), Google, Meta (Facebook / Instagram), Overview, Platform-Specific Integration Points & Official Documentation, Suggested Next Steps for This Project (+2 more)
 
-### Community 260 - "eShop.Ordering.API.Application.Commands"
-Cohesion: 0.19
-Nodes (7): eShop.Ordering.API.Application.Commands, SetAwaitingValidationOrderStatusCommand, CancellationToken, IOrderRepository, Task, SetAwaitingValidationIdentifiedOrderStatusCommandHandler, SetAwaitingValidationOrderStatusCommandHandler
+### Community 260 - "IRequest"
+Cohesion: 0.11
+Nodes (14): IRequest, IRequestHandler, CancelOrderCommand, CancellationToken, IOrderRepository, Task, CancelOrderCommandHandler, CancelOrderIdentifiedCommandHandler (+6 more)
 
 ### Community 261 - "WebhookClient.csproj"
 Cohesion: 0.33
@@ -1627,9 +1657,9 @@ Nodes (7): ReceivedMessages, RegisteredHooks, Authorized, AuthorizeView, Microso
 Cohesion: 0.24
 Nodes (7): CatalogItem, IEnumerable, Regex, FixUriService, CatalogItem, IEnumerable, IFixUriService
 
-### Community 265 - ".SendAsync"
-Cohesion: 0.17
-Nodes (10): DelegatingHandler, HttpClientAuthorizationDelegatingHandler, IHttpClientBuilder, CancellationToken, HttpRequestMessage, HttpResponseMessage, IHttpContextAccessor, Task (+2 more)
+### Community 265 - "Initial"
+Cohesion: 0.25
+Nodes (5): MigrationBuilder, Vector, ModelBuilder, Vector, Initial
 
 ### Community 266 - "eShop.slnx"
 Cohesion: 0.18
@@ -1652,20 +1682,20 @@ Cohesion: 0.17
 Nodes (11): IEnumerable, ValidationContext, ValidationResult, BasketItem, Id, OldUnitPrice, PictureUrl, ProductId (+3 more)
 
 ### Community 271 - "ValidatableObject"
-Cohesion: 0.18
-Nodes (9): IValidity, IsValid, IEnumerable, List, ValidatableObject, Errors, IsValid, Validations (+1 more)
+Cohesion: 0.17
+Nodes (10): ObservableObject, IValidity, IsValid, IEnumerable, List, ValidatableObject, Errors, IsValid (+2 more)
 
 ### Community 272 - "eShop Reference Application (AdventureWorks)"
 Cohesion: 0.29
-Nodes (7): Azure Pipelines CI (1ES template), Code of Conduct, Contribution Principles, Contributing to eShop, eShop Reference Application (AdventureWorks), Optional AI Chatbot with Microsoft Foundry, Sample catalog data (catalog.json, Pics)
+Nodes (8): Azure Pipelines CI (1ES template), Code of Conduct, Contribution Principles, Contributing to eShop, Deploy to Azure Container Apps, eShop Reference Application (AdventureWorks), Optional AI Chatbot with Microsoft Foundry, Sample catalog data (catalog.json, Pics)
 
-### Community 273 - ".AddRabbitMqEventBus"
+### Community 273 - ".ToErrors"
 Cohesion: 0.20
-Nodes (10): IServiceCollection, IEventBusBuilder, Services, IEventBus, IHostApplicationBuilder, IHostedService, IServiceCollection, EventBusBuilder (+2 more)
+Nodes (7): Webhooks.API.Extensions, RouteHandlerBuilder, Dictionary, IEnumerable, ValidationResult, WebhookSubscriptionRequest, RouteHandlerBuilderExtensions
 
 ### Community 274 - ".AddNew"
-Cohesion: 0.24
-Nodes (7): IConfiguration, IEndpointRouteBuilder, WebhookEndpoints, Func, IDisposable, Task, OnChangeSubscription
+Cohesion: 0.43
+Nodes (4): Func, IDisposable, Task, OnChangeSubscription
 
 ### Community 275 - "eShop.ClientApp.Controls"
 Cohesion: 0.29
@@ -1679,9 +1709,9 @@ Nodes (9): IHost, IHostBuilder, IResourceBuilder, PostgresServerResource, Task, 
 Cohesion: 0.12
 Nodes (13): Aspire.Npgsql, Aspire.RabbitMQ.Client, Microsoft.NET.Sdk.Worker, net10.0, Microsoft.NET.Sdk, net10.0, net10.0, Microsoft.NET.Sdk.Web (+5 more)
 
-### Community 278 - "Task"
-Cohesion: 0.22
-Nodes (6): BasicDeliverEventArgs, Activity, CancellationToken, IConnection, IIntegrationEventHandler, Task
+### Community 278 - "CatalogItem"
+Cohesion: 0.20
+Nodes (9): CatalogItem, CatalogBrand, CatalogBrandId, CatalogTypeId, Description, Id, Name, PictureUri (+1 more)
 
 ### Community 279 - "RedisFixture"
 Cohesion: 0.20
@@ -1699,29 +1729,29 @@ Nodes (7): IBuyerRepository, Buyer, IUnitOfWork, OrderingContext, Task, BuyerRep
 Cohesion: 0.57
 Nodes (6): boot(), gapPx(), measure(), observeDock(), placeDocked(), schedule()
 
-### Community 283 - ".GetConfirmedGracePeriodOrdersAsync"
-Cohesion: 0.29
-Nodes (8): NpgsqlDataSource, CancellationToken, ILogger, List, TimeSpan, ValueTask, GracePeriodOrdersRepository, IGracePeriodOrdersRepository
+### Community 283 - "HybridApp/Components/Pages/Item/ItemPage.razor"
+Cohesion: 0.22
+Nodes (8): AddToCartAsync, OnInitializedAsync, IProductImageUrlProvider, NavigationManager, PageTitle, SectionContent, System.Net, UpdateNumInCartAsync
 
 ### Community 284 - "Outbox"
 Cohesion: 0.20
 Nodes (8): DateTime, Guid, MigrationBuilder, DateTime, Guid, ModelBuilder, Vector, Outbox
 
-### Community 285 - ".ToErrors"
-Cohesion: 0.20
-Nodes (7): Webhooks.API.Extensions, RouteHandlerBuilder, Dictionary, IEnumerable, ValidationResult, WebhookSubscriptionRequest, RouteHandlerBuilderExtensions
+### Community 285 - "Webhooks.API.Services"
+Cohesion: 0.14
+Nodes (10): Webhooks.API.Services, IDictionary, AuthorizeRequest, IHttpClientFactory, ILogger, Task, GrantUrlTesterService, Task (+2 more)
 
 ### Community 286 - "eShop.ClientApp"
 Cohesion: 0.09
 Nodes (13): communitytoolkit_mvvm_componentmodel, communitytoolkit_mvvm_input, ClientApp.UnitTests, eShop.ClientApp, AppAction, AppActions, IDictionary, DictionaryExtensions (+5 more)
 
 ### Community 287 - "AutoAuthorizeMiddleware"
-Cohesion: 0.20
-Nodes (7): eShop.Ordering.FunctionalTests, HttpContext, RequestDelegate, Task, AutoAuthorizeMiddleware, Action, IApplicationBuilder
+Cohesion: 0.25
+Nodes (6): HttpContext, RequestDelegate, Task, AutoAuthorizeMiddleware, Action, IApplicationBuilder
 
 ### Community 288 - ".Handle"
 Cohesion: 0.22
-Nodes (9): INotificationHandler, OrderShippedDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task (+1 more)
+Nodes (8): OrderShippedDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderShippedDomainEventHandler
 
 ### Community 289 - "IdentityService"
 Cohesion: 0.38
@@ -1731,17 +1761,17 @@ Nodes (5): OidcClient, HttpMessageHandler, IBrowser, Task, IdentityService
 Cohesion: 0.47
 Nodes (3): EventCallback, IDisposable, BasketStateChangedSubscription
 
-### Community 291 - "RelayCommand"
-Cohesion: 0.31
-Nodes (3): CatalogItem, RelayCommand, Task
+### Community 291 - ".AddApplicationServices"
+Cohesion: 0.25
+Nodes (7): AuthenticationStateProvider, HooksRepository, IHostApplicationBuilder, ServerAuthenticationStateProvider, WebhookClientOptions, WebhooksClient, Extensions
 
 ### Community 292 - ".LoadingPage"
 Cohesion: 0.20
 Nodes (6): RedirectViewModel, RedirectUrl, AuthorizationRequest, Controller, IActionResult, Extensions
 
 ### Community 293 - "CatalogService"
-Cohesion: 0.14
-Nodes (14): AddToCartAsync, OnInitializedAsync, IProductImageUrlProvider, NavigationManager, PageTitle, SectionContent, System.Net, UpdateNumInCartAsync (+6 more)
+Cohesion: 0.13
+Nodes (17): CatalogItem, CatalogItem, HttpClient, IEnumerable, List, Task, CatalogService, List (+9 more)
 
 ### Community 294 - "SetPaidOrderStatusCommand"
 Cohesion: 0.24
@@ -1779,21 +1809,17 @@ Nodes (5): eShop.WebApp.Components.Chatbot, FooterBar, HeaderBar, LayoutComponen
 Cohesion: 0.20
 Nodes (10): Agent workflow, Commands, eShop test stack, How the stack is produced, Included scenarios, Ports and URLs (HTTP only), Quick start, Readiness (+2 more)
 
-### Community 303 - "system_text_json_serialization"
-Cohesion: 0.10
-Nodes (13): eShop.ClientApp.Models.Token, eShop.ClientApp.Models.Orders, CardType, Id, Name, OrderStatus, AwaitingValidation, Cancelled (+5 more)
+### Community 303 - "IOrderService"
+Cohesion: 0.33
+Nodes (4): IEnumerable, Order, Task, IOrderService
 
-### Community 304 - "ProductCountChangedMessage"
+### Community 304 - "eShop.ServiceDefaults"
+Cohesion: 0.08
+Nodes (19): asp_versioning_apiexplorer, eShop.WebApp.Chatbot, eShop.WebhookClient.Endpoints, eShop.ServiceDefaults, eShop.WebhookClient.Extensions, eShop.WebApp.Components, eshop_webhookclient_components, microsoft_aspnetcore_authorization (+11 more)
+
+### Community 305 - ".CreateHost"
 Cohesion: 0.25
-Nodes (5): communitytoolkit_mvvm_messaging_messages, ItemsViewScrolledEventArgs, ProductCountChangedMessage, CatalogView, ValueChangedMessage
-
-### Community 305 - "deploy"
-Cohesion: 0.22
-Nodes (9): env, environment, name, runs-on, DOTNET_CLI_TELEMETRY_OPTOUT, DOTNET_NOLOGO, DOTNET_SKIP_FIRST_TIME_EXPERIENCE, name (+1 more)
-
-### Community 306 - "IRequestHandler"
-Cohesion: 0.22
-Nodes (6): IRequestHandler, CancellationToken, IOrderRepository, Task, ShipOrderCommandHandler, ShipOrderIdentifiedCommandHandler
+Nodes (7): IStartupFilter, IHost, IHostBuilder, AutoAuthorizeStartupFilter, Action, IApplicationBuilder, TestAuthenticationStartupFilter
 
 ### Community 307 - "setup.sh"
 Cohesion: 0.60
@@ -1815,9 +1841,9 @@ Nodes (4): CartMenu, ComponentTypeMetadata, SectionOutlet, UserMenu
 Cohesion: 0.40
 Nodes (4): FooterBar, HeaderBar, LayoutComponentBase, ShowChatbotButton
 
-### Community 312 - "OrderServices"
-Cohesion: 0.22
-Nodes (8): IIdentityService, ILogger, IMediator, IOrderQueries, OrderServices, Logger, Mediator, Queries
+### Community 312 - "HybridApp/Components/Routes.razor"
+Cohesion: 0.29
+Nodes (6): LayoutView, FocusOnNavigate, Found, PageTitle, Router, RouteView
 
 ### Community 313 - ".SetExceptionTags"
 Cohesion: 0.40
@@ -1840,20 +1866,20 @@ Cohesion: 0.40
 Nodes (4): FocusOnNavigate, Found, Router, RouteView
 
 ### Community 318 - "FixOrderitemseqSchema"
-Cohesion: 0.25
+Cohesion: 0.29
 Nodes (5): MigrationBuilder, DateTime, Guid, ModelBuilder, FixOrderitemseqSchema
 
 ### Community 319 - "UseEnumForOrderStatus"
-Cohesion: 0.25
+Cohesion: 0.29
 Nodes (5): MigrationBuilder, DateTime, Guid, ModelBuilder, UseEnumForOrderStatus
 
 ### Community 320 - "TabParameter.cs"
 Cohesion: 0.50
 Nodes (3): eShop.ClientApp.Models.Navigation, TabParameter, TabIndex
 
-### Community 321 - "WebhooksApiTests"
-Cohesion: 0.33
-Nodes (6): Fact, HttpClient, List, Task, WebhookSubscription, WebhooksApiTests
+### Community 321 - "ICatalogService"
+Cohesion: 0.47
+Nodes (4): CatalogItem, IEnumerable, Task, ICatalogService
 
 ### Community 322 - "Spectral OpenAPI Lint Ruleset"
 Cohesion: 0.50
@@ -1867,9 +1893,13 @@ Nodes (4): Product photo: black ski goggles with iridescent lens, Product photo:
 Cohesion: 0.50
 Nodes (4): Product photo: black rugged outdoor sports watch, Product photo: orange camo digital sports watch, Product photo: navy adventure sports watch, Fake product image 01: black rugged sports watch
 
-### Community 325 - ".AddMigration"
-Cohesion: 0.23
-Nodes (11): ActivitySource, CancellationToken, Func, IConfiguration, ILogger, IServiceCollection, IServiceProvider, Task (+3 more)
+### Community 325 - "ILocationService"
+Cohesion: 0.25
+Nodes (6): Location, Task, ILocationService, Location, Task, LocationService
+
+### Community 326 - ".AddDefaultAuthentication"
+Cohesion: 0.50
+Nodes (3): IHostApplicationBuilder, IServiceCollection, AuthenticationExtensions
 
 ### Community 327 - "ResilientTransaction"
 Cohesion: 0.29
@@ -1879,25 +1909,25 @@ Nodes (5): eShop.IntegrationEventLogEF.Utilities, DbContext, Func, Task, Resilie
 Cohesion: 0.50
 Nodes (4): Banner 1: ASP.NET Core on Windows, Linux, OSX, Banner 2: Visual Studio with HTML5/CSS3/JS logos, Banner 3: Packages from NuGet, npm, Bower, Gulp, Banner 4: Microsoft Azure service icons
 
-### Community 329 - "EventBusBuilderExtensions.cs"
-Cohesion: 0.25
-Nodes (4): eShop.EventBus.Extensions, Type, GenericTypeExtensions, system_diagnostics_codeanalysis
+### Community 329 - ".InvokeAsync"
+Cohesion: 0.29
+Nodes (6): BrowserOptions, BrowserResult, IBrowser, CancellationToken, Task, MauiAuthenticationBrowser
 
 ### Community 330 - ".AddApplicationServices"
-Cohesion: 0.25
-Nodes (6): GracePeriodManagerService, GracePeriodOrdersRepository, BackgroundTaskOptions, IGracePeriodOrdersRepository, IHostApplicationBuilder, Extensions
+Cohesion: 0.22
+Nodes (7): eShop.OrderProcessor.Extensions, GracePeriodManagerService, GracePeriodOrdersRepository, BackgroundTaskOptions, IGracePeriodOrdersRepository, IHostApplicationBuilder, Extensions
 
 ### Community 332 - "Error.razor"
 Cohesion: 0.50
 Nodes (3): OnInitialized, PageTitle, System.Diagnostics
 
-### Community 333 - "MockNavigationService"
-Cohesion: 0.32
-Nodes (4): INavigationService, MockNavigationService, IDictionary, Task
+### Community 333 - "eShop.ClientApp.Services.Identity"
+Cohesion: 0.13
+Nodes (9): ClientApp.UnitTests.ViewModels, ClientApp.UnitTests.Mocks, eShop.ClientApp.Services.Identity, eShop.ClientApp.Models.User, IDialogService, LogoutParameter, Logout, MockDialogService (+1 more)
 
 ### Community 334 - "Ordering.API/GlobalUsings.cs"
-Cohesion: 0.10
-Nodes (19): eShop.Ordering.Domain.AggregatesModel.OrderAggregate, eShop.Ordering.Domain.SeedWork, eShop.Ordering.Domain.Exceptions, eShop.Ordering.API.Application.Models, eShop.Ordering.Domain.AggregatesModel.BuyerAggregate, eShop.Ordering.Infrastructure.Idempotency, eShop.Ordering.API.Infrastructure, eShop.Ordering.API.Extensions (+11 more)
+Cohesion: 0.06
+Nodes (28): eShop.Ordering.API.Application.IntegrationEvents, eShop.Ordering.Domain.AggregatesModel.OrderAggregate, eShop.Ordering.API.Application.Commands, eShop.Ordering.Domain.SeedWork, eShop.Ordering.Domain.Exceptions, eShop.Ordering.API.Application.Models, eShop.Ordering.Domain.AggregatesModel.BuyerAggregate, eShop.Ordering.Domain.Events (+20 more)
 
 ### Community 337 - "Product photo: navy 'APEX' climbing harness"
 Cohesion: 0.67
@@ -1927,13 +1957,13 @@ Nodes (3): Product photo: navy hiking backpack with buckle straps, Product photo
 Cohesion: 0.67
 Nodes (3): Product photo: black hooded puffer jacket, Product photo: grey softshell hooded jacket, Fake product image 04: red puffer jacket
 
-### Community 344 - "CatalogRoot"
-Cohesion: 0.25
-Nodes (7): CatalogItem, List, CatalogRoot, Count, Data, PageIndex, PageSize
+### Community 344 - "system_text_json_serialization"
+Cohesion: 0.09
+Nodes (13): eShop.ClientApp.Models.Token, eShop.Catalog.API.Model, CatalogType, Id, Type, OrderStatus, AwaitingValidation, Cancelled (+5 more)
 
-### Community 345 - "IDialogService"
-Cohesion: 0.29
-Nodes (4): Task, DialogService, Task, IDialogService
+### Community 345 - ".SendAsync"
+Cohesion: 0.17
+Nodes (10): DelegatingHandler, HttpClientAuthorizationDelegatingHandler, IHttpClientBuilder, CancellationToken, HttpRequestMessage, HttpResponseMessage, IHttpContextAccessor, Task (+2 more)
 
 ### Community 346 - "HybridApp Blazor WebView Host Page (index.html)"
 Cohesion: 0.67
@@ -1951,17 +1981,21 @@ Nodes (3): Identity.API Footer Logo (Northern Mountains mountain/tree emblem wit
 Cohesion: 0.67
 Nodes (3): Main Banner Photo (person in blue .NET-style T-shirt), Main Banner Text ('T-SHIRTS ... THIS WEEKEND'), Main Banner Text SVG (embedded PNG of banner text)
 
-### Community 350 - "InitialMigration"
-Cohesion: 0.29
-Nodes (5): DateTimeOffset, MigrationBuilder, DateTimeOffset, ModelBuilder, InitialMigration
+### Community 350 - "Controller"
+Cohesion: 0.18
+Nodes (8): Controller, IActionResult, Task, DiagnosticsController, IEnumerable, DiagnosticsViewModel, AuthenticateResult, Clients
 
-### Community 361 - "Initial"
+### Community 354 - "AddWebhook.razor"
 Cohesion: 0.29
-Nodes (5): DateTime, MigrationBuilder, DateTime, ModelBuilder, Initial
+Nodes (6): OnInitialized, IOptions, NavigationManager, WebhookClientOptions, WebhooksClient, RegisterAsync
 
-### Community 404 - "Main.cs"
+### Community 361 - "Catalog flows"
+Cohesion: 0.22
+Nodes (9): Bugs found, Catalog admin (write) flows, Catalog flows, Catalog routes through YARP, Create an item, Delete an item, Mobile BFF catalog flows, Specs and scenarios (+1 more)
+
+### Community 404 - ".GetConfirmedGracePeriodOrdersAsync"
 Cohesion: 0.29
-Nodes (4): microsoft_maui, microsoft_maui_hosting, MauiApp, Program
+Nodes (8): NpgsqlDataSource, CancellationToken, ILogger, List, TimeSpan, ValueTask, GracePeriodOrdersRepository, IGracePeriodOrdersRepository
 
 ### Community 419 - "es-metadata.yml"
 Cohesion: 0.22
@@ -1971,29 +2005,29 @@ Nodes (8): accountableOwners, service, org, path, isProduction, routing, default
 Cohesion: 0.33
 Nodes (5): ILogger, IMediator, OrderPaymentFailedIntegrationEvent, Task, OrderPaymentFailedIntegrationEventHandler
 
-### Community 444 - "OrderPaymentSucceededIntegrationEventHandler"
-Cohesion: 0.33
-Nodes (5): ILogger, IMediator, OrderPaymentSucceededIntegrationEvent, Task, OrderPaymentSucceededIntegrationEventHandler
+### Community 444 - "Products"
+Cohesion: 0.12
+Nodes (13): Products, SelectedProduct, ViewCatalogItemCommand, communitytoolkit_mvvm_messaging_messages, ItemsViewScrolledEventArgs, ProductCountChangedMessage, SelectedProduct, ViewCatalogItemCommand (+5 more)
 
-### Community 492 - "OrderStockConfirmedIntegrationEventHandler"
-Cohesion: 0.33
-Nodes (5): ILogger, IMediator, OrderStockConfirmedIntegrationEvent, Task, OrderStockConfirmedIntegrationEventHandler
+### Community 492 - "MockNavigationService"
+Cohesion: 0.32
+Nodes (4): INavigationService, MockNavigationService, IDictionary, Task
 
-### Community 493 - ".ToOrderItemDTO"
-Cohesion: 0.38
-Nodes (4): BasketItem, IEnumerable, OrderItemDTO, BasketItemExtensions
+### Community 493 - ".Handle"
+Cohesion: 0.22
+Nodes (8): OrderCancelledDomainEvent, CancellationToken, IBuyerRepository, ILogger, IOrderingIntegrationEventService, IOrderRepository, Task, OrderCancelledDomainEventHandler
 
 ### Community 495 - "OrdersRefreshOnStatusChange.razor"
 Cohesion: 0.29
 Nodes (6): Dispose, HandleOrderStatusChanged, OnAfterRenderAsync, AuthenticationStateProvider, NavigationManager, OrderStatusNotificationService
 
-### Community 496 - "CatalogItemViewModelTests"
-Cohesion: 0.33
-Nodes (5): CatalogItemViewModelTests, IAppEnvironmentService, INavigationService, Task, TestMethod
+### Community 496 - "HybridApp/Components/Pages/Catalog/Catalog.razor"
+Cohesion: 0.25
+Nodes (7): NavLink, GetVisiblePageIndexes, OnParametersSetAsync, CatalogListItem, NavigationManager, PageTitle, SectionContent
 
-### Community 497 - "eShop.Basket.API.Extensions"
-Cohesion: 0.40
-Nodes (3): eShop.Basket.API.Extensions, ServerCallContext, ServerCallContextIdentityExtensions
+### Community 497 - "Basket.UnitTests/BasketServiceTests.cs"
+Cohesion: 0.13
+Nodes (10): eShop.Basket.API.Repositories, eShop.Basket.UnitTests.Helpers, eShop.Basket.API.Grpc, eShop.Basket.UnitTests, eShop.Basket.API.Model, eshop_basket_api_grpc_basket_basketclient, eshop_basket_api_grpc_basketitem, grpc_core (+2 more)
 
 ### Community 498 - "ClientApp.UnitTests"
 Cohesion: 0.29
@@ -2003,21 +2037,21 @@ Nodes (7): src_clientapp_clientapp, net10.0, Microsoft.Maui.Controls (9.0.40), M
 Cohesion: 0.40
 Nodes (4): eShop.ClientApp.Triggers, VisualElement, BeginAnimation, TriggerAction
 
-### Community 500 - "with"
-Cohesion: 0.33
-Nodes (6): with, client-id, dotnet-quality, dotnet-version, subscription-id, tenant-id
+### Community 500 - "CatalogRoot"
+Cohesion: 0.25
+Nodes (7): CatalogItem, List, CatalogRoot, Count, Data, PageIndex, PageSize
 
-### Community 501 - "C# AppHost Authoring Reference"
-Cohesion: 0.33
-Nodes (6): C# AppHost Authoring Reference, Compute Environment Binding (WithComputeEnvironment), File-based AppHost (apphost.cs with #:sdk/#:package), Compose Image-to-Integration Mapping, Scan & Propose Reference, Aspire Integration Catalog
+### Community 501 - "Initial"
+Cohesion: 0.29
+Nodes (5): DateTime, MigrationBuilder, DateTime, ModelBuilder, Initial
 
-### Community 502 - "MainActivity"
+### Community 502 - ".CreateHost"
 Cohesion: 0.33
-Nodes (4): Intent, MauiAppCompatActivity, MainActivity, MainActivity
+Nodes (5): IGrantUrlTesterService, IHost, IHostBuilder, Task, ConfigurableGrantUrlTester
 
-### Community 503 - "WebNavigatingEventArgsConverter"
-Cohesion: 0.47
-Nodes (4): IValueConverter, CultureInfo, Type, WebNavigatingEventArgsConverter
+### Community 503 - "cart-helpers.ts"
+Cohesion: 0.73
+Nodes (3): addProductToCart(), emptyCart(), removeFirstCartItem()
 
 ### Community 504 - "Orders.razor"
 Cohesion: 0.33
@@ -2027,53 +2061,57 @@ Nodes (5): OrdersRefreshOnStatusChange, OnInitializedAsync, OrderingService, Pag
 Cohesion: 0.40
 Nodes (4): List, Task, StoryBoard, Animations
 
-### Community 506 - "IntegrationEvent"
-Cohesion: 0.33
-Nodes (5): DateTime, Guid, IntegrationEvent, CreationDate, Id
+### Community 506 - "MauiApplication"
+Cohesion: 0.29
+Nodes (5): MauiApplication, MauiApp, MainApplication, MauiApp, MainApplication
 
-### Community 507 - ".DeserializeMessage"
-Cohesion: 0.47
-Nodes (3): IntegrationEvent, Type, UnconditionalSuppressMessage
+### Community 507 - "Main.cs"
+Cohesion: 0.29
+Nodes (4): microsoft_maui, microsoft_maui_hosting, MauiApp, Program
 
 ### Community 508 - ".DispatchDomainEventsAsync"
 Cohesion: 0.33
 Nodes (4): Entity, IMediator, Task, MediatorExtension
 
-### Community 509 - "WebhookResponse"
-Cohesion: 0.33
-Nodes (5): DateTime, WebhookResponse, Date, DestUrl, Token
+### Community 509 - "ShipOrderCommand"
+Cohesion: 0.24
+Nodes (6): ShipOrderCommand, CancellationToken, IOrderRepository, Task, ShipOrderCommandHandler, ShipOrderIdentifiedCommandHandler
 
 ### Community 510 - "graphify knowledge graph (graphify-out/)"
 Cohesion: 0.70
 Nodes (5): AGENTS.md graphify rules, CLAUDE.md graphify rules, GEMINI.md graphify rules, Copilot instructions graphify rules, graphify knowledge graph (graphify-out/)
 
-### Community 511 - "BackgroundTaskOptions"
-Cohesion: 0.40
-Nodes (4): eShop.OrderProcessor, BackgroundTaskOptions, CheckUpdateTime, GracePeriodTime
+### Community 511 - "order-lifecycle.spec.ts"
+Cohesion: 0.47
+Nodes (5): expectOrder(), orderRow(), orders, parseDisplayedDate(), pipelineOrder
 
-### Community 512 - "deploy"
-Cohesion: 0.40
-Nodes (5): environment, name, runs-on, name, deploy
+### Community 512 - "GracePeriodConfirmedIntegrationEventHandler"
+Cohesion: 0.33
+Nodes (5): GracePeriodConfirmedIntegrationEvent, ILogger, IMediator, Task, GracePeriodConfirmedIntegrationEventHandler
 
-### Community 513 - "env"
-Cohesion: 0.40
-Nodes (5): Azure__Location, Azure__ResourceGroup, Azure__SubscriptionId, Parameters__admin_password, env
+### Community 513 - "OrderStockRejectedIntegrationEventHandler"
+Cohesion: 0.33
+Nodes (5): ILogger, IMediator, OrderStockRejectedIntegrationEvent, Task, OrderStockRejectedIntegrationEventHandler
 
-### Community 515 - "CatalogType"
-Cohesion: 0.40
-Nodes (3): CatalogType, Id, Type
+### Community 514 - "ProcessConsentResult"
+Cohesion: 0.22
+Nodes (8): ProcessConsentResult, Client, HasValidationError, IsRedirect, RedirectUri, ShowView, ValidationError, ViewModel
 
-### Community 516 - ".ApplyQueryAttributes"
-Cohesion: 0.40
-Nodes (3): IDictionary, CatalogItem, IDictionary
+### Community 515 - ".GetItemPictureById"
+Cohesion: 0.33
+Nodes (4): FileStreamHttpResult, IFileProvider, ProducesResponseType&lt;byte[]&gt;, CatalogContext
 
-### Community 517 - "WebhookClientOptions"
+### Community 516 - ".GetCatalogFacets"
 Cohesion: 0.40
-Nodes (4): WebhookClientOptions, SelfUrl, Token, ValidateToken
+Nodes (4): CatalogFacets, IReadOnlyList, CatalogFacetCount, CatalogFacets
+
+### Community 517 - "eShop.WebhookClient.Services"
+Cohesion: 0.20
+Nodes (6): eShop.WebhookClient.Services, WebhookClientOptions, SelfUrl, Token, ValidateToken, system_collections_concurrent
 
 ### Community 518 - "WebHookReceived"
-Cohesion: 0.40
-Nodes (5): DateTime, WebHookReceived, Data, Token, When
+Cohesion: 0.29
+Nodes (6): IEnumerable, DateTime, WebHookReceived, Data, Token, When
 
 ### Community 519 - "WebhookSubscriptionRequest"
 Cohesion: 0.40
@@ -2083,25 +2121,25 @@ Nodes (5): WebhookSubscriptionRequest, Event, GrantUrl, Token, Url
 Cohesion: 0.40
 Nodes (4): WebhookType, CatalogItemPriceChange, OrderPaid, OrderShipped
 
-### Community 521 - ".DisabledCatalogAIReturnsNullForEveryEmbeddingOperation"
-Cohesion: 0.40
-Nodes (4): IWebHostEnvironment, Task, TestMethod, CatalogAITests
+### Community 521 - "WebApp/Components/Layout/UserMenu.razor"
+Cohesion: 0.22
+Nodes (8): LogOutAsync, AntiforgeryToken, Authorized, AuthorizeView, LogOutService, Microsoft.AspNetCore.Components.Authorization, NavigationManager, NotAuthorized
 
 ### Community 522 - "NotFound.razor"
 Cohesion: 0.50
 Nodes (3): route:/not-found, PageTitle, SectionContent
 
-### Community 523 - "EventBusOptions"
-Cohesion: 0.50
-Nodes (3): EventBusOptions, RetryCount, SubscriptionClientName
+### Community 523 - ".ToOrderItemDTO"
+Cohesion: 0.38
+Nodes (4): BasketItem, IEnumerable, OrderItemDTO, BasketItemExtensions
 
-### Community 524 - "RabbitMQTelemetry"
-Cohesion: 0.50
-Nodes (4): TextMapPropagator, RabbitMQTelemetry, ActivitySource, Propagator
+### Community 524 - "WebApp flows"
+Cohesion: 0.29
+Nodes (7): Browse the catalog, Filter by brand and type, Paginate, Product image proxy, Sort the current page, View a product, WebApp flows
 
-### Community 525 - "PaymentMethodEntityTypeConfiguration"
-Cohesion: 0.67
-Nodes (3): EntityTypeBuilder, PaymentMethod, PaymentMethodEntityTypeConfiguration
+### Community 525 - "EventBusBuilderExtensions.cs"
+Cohesion: 0.33
+Nodes (3): eShop.EventBus.Extensions, Type, GenericTypeExtensions
 
 ### Community 526 - "User/LogIn.razor"
 Cohesion: 0.50
@@ -2111,6 +2149,50 @@ Nodes (3): OnInitializedAsync, NavigationManager, Url
 Cohesion: 0.50
 Nodes (3): OnInitialized, Microsoft.AspNetCore.Authorization, NavigationManager
 
+### Community 531 - "CampaignItem"
+Cohesion: 0.13
+Nodes (15): DateTime, CampaignItem, Description, DetailsUri, From, Id, Name, PictureUri (+7 more)
+
+### Community 532 - "eShop.Basket.API.Extensions"
+Cohesion: 0.40
+Nodes (3): eShop.Basket.API.Extensions, ServerCallContext, ServerCallContextIdentityExtensions
+
+### Community 534 - "LoginPanel"
+Cohesion: 0.40
+Nodes (5): IsMock, IsMock, LoginPanel, InverseBoolConverter, Grid
+
+### Community 535 - "CardTypeEntityTypeConfiguration"
+Cohesion: 0.50
+Nodes (3): CardType, EntityTypeBuilder, CardTypeEntityTypeConfiguration
+
+### Community 536 - "MainActivity"
+Cohesion: 0.33
+Nodes (4): Intent, MauiAppCompatActivity, MainActivity, MainActivity
+
+### Community 537 - "ObservableCollectionEx.cs"
+Cohesion: 0.33
+Nodes (4): PaginationRequest, system_collections_objectmodel, system_collections_specialized, system_componentmodel
+
+### Community 539 - "BackgroundTaskOptions"
+Cohesion: 0.40
+Nodes (4): eShop.OrderProcessor, BackgroundTaskOptions, CheckUpdateTime, GracePeriodTime
+
+### Community 545 - ".OnModelCreating"
+Cohesion: 0.40
+Nodes (4): Buyer, EntityTypeBuilder, BuyerEntityTypeConfiguration, ModelBuilder
+
+### Community 546 - "HttpRequestExceptionEx"
+Cohesion: 0.40
+Nodes (4): HttpRequestException, HttpStatusCode, HttpRequestExceptionEx, HttpCode
+
+### Community 547 - "PaymentMethodEntityTypeConfiguration"
+Cohesion: 0.50
+Nodes (3): EntityTypeBuilder, PaymentMethod, PaymentMethodEntityTypeConfiguration
+
+### Community 548 - "ClientRequestEntityTypeConfiguration"
+Cohesion: 0.67
+Nodes (3): ClientRequest, EntityTypeBuilder, ClientRequestEntityTypeConfiguration
+
 ## Ambiguous Edges - Review These
 - `Identity.API Icon (jpg)` → `Identity.API Icon (OpenID-style logo)`  [AMBIGUOUS]
   src/Identity.API/wwwroot/icon.jpg · relation: semantically_similar_to
@@ -2118,9 +2200,9 @@ Nodes (3): OnInitialized, Microsoft.AspNetCore.Authorization, NavigationManager
   .github/dependabot.yml · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **1825 isolated node(s):** `orders`, `pipelineOrder`, `carolLines`, `teststack`, `name` (+1820 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3132 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **122 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1894 isolated node(s):** `BASKET_GRPC_URL`, `HttpResult`, `pinnedLookup`, `GrpcResult`, `BACKPACK` (+1889 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3232 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **124 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
@@ -2129,13 +2211,13 @@ _Questions this graph is uniquely positioned to answer:_
   _Edge tagged AMBIGUOUS (relation: semantically_similar_to) - confidence is low._
 - **What is the exact relationship between `Dependabot config (NuGet + npm groups)` and `Aspire CLI`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `OpenTelemetry Setup for Non-.NET Services` connect `Aspireify Skill` to `eShop.ServiceDefaults`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
-- **Why does `Aspireify Skill` connect `Aspireify Skill` to `aspire-deployment skill`, `C# AppHost Authoring Reference`, `AppHost Wiring and API Lookup Reference`, `aspire router skill`, `Catalog API`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
-- **Why does `System.ComponentModel.DataAnnotations` connect `System.ComponentModel.DataAnnotations` to `ClientRequest`, `IntegrationEventLogEntry`, `ClientApp/MauiProgram.cs`, `Identity.API/GlobalUsings.cs`, `Buyer`, `WebApp/Components/_Imports.razor`, `CatalogApiTests`, `PaymentMethod`, `Webhooks.API/GlobalUsings.cs`, `system_text_json`, `Checkout.razor`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
+- **Why does `OpenTelemetry Setup for Non-.NET Services` connect `Aspireify Skill` to `Identity.API/GlobalUsings.cs`?**
+  _High betweenness centrality (0.058) - this node is a cross-community bridge._
+- **Why does `Aspireify Skill` connect `Aspireify Skill` to `Catalog API`, `aspire-deployment skill`, `aspire router skill`?**
+  _High betweenness centrality (0.058) - this node is a cross-community bridge._
+- **Why does `eShop.Ordering.API.Application.Commands` connect `Ordering.API/GlobalUsings.cs` to `IdentifiedCommandHandler`, `IRequest`, `SetPaidOrderStatusCommand`, `SetStockConfirmedOrderStatusCommand`, `SetStockRejectedOrderStatusCommand`, `OrderDraftDTO`, `system_text_json`, `ShipOrderCommand`?**
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
 - **Are the 26 inferred relationships involving `CatalogViewModel` (e.g. with `ApplyFilterCommand` and `BadgeCount`) actually correct?**
   _`CatalogViewModel` has 26 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `orders`, `pipelineOrder`, `carolLines` to the rest of the system?**
-  _1825 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `BASKET_GRPC_URL`, `HttpResult`, `pinnedLookup` to the rest of the system?**
+  _1894 weakly-connected nodes found - possible documentation gaps or missing edges._
