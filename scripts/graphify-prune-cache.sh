@@ -10,7 +10,8 @@
 #   * no doc on any remote branch or open pull request hashes to it, and
 #   * it was committed more than --grace-days ago (default 14), which protects
 #     local branches that have not been pushed yet.
-# Run weekly by .github/workflows/graphify-cache-prune.yml, which opens a PR.
+# Run weekly by .github/workflows/graphify-cache-prune.yml, which opens a PR. To commit a
+# local prune, set GRAPHIFY_ALLOW_CACHE_PRUNE=1 (the pre-commit hook drops cache deletions).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 

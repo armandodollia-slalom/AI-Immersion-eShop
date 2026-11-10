@@ -142,7 +142,7 @@ If `graphify` isn't found after a `pip install --user`, add `$(python3 -m site -
 ### What this does
 
 - `graphify install --platform copilot` copies the graphify skill to `~/.copilot/skills/graphify` (Windows: `%USERPROFILE%\.copilot\skills\graphify`), so `/graphify` works in Copilot.
-- `core.hooksPath .githooks` enables post-commit, post-merge, post-checkout and post-rewrite hooks that run `scripts/graphify-build.sh` in the background to keep your local graph fresh. Nothing is staged or committed, so the graph never causes merge conflicts. The hooks skip quietly if `graphify` isn't on `PATH`.
+- `core.hooksPath .githooks` enables post-commit, post-merge, post-checkout and post-rewrite hooks that run `scripts/graphify-build.sh` in the background to keep your local graph fresh. Nothing is staged or committed, so the graph never causes merge conflicts. The hooks skip quietly if `graphify` isn't on `PATH`. A pre-commit hook also keeps graphify's pruning of `graphify-out/cache/semantic/` out of commits, since other branches still use those entries.
 - Build the graph once after cloning with `scripts/graphify-build.sh` (Windows: `bash scripts/graphify-build.sh` from Git Bash).
 
 **Restart T3 Code** (and any open terminals) after changing `PATH` so the Copilot agent inherits it.

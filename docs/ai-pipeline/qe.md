@@ -8,7 +8,7 @@ The stage CLI is `scripts/qe/qe.mjs`; settings are in `scripts/qe/config.json`.
 
 ```mermaid
 flowchart LR
-  S[Story added or changed<br/>product-research/stories] -->|post-commit / post-merge<br/>background| P[qe-plan agent<br/>writes or updates the plan]
+  S[qe plan KEY<br/>or implement run] --> P[qe-plan agent<br/>writes or updates the plan]
   P --> C{Structural<br/>precheck}
   C -->|fails| P
   C -->|passes| V[qe-plan-verifier<br/>fresh process, read-only]
@@ -49,12 +49,12 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | `story-start` | reports the story's test plan state |
 | `session-start` | test plan and automation state of the active story, open product bugs, stale plans |
 | `stop` | after review approval: starts automation in the background |
-| `post-commit`, `post-merge` | plan loop in the background for stories added or changed |
-| `pre-push` | `qe check`: plans and tests for touched stories are verified and current |
+| `post-commit`, `post-merge` | nothing by default; with `git config qe.autoPlan true`, the plan loop in the background for stories added or changed |
+| `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes) |
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
 | weekly | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
 
-Opt out of automatic planning on commit with `git config qe.autoPlan false`; opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
+Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself. Opt in to automatic planning on commit with `git config qe.autoPlan true`; opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
 
 ## Verifier loops
 
@@ -66,7 +66,7 @@ Opt out of automatic planning on commit with `git config qe.autoPlan false`; opt
 
 ## Observability
 
-All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are in `arch-reviews.jsonl`, see [review.md](review.md)), which are committed with the plans and tests they describe (`merge=union` keeps every record across branches):
+All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are in `arch-reviews.jsonl`, see [review.md](review.md); PR checks are in `pr-checks.jsonl`, see [pr-check.md](pr-check.md)), which are committed with the plans and tests they describe (`merge=union` keeps every record across branches):
 
 | File | One record per |
 | --- | --- |
@@ -79,7 +79,7 @@ All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are i
 
 ## Auto-improvement
 
-`node scripts/qe/qe.mjs lessons` reads the metrics and, for each of `qe-plan`, `qe-automation`, `qe-plan-verifier`, `qe-automation-verifier` and `implementer` (whose denials are the blocking findings in `arch-reviews.jsonl`, see [review](review.md#how-the-implementer-improves)):
+`node scripts/qe/qe.mjs lessons` reads the metrics and, for each of `qe-plan`, `qe-automation`, `qe-plan-verifier`, `qe-automation-verifier`, `implementer` (whose denials are the blocking findings in `arch-reviews.jsonl`, see [review](review.md#how-the-implementer-improves), and the findings the PR check upheld in round 1), and the PR check fixer and critics (from `pr-checks.jsonl`, see [pr-check](pr-check.md#how-agents-improve)):
 
 - **adds** a rule when a denial category recurs in 3 or more stories and no rule covers it;
 - **strengthens** a rule when its category keeps recurring in 3 or more stories after the rule was added;

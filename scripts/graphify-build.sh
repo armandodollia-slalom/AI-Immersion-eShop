@@ -38,20 +38,25 @@ fi
 
 semantic="graphify-out/cache/semantic"
 locked=()
-# Undo the lock below and bring back any tracked cache entry graphify deleted.
-# `git show` reads the index without taking index.lock, so this is safe when run
-# from the background git hooks.
-restore_cache() {
+# graphify prunes cache entries whose source content no longer matches the
+# current checkout, including the committed entries other branches still use.
+# Undo the read-only lock below and put back any tracked entry it deleted so the
+# shared cache stays append-only (pruning happens only via --prune).
+# Hooks are skipped so the restore can't trigger another background build.
+restore_shared_cache() {
+  local deleted
   if [ ${#locked[@]} -gt 0 ]; then
     chmod u+w "${locked[@]}" 2>/dev/null
   fi
-  git ls-files -z --deleted -- "$semantic" "$semantic-deep" 2>/dev/null |
-    while IFS= read -r -d '' f; do
-      mkdir -p "$(dirname "$f")" && git show ":$f" >"$f" 2>/dev/null
-    done
+  deleted="$(git ls-files -d -- "$semantic" "$semantic-deep")"
+  [ -n "$deleted" ] || return 0
+  printf '%s
+' "$deleted" | git -c core.hooksPath=/dev/null checkout -q --pathspec-from-file=- 2>/dev/null
 }
+export GRAPHIFY_BUILDING=1
+
 log="$(mktemp)"
-trap 'restore_cache; rm -f "$log"' EXIT
+trap 'rm -f "$log"; restore_shared_cache' EXIT
 
 if [ "${1:-}" = "--extract" ]; then
   if ! command -v claude >/dev/null 2>&1; then

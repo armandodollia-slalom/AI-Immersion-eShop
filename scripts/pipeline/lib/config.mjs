@@ -7,6 +7,7 @@ import { run } from './util.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PIPELINE_DIR = path.resolve(here, '..');
 export const SCRIPTS_DIR = path.resolve(PIPELINE_DIR, '..');
+export const INSTALL_ROOT = path.resolve(SCRIPTS_DIR, '..');
 
 export function repoRoot(cwd = process.cwd()) {
   if (process.env.PIPELINE_ROOT) return path.resolve(process.env.PIPELINE_ROOT);

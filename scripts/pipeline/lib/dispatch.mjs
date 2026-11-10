@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PIPELINE_DIR } from './config.mjs';
+import { INSTALL_ROOT, PIPELINE_DIR } from './config.mjs';
 import { tail } from './util.mjs';
 
 export function loadStages() {
@@ -9,9 +9,11 @@ export function loadStages() {
 }
 
 // Every stage is its own CLI, run as a separate process, so a stage that crashes or hangs cannot take
-// the others (or the agent) down with it.
+// the others (or the agent) down with it. Stage CLIs come from the same checkout as the dispatcher, so
+// a run against another worktree (PIPELINE_ROOT) uses this pipeline even if that branch predates it.
 export function runStage(config, stage, args, { input = '', inherit = false } = {}) {
-  const result = spawnSync(process.execPath, [path.join(config.root, stage.cli), ...args], {
+  const script = [INSTALL_ROOT, config.root].map((r) => path.resolve(r, stage.cli)).find((f) => fs.existsSync(f)) ?? path.resolve(INSTALL_ROOT, stage.cli);
+  const result = spawnSync(process.execPath, [script, ...args], {
     cwd: config.root,
     input,
     encoding: 'utf8',

@@ -5,8 +5,13 @@
     }
   },
   "implement": {
-    "worktreeDir": ".claude/worktrees",
-    "maxRuns": 6,
-    "timeoutSec": 5400
+    "worktreeDir": "../{repo}-worktrees",
+    "branchPrefix": "feat/",
+    "parallel": 1,
+    "implementerTimeoutSec": 5400,
+    "maxImplementerRuns": 8,
+    "maxBugFixCycles": 2,
+    "qeTimeoutSec": 14400,
+    "qePollSec": 5
   }
 }

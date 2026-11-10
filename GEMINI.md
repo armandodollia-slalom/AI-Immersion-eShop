@@ -21,3 +21,7 @@ Every e2e test is recorded on video (`video` in `playwright.config.ts`), and `e2
 3. Embed the resulting `artifacts/e2e-videos/**/*.webm` (absolute path) in your final summary, and describe what it shows in the PR description. Never commit the videos.
 
 Skip this only for backend-only, docs-only or no-behavior-change work, and say so in your summary.
+
+## Story and epic folders
+
+Agents ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
