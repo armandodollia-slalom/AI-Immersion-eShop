@@ -230,6 +230,68 @@ test('workflow 2: the dispatcher runs the review stage first, then automation lo
   assert.deepEqual([metrics.review.rounds, metrics.review.approvals, metrics.review.findingsByCategory.security], [2, 1, 1]);
 });
 
+test('a crashed automation run resumes from its last round, is retried, then escalated, and --force restarts it', async () => {
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // The runner sits on the killed state with its recorded process gone.
+  const crashed = () => waitFor(() => stateOf('DEMO-1').automation.status === 'running' && !alive(stateOf('DEMO-1').automation.pid));
+  const stop = () => {
+    const r = pipeline(['hook', 'stop'], { input: '{}' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout ? JSON.parse(r.stdout) : null;
+  };
+  const pipelineConfig = read('scripts/pipeline/config.json');
+  const config = JSON.parse(pipelineConfig);
+  config.recovery = { maxAttempts: 1, backoffSec: 0, startingGraceSec: 120 };
+  write('scripts/pipeline/config.json', JSON.stringify(config, null, 2));
+  try {
+    agentScript({
+      'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }],
+      // Round 1 leaves two cases untested (precheck fails); the runner dies in round 2.
+      'qe-automation': [{ writeTests: [1], result: { status: 'done' } }, { killRunner: 'automation' }, { writeTests: [1, 2, 3], result: { status: 'done' } }],
+      'qe-automation-verifier': [{ result: { score: 10, gaps: [] } }],
+    });
+    assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
+    assert.equal(pipeline(['done']).status, 0);
+    write('src/Basket/Coupons.cs', '// coupons v3 survives a crash\n');
+    assert.match(stop().systemMessage, /test automation for DEMO-1 started in the background/);
+    await crashed();
+    assert.equal(stop()?.systemMessage.includes('resumed the interrupted test automation run for DEMO-1 at round 2 (attempt 1'), true, 'the Stop hook resumes it');
+    await waitFor(() => !['starting', 'running'].includes(stateOf('DEMO-1').automation.status));
+    const state = stateOf('DEMO-1');
+    assert.equal(state.automation.status, 'verified', read(state.automation.log));
+    assert.deepEqual([state.automation.recoveries, state.automation.progress], [0, null]);
+    assert.equal(calls()['qe-automation'], 3, 'round 1 is not redone');
+    assert.match(prompts().split('=== qe-automation #3')[1], /previous test automation run was interrupted[\s\S]*TC-DEMO-1-02 has no automated test/, 'the resumed round keeps its feedback');
+
+    // A run that keeps crashing is escalated once its attempts are used up, and not restarted by itself.
+    agentScript({ 'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }], 'qe-automation': [{ killRunner: 'automation' }] });
+    write('src/Basket/Coupons.cs', '// coupons v3 crashes the runner\n');
+    assert.match(stop().systemMessage, /started in the background/);
+    await crashed();
+    assert.match(pipeline(['resume', 'DEMO-1']).stdout, /resumed the interrupted test automation run for DEMO-1 at round 1 \(attempt 1/);
+    await crashed();
+    assert.match(qe(['resume']).stdout, /kept crashing and was escalated/);
+    assert.equal(stateOf('DEMO-1').automation.status, 'crashed');
+    assert.match(read('.agent-state/escalations/DEMO-1-automation.md'), /automation run crashed 2 times[\s\S]*resume DEMO-1 --force/);
+    assert.equal(stop(), null, 'a crashed run waits for a person');
+    assert.match(qe(['resume']).stdout, /No interrupted QE runs/);
+
+    agentScript({ 'qe-automation': [{ writeTests: [1, 2, 3], result: { status: 'done' } }], 'qe-automation-verifier': [{ result: { score: 10, gaps: [] } }] });
+    assert.match(pipeline(['resume', 'DEMO-1', '--force']).stdout, /resumed the interrupted test automation run/);
+    await waitFor(() => !['starting', 'running'].includes(stateOf('DEMO-1').automation.status));
+    assert.equal(stateOf('DEMO-1').automation.status, 'verified');
+  } finally {
+    write('scripts/pipeline/config.json', pipelineConfig);
+  }
+});
+
 test('the Architecture Policy Pack gates each review round for code agents and loops until satisfied', async () => {
   const policyFile = path.join(repo, '..', `${path.basename(repo)}-policy.json`);
   const item = (outcome, rule) => ({ finding_id: `${rule}-abc`, rule_id: rule, rule_title: 'Rule title', category: 'security', outcome, file: 'src/Basket/Coupons.cs', line: 1, message: 'violation', fix: 'apply the pattern', patterns: ['PAT-X'], repeat_mistake: outcome === 'BLOCK' });
@@ -319,6 +381,45 @@ test('the lessons run holds a factory retro over the decision log and keeps only
   gitc('branch', '-D', branch);
 });
 
+test('a lessons run killed mid-retro is resumed from the start, then escalated after repeated crashes', async () => {
+  const runFile = path.join(repo, '.agent-state/lessons-run.json');
+  const runOf = () => JSON.parse(fs.readFileSync(runFile, 'utf8'));
+  const lastTs = () => JSON.parse(read('.agent-state/lessons-last.json')).ts;
+  const before = lastTs();
+  agentScript({
+    'qe-lessons': [
+      { writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nfirst attempt\n' }, killPidIn: runFile },
+      { writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nsecond attempt\n' }, result: { status: 'done', proposals: [] } },
+    ],
+  });
+  const killed = qe(['lessons', '--no-push']);
+  assert.equal(killed.signal, 'SIGKILL', killed.stderr);
+  const dead = runOf();
+  assert.deepEqual([dead.status, dead.phase, fs.existsSync(dead.worktree)], ['running', 'agent', true]);
+  assert.equal(lastTs(), before, 'a crashed run must stay due');
+  // Not skipped as "not due": the crashed run is started over, its leftover worktree and branch removed.
+  const rerun = qe(['lessons', '--if-due']);
+  assert.match(rerun.stderr, /interrupted; starting it over/);
+  assert.equal(runOf().status, 'done');
+  assert.equal(calls()['qe-lessons'], 2);
+  assert.equal(fs.existsSync(dead.worktree), false);
+  assert.match(gitc('show', `${dead.branch}:docs/ai-pipeline/qe.md`).stdout, /second attempt/);
+  assert.notEqual(lastTs(), before);
+  gitc('branch', '-D', dead.branch);
+
+  fs.writeFileSync(runFile, JSON.stringify({ ...dead, status: 'running', pid: 999999, boot: null, recoveries: 3, retryAt: null }));
+  assert.match(qe(['resume']).stdout, /lessons and factory retro run kept crashing and was escalated/);
+  assert.equal(runOf().status, 'crashed');
+  assert.ok(fs.existsSync(path.join(repo, '.agent-state/escalations/lessons-qe.md')));
+  assert.match(qe(['resume']).stdout, /No interrupted QE runs/);
+  agentScript({ 'qe-lessons': [{ writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nforced\n' }, result: { status: 'done', proposals: [] } }] });
+  assert.match(qe(['resume', '--force']).stdout, /resumed the interrupted lessons and factory retro run \(attempt 1/);
+  await waitFor(() => runOf().status === 'done');
+  assert.equal(fs.existsSync(path.join(repo, '.agent-state/escalations/lessons-qe.md')), false);
+  assert.equal(calls()['qe-lessons'], 1);
+  gitc('branch', '-D', runOf().branch);
+});
+
 test('pipeline start resets the review rounds even when hooks are disabled', () => {
   const file = `.agent-state/stories/DEMO-1.json`;
   const state = stateOf('DEMO-1');
@@ -327,6 +428,53 @@ test('pipeline start resets the review rounds even when hooks are disabled', () 
   const r = pipeline(['start', 'DEMO-1'], { env: { PIPELINE_DISABLE: '1' } });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual([stateOf('DEMO-1').review.rounds, stateOf('DEMO-1').review.lastVerdict], [0, null]);
+});
+
+test('an interrupted review round runs again on the next stop, escalates after repeated crashes, and resume --force retries it', () => {
+  const review = (args, input = '{}') => {
+    const r = cli('scripts/review/review.mjs', args, { input });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  const stop = () => {
+    const out = review(['hook', 'stop']);
+    return out ? JSON.parse(out) : null;
+  };
+  const implHash = () => spawnSync(process.execPath, ['--input-type=module', '-e', "import { loadConfig } from './scripts/pipeline/lib/config.mjs'; import { implChanges } from './scripts/pipeline/lib/git.mjs'; console.log(implChanges(loadConfig('review')).hash);"], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  // What a review round leaves behind when its process dies mid-run.
+  const crashed = (recoveries = 0) => {
+    const state = stateOf('DEMO-1');
+    Object.assign(state.review, { recoveries, inProgress: { hash: implHash(), round: state.review.rounds + 1, pid: 999999, boot: null, startedAt: new Date().toISOString() } });
+    write('.agent-state/stories/DEMO-1.json', JSON.stringify(state));
+  };
+  const config = JSON.parse(read('scripts/review/config.json'));
+  config.review.policy.enabled = false;
+  write('scripts/review/config.json', JSON.stringify(config, null, 2));
+  agentScript({ 'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }] });
+  assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
+  assert.equal(pipeline(['done']).status, 0);
+
+  write('src/Basket/Coupons.cs', '// coupons v6\n');
+  crashed();
+  assert.match(review(['resume']), /DEMO-1: architecture review round 1 was interrupted; it runs again when the code agent finishes its turn/);
+  assert.match(review(['hook', 'session-start']), /round 1 was interrupted/);
+  assert.match(pipeline(['resume']).stdout, /\[review\]\nDEMO-1: architecture review round 1 was interrupted/);
+  assert.match(stop().systemMessage, /approved DEMO-1 \(round 1\)/);
+  assert.deepEqual([stateOf('DEMO-1').review.inProgress, stateOf('DEMO-1').review.recoveries, calls()['architecture-reviewer']], [null, 0, 1]);
+
+  write('src/Basket/Coupons.cs', '// coupons v7\n');
+  crashed(3);
+  assert.match(stop().systemMessage, /architecture review of DEMO-1 crashed 3 times/);
+  assert.equal(stateOf('DEMO-1').review.lastVerdict, 'CRASHED');
+  assert.match(read('.agent-state/escalations/DEMO-1-review.md'), /review round crashed 3 times/);
+  assert.equal(stop(), null, 'a crashed review waits for a human');
+  assert.equal(calls()['architecture-reviewer'], 1);
+  assert.match(review(['resume', 'DEMO-1']), /crashed 3 times; run `node scripts\/review\/review.mjs resume DEMO-1 --force`/);
+
+  assert.match(review(['resume', 'DEMO-1', '--force']), /review reset/);
+  assert.equal(fs.existsSync(path.join(repo, '.agent-state/escalations/DEMO-1-review.md')), false);
+  assert.match(stop().systemMessage, /approved DEMO-1/);
+  assert.equal(calls()['architecture-reviewer'], 2);
 });
 
 test('adding a story starts no agent unless qe.autoPlan is on, and a story with no plan yet can be pushed', async () => {

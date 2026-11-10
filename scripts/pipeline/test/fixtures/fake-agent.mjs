@@ -72,6 +72,13 @@ for (const [file, content] of Object.entries(step.writeFiles ?? {})) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content);
 }
+// Simulates a crash of the QE runner that called this agent: SIGKILL, so nothing gets cleaned up.
+if (step.killRunner) {
+  const state = JSON.parse(fs.readFileSync(`.agent-state/stories/${field('Story')}.json`, 'utf8'));
+  process.kill(state[step.killRunner].pid, 'SIGKILL');
+}
+// The same for a run that records its pid in a JSON file (a manual PR check's progress.json).
+if (step.killPidIn) process.kill(JSON.parse(fs.readFileSync(step.killPidIn, 'utf8')).pid, 'SIGKILL');
 
 process.stdout.write(`Working...\n${step.result ? `AGENT_RESULT: ${JSON.stringify(step.result)}\n` : ''}`);
 process.exit(step.exit ?? 0);

@@ -36,6 +36,7 @@ flowchart LR
 node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-run   # order, branches, bases
 node scripts/pipeline/pipeline.mjs implement run path/to/stories [--parallel 2] [--pr]
 node scripts/pipeline/pipeline.mjs implement status
+node scripts/pipeline/pipeline.mjs implement resume                    # after a crash: continue the last run
 ```
 
 Each story gets its own worktree and branch, the implementer agent, the architecture review loop and verified tests. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
@@ -136,7 +137,7 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | --- | --- | --- | --- | --- |
 | `pipeline start` | (command) | `story-start` | review, qe, pr-check | none |
 | Any agent tool call | `PreToolUse` (Gemini `BeforeTool`) | `hook pre-tool` | story guard (see below) | none |
-| Agent session start/resume | `SessionStart` | `hook session-start` | review, qe, pr-check | none |
+| Agent session start/resume | `SessionStart` | `hook session-start` | implement, review, qe, pr-check | none |
 | Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then pr-check | LLM, only after `pipeline done` |
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
@@ -210,11 +211,21 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 - **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
 - **State:** `.agent-state/` (not committed) holds the active story, one `stories/<KEY>.json` per story with a section per stage, locks, background logs (`logs/`) and escalations (`escalations/<KEY>-<stage>.md`, which the next agent session is told about).
+- **Recovery:** every stage survives a crash, kill or reboot. Its runs record their pid and the boot they started in, and hold a lock for the whole run, so a pid reused after a reboot is never mistaken for the run. A run that died is found on the next session start or Stop hook, or by `pipeline resume`, and continues from its last saved round. The shared rules are in `scripts/pipeline/lib/recovery.mjs`: each run is retried `recovery.maxAttempts` times (default 3), waiting `recovery.backoffSec` (60 s) and then twice as long each time, then escalated; `pipeline resume <KEY> --force` restarts an escalated run.
+
+  | Stage | What is saved | Picked up by |
+  | --- | --- | --- |
+  | implement | the batch (`batch.json`) and each story's progress | announced at session start; `pipeline resume` restarts the batch in the background ([implement](implement.md#interrupted-runs)) |
+  | review | the round in progress (`review.inProgress`) | the next Stop reruns the round ([review](review.md#interrupted-reviews)) |
+  | qe | plan and automation round and feedback | session start, Stop, `pipeline resume` ([qe](qe.md#crash-recovery)) |
+  | pr-check | Stop-hook waiter in the story state; manual runs in `progress.json` after each critique and fix | session start, Stop, `pipeline resume` ([pr-check](pr-check.md#interrupted-checks)) |
+  | lessons and factory retro (`qe lessons`) | `lessons-run.json`: phase, branch and process | the next `qe lessons`, session start, `pipeline resume` ([qe](qe.md#crash-recovery)) |
+
 - **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files. `decisions.jsonl` is shared: every stage records why its agents decided what they did (`scripts/pipeline/lib/decisions.mjs`, see [qe](qe.md#decision-log)), and the weekly lessons run turns it into lessons and proposed factory changes.
 
 ## Adding a stage
 
-1. Create `scripts/<stage>/<stage>.mjs` using the shared lib (`loadConfig('<stage>')`, `runMain`, `readPayload`). Implement the events it needs: `hook stop` (print nothing, a `systemMessage`, or a block), `hook session-start` (print plain text), `hook story-start <KEY>`, `git-hook <event>` (exit nonzero only on `pre-push` to fail the push), plus `status [story]` and `metrics [--json]`.
+1. Create `scripts/<stage>/<stage>.mjs` using the shared lib (`loadConfig('<stage>')`, `runMain`, `readPayload`). Implement the events it needs: `hook stop` (print nothing, a `systemMessage`, or a block), `hook session-start` (print plain text), `hook story-start <KEY>`, `git-hook <event>` (exit nonzero only on `pre-push` to fail the push), plus `status [story]` and `metrics [--json]`. A stage whose runs can be cut short also implements `resume [story] [--force] [--background]` and lists it in `commands`: it restarts its runs that died, in the background, and returns at once (`pipeline resume` calls every stage in turn). Use `runDied` and `nextAttempt` from `scripts/pipeline/lib/recovery.mjs` so every stage retries and escalates the same way.
 2. Add it to `scripts/pipeline/stages.json` in the right order, listing its `hooks`, `gitHooks` and `commands`. A stage that must wait for another reads that stage's section of the story state (as `qe` reads `review.approvedHash`).
 3. Put its tests in `scripts/<stage>/test/`; `npm run test:pipeline` and CI pick them up. For a PR gate, add a reusable workflow and call it from `ai-pipeline.yml`.
 4. Document it in `docs/ai-pipeline/<stage>.md` and add it to the table above. No agent tool config changes are needed.
@@ -223,7 +234,9 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
+node scripts/pipeline/pipeline.mjs resume [KEY] [--force]       # continue every stage's runs that died (crash, kill, reboot)
 node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement resume [--parallel N] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]

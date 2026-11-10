@@ -48,8 +48,8 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | Event | What the QE stage does |
 | --- | --- |
 | `story-start` | reports the story's test plan state |
-| `session-start` | test plan and automation state of the active story, open product bugs, stale plans |
-| `stop` | after review approval: starts automation in the background |
+| `session-start` | resumes plan and automation runs that died; test plan and automation state of the active story, open product bugs, stale plans |
+| `stop` | after review approval: starts automation in the background, or resumes it if its run died |
 | `post-commit`, `post-merge` | nothing by default; with `git config qe.autoPlan true`, the plan loop in the background for stories added or changed |
 | `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes) |
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
@@ -64,6 +64,18 @@ Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs pl
 - A verdict passes only at the required score (10) with no gaps; a lower score without gaps counts as an unexplained gap. Gaps go back to the producer as its next task.
 - Automation gaps the verifier traces to the case itself (`root_stage: plan`) are sent to the plan loop and attributed to the plan agent in the metrics.
 - After 5 rounds without 10/10, the loop stops and writes `.agent-state/escalations/<KEY>-<stage>.md`, which the next agent session is told about.
+
+## Crash recovery
+
+A loop saves its round and the feedback for that round in the story state before each round. If the machine crashes or the run is killed, the state still says `running` (or `starting`, or `queued` for the rest of a plan batch) but its process is gone. The run is resumed in the background at the saved round, with the saved feedback and a note that the work on disk is from the interrupted run:
+
+- on the next session start (any interrupted story) or Stop hook (the active story);
+- by `node scripts/pipeline/pipeline.mjs resume [KEY]` (or `qe.mjs resume`);
+- while `implement run` waits for the tests of a story.
+
+Automation for code that has changed since the run started is dropped, and the Stop hook starts a fresh run for the new code. Each run is resumed up to `recovery.maxAttempts` times (in `scripts/pipeline/config.json`, default 3), waiting `recovery.backoffSec` (60 s) and then twice as long before each retry, so a run that crashes on start does not loop. After that its status is `crashed` and an escalation is written; fix the cause, then run `pipeline resume KEY --force`.
+
+The lessons and factory retro run (`qe lessons`, see [Auto-improvement](#auto-improvement)) is not tied to a story. It records itself in `.agent-state/lessons-run.json` (pid, boot, phase, branch) and holds `.agent-state/locks/lessons.lock`, and it writes `lessons-last.json` only when it ends, so a run that died is still due. The next `qe lessons` (including `--if-due`) starts it over after removing the dead run's worktree and branch; if it had already committed, it only pushes and opens the PR. Session start, `qe resume` and `pipeline resume` (without a story) restart it in the background with the same backoff, and escalate it after `recovery.maxAttempts` (`.agent-state/escalations/lessons-qe.md`); `resume --force` retries it.
 
 ## Observability
 
@@ -125,10 +137,11 @@ Models are named by alias. `agent.allowedModels` in `scripts/pipeline/config.jso
 node scripts/qe/qe.mjs status [PROMO-3]
 node scripts/qe/qe.mjs plan PROMO-3 | --stale | --all [--force] [--background]
 node scripts/qe/qe.mjs automate PROMO-3 [--skip-tests] [--background]
+node scripts/qe/qe.mjs resume [PROMO-3] [--force]   # resume runs that died (and, without a story, the lessons run); --force also escalated ones
 node scripts/qe/qe.mjs check [--all] [--changed-from origin/main]
 node scripts/qe/qe.mjs metrics [--json] [--since 2026-01-01]
 node scripts/qe/qe.mjs calibrate [--stage plan|automation] [--sample 3]
-node scripts/qe/qe.mjs lessons [--dry-run] [--local]
+node scripts/qe/qe.mjs lessons [--dry-run] [--local] [--if-due] [--resume]
 npm run test:pipeline                          # all pipeline tests (fake agent, no LLM)
 ```
 

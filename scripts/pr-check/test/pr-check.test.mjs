@@ -277,3 +277,59 @@ test('Stop hook: escalates instead of checking again once the run limit is reach
   assert.equal(stateOf().prCheck.status, 'escalated');
   assert.equal(stop(), null);
 });
+test('a manual check killed during a fix resumes from that fix, not from the start', async () => {
+  sh('git', ['add', '-A']);
+  sh('git', ['commit', '-qm', 'DEMO-1: coupons v6']);
+  const progress = () => JSON.parse(fs.readFileSync(path.join(repo, '.agent-state/pr-check/DEMO-1/progress.json'), 'utf8'));
+  const r = prCheck(['--json'], {
+    'pr-check-acceptance': [{ result: { lens: 'acceptance', score: 6, summary: 'AC 2', coverage: [], findings: [expiredCoupon] } }, clean('acceptance')],
+    'pr-check-flow': [clean('flow')],
+    'pr-check-style': [clean('style')],
+    'pr-check-defender': [{ result: { responses: [{ id: 'ACC-1-1', position: 'concede', argument: 'true' }] } }],
+    'pr-check-judge': [upheldRound, { result: { score: 10, lensScores: {}, summary: 'all met', rulings: [] } }],
+    'pr-check-fixer': [
+      { writeImpl: 'src/Basket/Coupons.cs', killPidIn: '.agent-state/pr-check/DEMO-1/progress.json' },
+      { writeImpl: 'src/Basket/Coupons.cs', result: { fixed: ['ACC-1-1'], notFixed: [], summary: 'reject expired' } },
+    ],
+  });
+  assert.equal(r.signal, 'SIGKILL');
+  assert.deepEqual([progress().finishedAt, progress().loop.round, progress().loop.phase], [null, 1, 'fix']);
+  assert.match(hook(['session-start']), /PR check DEMO-1 \(DEMO-1\) was interrupted at round 1/);
+
+  const resumed = spawnSync(process.execPath, ['scripts/pr-check/pr-check.mjs', 'resume'], { cwd: repo, encoding: 'utf8', env: env() });
+  assert.match(resumed.stdout, /DEMO-1: resumed the interrupted PR check from round 1 \(fix\) \(attempt 1\/3/, resumed.stderr);
+  await waitFor(() => progress().finishedAt);
+  assert.equal(progress().error ?? null, null);
+  const result = JSON.parse(fs.readFileSync(path.join(repo, '.agent-state/pr-check/DEMO-1/result.json'), 'utf8'));
+  assert.deepEqual([result.verdict, result.rounds, result.commits.length], ['PASS', 2, 1]);
+  assert.deepEqual([calls()['pr-check-judge'], calls()['pr-check-fixer']], [2, 2], 'round 1 was not reviewed again');
+  assert.match(sh('git', ['log', '-1', '--format=%s']), /DEMO-1: PR check round 1 fixes/);
+  assert.equal(progress().recoveries, 0);
+});
+
+test('a background check whose process died is restarted, escalated after repeated crashes, and retried with --force', async () => {
+  write('.agent-state/active-story', 'DEMO-1\n');
+  write('src/Basket/Coupons.cs', '// coupons v8\n');
+  const hash = approve((h) => ({ status: 'verified', verifiedHash: h }));
+  fs.writeFileSync(scriptFile, JSON.stringify({
+    'pr-check-acceptance': [clean('acceptance')],
+    'pr-check-flow': [clean('flow')],
+    'pr-check-style': [clean('style')],
+    'pr-check-judge': [{ result: { score: 10, lensScores: {}, summary: 'all met', rulings: [] } }],
+  }));
+  const dead = (fields = {}) => setState({ prCheck: { status: 'running', hash, pid: 999999, boot: null, verdict: null, recoveries: 0, retryAt: null, ...fields } });
+  const resume = (...args) => spawnSync(process.execPath, ['scripts/pr-check/pr-check.mjs', 'resume', ...args], { cwd: repo, encoding: 'utf8', env: env() }).stdout;
+
+  dead();
+  assert.match(hook(['session-start']), /restarted the interrupted PR check of DEMO-1 \(attempt 1\/3/);
+  await waitFor(() => stateOf().prCheck.status === 'done');
+  assert.equal(stateOf().prCheck.verdict, 'PASS');
+
+  dead({ recoveries: 3 });
+  assert.match(resume('DEMO-1'), /died 3 times; escalated/);
+  assert.equal(stateOf().prCheck.status, 'crashed');
+  assert.match(fs.readFileSync(path.join(repo, '.agent-state/escalations/DEMO-1-pr-check.md'), 'utf8'), /crashed 3 times/);
+  assert.equal(stop(), null, 'a crashed check waits for a human');
+  assert.match(resume('DEMO-1', '--force'), /restarted the interrupted PR check of DEMO-1 \(attempt 1\/3/);
+  await waitFor(() => stateOf().prCheck.status === 'done');
+});

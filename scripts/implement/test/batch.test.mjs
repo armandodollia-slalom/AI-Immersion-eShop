@@ -27,7 +27,7 @@ test('stories run after their in-batch blockers, stack on the blocker that alrea
     'A-4-orders.md': '# A-4 Orders\n',
     'notes.md': 'not a story',
   });
-  const config = { baseRef: 'origin/main', root: dir, implement: { branchPrefix: 'feat/', worktreeDir: '../{repo}-wt' } };
+  const config = { baseRef: 'origin/main', root: dir, stateDir: '.agent-state', implement: { branchPrefix: 'feat/', worktreeDir: '../{repo}-wt' } };
   const stories = plan(config, [dir]);
   assert.deepEqual(stories.map((s) => s.key), ['A-1', 'A-2', 'A-3', 'A-4', 'A-10']);
   const by = Object.fromEntries(stories.map((s) => [s.key, s]));
@@ -37,6 +37,21 @@ test('stories run after their in-batch blockers, stack on the blocker that alrea
   assert.deepEqual([by['A-10'].base, by['A-10'].merge], ['feat/a-3-ui', ['feat/a-4-orders']], 'out-of-batch blockers are left to the implementer');
   assert.equal(by['A-10'].worktree, path.resolve(dir, `../${path.basename(dir)}-wt/a-10`));
   assert.equal(plan(config, [dir], { force: true })[0].skip, null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a later run resumes the stories an interrupted run left part-way, in their worktree', () => {
+  const dir = storiesDir({ 'B-1-a.md': '# B-1 A\n', 'B-2-b.md': '# B-2 B\n', 'B-3-c.md': '# B-3 C\n' });
+  const config = { baseRef: 'origin/main', root: dir, stateDir: '.agent-state', implement: { branchPrefix: 'feat/', worktreeDir: '../{repo}-wt' } };
+  const runs = path.join(dir, '.agent-state', 'implement');
+  fs.mkdirSync(runs, { recursive: true });
+  const record = (key, patch) => fs.writeFileSync(path.join(runs, `${key}.json`), JSON.stringify({ key, worktree: dir, ...patch }));
+  record('B-1', { status: 'running' });
+  record('B-2', { status: 'finished', outcome: 'qe-crashed' });
+  record('B-3', { status: 'finished', outcome: 'review-failed' });
+  const by = Object.fromEntries(plan(config, [dir]).map((s) => [s.key, s]));
+  assert.deepEqual([by['B-1'].resume, by['B-2'].resume, by['B-3'].resume], [true, true, false]);
+  assert.equal(plan(config, [dir], { force: true })[0].resume, false, '--force starts over');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

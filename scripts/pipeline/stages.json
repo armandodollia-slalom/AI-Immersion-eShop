@@ -4,9 +4,9 @@
       "name": "implement",
       "description": "Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages",
       "cli": "scripts/implement/implement.mjs",
-      "hooks": [],
+      "hooks": ["session-start"],
       "gitHooks": [],
-      "commands": ["status", "metrics"]
+      "commands": ["status", "resume", "metrics"]
     },
     {
       "name": "review",
@@ -14,7 +14,7 @@
       "cli": "scripts/review/review.mjs",
       "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": [],
-      "commands": ["status", "metrics"]
+      "commands": ["status", "resume", "metrics"]
     },
     {
       "name": "qe",
@@ -22,7 +22,7 @@
       "cli": "scripts/qe/qe.mjs",
       "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": ["post-commit", "post-merge", "pre-push"],
-      "commands": ["status", "metrics"]
+      "commands": ["status", "resume", "metrics"]
     },
     {
       "name": "pr-check",
@@ -30,7 +30,7 @@
       "cli": "scripts/pr-check/pr-check.mjs",
       "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": [],
-      "commands": ["status", "metrics"]
+      "commands": ["status", "resume", "metrics"]
     }
   ]
 }

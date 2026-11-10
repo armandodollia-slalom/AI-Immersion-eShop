@@ -3,8 +3,9 @@ import path from 'node:path';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
 import { implChanges, implDiff } from '../../pipeline/lib/git.mjs';
-import { clearEscalation, escalate, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
-import { appendJsonl, extractResult, log, nowIso, readJsonl, run } from '../../pipeline/lib/util.mjs';
+import { nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
+import { clearEscalation, escalate, loadState, lockFile, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
+import { acquireLock, appendJsonl, extractResult, isProcessAlive, lockHolder, log, nowIso, readJsonl, releaseLock, run, selfProcess } from '../../pipeline/lib/util.mjs';
 
 const fence = (text, lang = '') => `\`\`\`\`${lang}\n${text.replace(/\r\n/g, '\n').trimEnd()}\n\`\`\`\``;
 const block = (reason) => ({ decision: 'block', reason });
@@ -213,7 +214,31 @@ const formatFindings = (findings) =>
     .join('\n');
 
 export function resetReview(config, story) {
-  updateState(config, story.key, (s) => Object.assign(s.review, { rounds: 0, lastHash: null, lastVerdict: null, lastReason: null, unchangedBlocks: 0, policyReviewId: null }));
+  updateState(config, story.key, (s) => Object.assign(s.review, { rounds: 0, lastHash: null, lastVerdict: null, lastReason: null, unchangedBlocks: 0, policyReviewId: null, inProgress: null, recoveries: 0 }));
+}
+
+// A review round records itself in review.inProgress (and holds the review lock) while it runs, so
+// a round cut short by a crash, kill or reboot is found again: the next Stop reruns it, at most
+// recovery.maxAttempts times for the same code before it escalates.
+const reviewLock = (config, story) => lockFile(config, story.key, 'review');
+
+export function interruptedReview(config, story) {
+  const { inProgress } = loadState(config, story.key).review;
+  return runDied(config, inProgress && { ...inProgress, status: 'running' }, { active: ['running'], lock: reviewLock(config, story) }) ? inProgress : null;
+}
+
+// `review resume --force`: forget a round that crashed too often so the next Stop runs it again.
+export function resumeReview(config, story, { force = false } = {}) {
+  const { review } = loadState(config, story.key);
+  const interrupted = interruptedReview(config, story);
+  if (force && (interrupted || review.lastVerdict === 'CRASHED')) {
+    updateState(config, story.key, (s) => Object.assign(s.review, { inProgress: null, recoveries: 0, ...(s.review.lastVerdict === 'CRASHED' ? { lastHash: null, lastVerdict: null } : {}) }));
+    clearEscalation(config, story, 'review');
+    return `${story.key}: review reset; it runs again when the code agent finishes its turn.`;
+  }
+  if (interrupted) return `${story.key}: architecture review round ${interrupted.round} was interrupted; it runs again when the code agent finishes its turn.`;
+  if (review.lastVerdict === 'CRASHED') return `${story.key}: the architecture review crashed ${review.recoveries} times; run \`node scripts/review/review.mjs resume ${story.key} --force\` to try again.`;
+  return null;
 }
 
 // Stop hook: review the implementation once the agent has declared the work done. Changes requested
@@ -244,8 +269,26 @@ export function hookStop(config, story, payload = {}) {
     return notice(`Review: ${story.key} was not approved after ${review.rounds} architecture review rounds. A human needs to decide; see .agent-state/escalations/${story.key}-review.md.`);
   }
 
+  const lock = reviewLock(config, story);
+  if (!acquireLock(lock)) return notice(`Review: an architecture review of ${story.key} is already running (pid ${lockHolder(lock)}).`);
+  let result;
   const round = review.rounds + 1;
-  const result = reviewRound(config, story, round);
+  try {
+    // An earlier round of this code died mid-run: count it, and give up after recovery.maxAttempts.
+    const died = review.inProgress && !isProcessAlive(review.inProgress.pid, review.inProgress.boot) && review.inProgress.hash === hash;
+    const attempt = died ? nextAttempt(config, review, { backoff: false }) : { action: 'fresh', fields: { recoveries: 0 } };
+    if (attempt.action === 'crashed') {
+      updateState(config, story.key, (s) => Object.assign(s.review, { lastHash: hash, lastVerdict: 'CRASHED', inProgress: null }));
+      escalate(config, story, 'review', `review round crashed ${attempt.attempts} times`, `Round ${round} of the architecture review died ${attempt.attempts} times without a verdict. Run \`node scripts/review/review.mjs resume ${story.key} --force\` to try again.`);
+      return notice(`Review: the architecture review of ${story.key} crashed ${attempt.attempts} times; see .agent-state/escalations/${story.key}-review.md.`);
+    }
+    if (died) log(`${story.key}: rerunning interrupted review round ${round} (attempt ${attempt.attempt}/${attempt.maxAttempts})`);
+    updateState(config, story.key, (s) => Object.assign(s.review, attempt.fields, { inProgress: { hash, round, ...selfProcess(), startedAt: nowIso() } }));
+    result = reviewRound(config, story, round);
+    updateState(config, story.key, (s) => Object.assign(s.review, { inProgress: null, recoveries: 0 }));
+  } finally {
+    releaseLock(lock);
+  }
   if (result.verdict === 'ERROR') {
     return notice(`Review: the architecture review for ${story.key} failed to produce a verdict; it will run again next time the agent stops.`);
   }
@@ -263,7 +306,8 @@ export function hookStop(config, story, payload = {}) {
 
 export function sessionContext(config, story) {
   if (!story) return '';
-  const status = `Architecture review for ${story.key}: ${loadState(config, story.key).review.lastVerdict ?? 'not run'}.`;
+  const recovery = resumeReview(config, story);
+  const status = `Architecture review for ${story.key}: ${loadState(config, story.key).review.lastVerdict ?? 'not run'}.${recovery ? `\n${recovery}` : ''}`;
   // The main session can be the code agent; give it the same lessons the implementer agent reads.
   const file = path.join(config.root, config.lessonsDir, 'implementer.md');
   const lessons = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : '';

@@ -5,10 +5,11 @@ import { INSTALL_ROOT } from '../../pipeline/lib/config.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { AGENT_STAGE, categoryStats, loadMetrics } from './metrics.mjs';
 import { automationStatus, planStatus } from './plans.mjs';
-import { automationVerifierTaskFor, planVerifierTaskFor } from './workflows.mjs';
-import { stateDir } from '../../pipeline/lib/state.mjs';
+import { automationVerifierTaskFor, planVerifierTaskFor, spawnQe } from './workflows.mjs';
+import { RECOVERY_DONE, nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
+import { clearEscalation, escalate, logFile, stateDir } from '../../pipeline/lib/state.mjs';
 import { listStories } from '../../pipeline/lib/stories.mjs';
-import { appendJsonl, extractResult, log, nowIso, readJson, run, writeJson } from '../../pipeline/lib/util.mjs';
+import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, readJson, releaseLock, run, selfProcess, writeJson } from '../../pipeline/lib/util.mjs';
 import { digestIsEmpty, retroDigest, retroSince } from './retro.mjs';
 import { VERIFIER, metricsFile, runVerifier } from './verify.mjs';
 import { LENSES } from '../../pr-check/lib/loop.mjs';
@@ -209,90 +210,188 @@ function proposalsFrom(output) {
   return (Array.isArray(proposals) ? proposals : []).filter((p) => p?.file).map((p) => ({ file: String(p.file), why: String(p.why ?? '') }));
 }
 
-export async function lessonsCommand(config, { dryRun = false, local = false, ifDue = false, push = true } = {}) {
-  const lastFile = path.join(stateDir(config), 'lessons-last.json');
-  const last = readJson(lastFile, {});
-  if (ifDue && last.ts && Date.now() - Date.parse(last.ts) < config.lessons.intervalDays * 86_400_000) {
-    log(`lessons: last run ${last.ts}; not due yet.`);
-    return { status: 'not-due' };
-  }
-  const data = loadMetrics(config);
-  const reports = LESSON_AGENTS.map((agent) => {
-    const file = lessonsPath(config, agent);
-    return lessonCandidates(config, data, agent, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
-  });
-  const actionable = reports.filter((r) => r.actionable);
-  const retro = config.lessons.retro?.enabled === false ? null : retroDigest(config, data.decisions ?? [], retroSince(config));
-  const digest = retro && !digestIsEmpty(retro) ? retro : null;
-  writeJson(lastFile, { ts: nowIso(), actionable: actionable.map((r) => r.agent), retro: digest ? digest.counts : null });
-  if (dryRun || (actionable.length === 0 && !digest)) {
-    log(dryRun ? 'lessons: dry run' : 'lessons: no recurring denials past the threshold, no rules to retire or revert and no new decisions to review.');
-    return { status: dryRun ? 'dry-run' : 'nothing-to-do', reports, digest };
-  }
+// A lessons run records itself in lessons-run.json and holds a lock while it works, so a run that dies
+// (crash, kill, reboot) is found and resumed: from the push if it had already committed, else from the
+// start with its leftover worktree and branch removed. lessons-last.json is written only when a run ends,
+// so a crashed run is still due.
+const LESSONS_KEY = 'lessons';
+const LESSONS_STORY = { key: LESSONS_KEY };
+export const lessonsRunFile = (config) => path.join(stateDir(config), 'lessons-run.json');
+const lessonsLock = (config) => path.join(stateDir(config), 'locks', 'lessons.lock');
+const readRun = (config) => readJson(lessonsRunFile(config), null);
+const saveRun = (config, fields) => writeJson(lessonsRunFile(config), { ...readRun(config), ...fields });
 
-  let root = config.root;
-  let branch = null;
-  if (!local) {
-    branch = `qe/lessons-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
-    root = path.join(stateDir(config), 'worktrees', branch.replace('/', '-'));
-    const base = revExists(config.root, config.baseRef) ? config.baseRef : 'HEAD';
-    const added = git(config.root, ['worktree', 'add', '-b', branch, root, base]);
-    if (added.status !== 0) throw new Error(`git worktree add failed: ${added.stderr}`);
+function discardRun(config, prior) {
+  if (prior.worktree && fs.existsSync(prior.worktree)) git(config.root, ['worktree', 'remove', '--force', prior.worktree]);
+  git(config.root, ['worktree', 'prune']);
+  if (prior.branch && revExists(config.root, `refs/heads/${prior.branch}`)) git(config.root, ['branch', '-D', prior.branch]);
+}
+
+function publish(config, { branch, push, title, body }) {
+  if (!push) return { status: 'committed', branch };
+  git(config.root, ['push', '-u', 'origin', branch], { allowFail: false });
+  saveRun(config, { phase: 'pushed' });
+  const pr = run('gh', ['pr', 'create', '--head', branch, '--title', title, '--body', body], { cwd: config.root });
+  log(pr.status === 0 ? `lessons: opened ${pr.stdout.trim()}` : `lessons: push done, PR creation failed: ${pr.stderr}`);
+  return { status: 'pr', branch, url: pr.stdout.trim() };
+}
+
+export async function lessonsCommand(config, { dryRun = false, local = false, ifDue = false, push = true, resume = false } = {}) {
+  const lock = lessonsLock(config);
+  if (!acquireLock(lock)) {
+    log(`lessons: another lessons run (pid ${lockHolder(lock)}) is in progress.`);
+    return { status: 'already-running' };
   }
+  const lastFile = path.join(stateDir(config), 'lessons-last.json');
+  let last = null;
   try {
-    const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root, digest) });
-    if (!result.ok) throw new Error('lessons agent failed');
-    const writable = [config.lessonsDir, ...(digest ? allowedPaths(config) : [])];
-    const outside = changedFiles(root).filter((c) => !inside(c.file, writable));
-    if (outside.length) {
-      log(`lessons: discarding edits outside ${writable.join(', ')}: ${outside.map((c) => c.file).join(', ')}`);
-      if (!local) {
-        const tracked = outside.filter((c) => !c.untracked).map((c) => c.file);
-        if (tracked.length) git(root, ['checkout', '--', ...tracked]);
-        for (const c of outside.filter((x) => x.untracked)) fs.rmSync(path.join(root, c.file), { force: true });
+    // We hold the lock, so a run still recorded as working died.
+    const prior = readRun(config);
+    const interrupted = ['starting', 'running'].includes(prior?.status) ? prior : null;
+    const kept = interrupted ? { recoveries: interrupted.recoveries ?? 0, retryAt: interrupted.retryAt ?? null } : RECOVERY_DONE;
+    if (interrupted) {
+      local = interrupted.local ?? local;
+      push = interrupted.push ?? push;
+      if (!local && ['committed', 'pushed'].includes(interrupted.phase) && revExists(config.root, `refs/heads/${interrupted.branch}`)) {
+        log(`lessons: resuming the interrupted run after its commit on ${interrupted.branch}.`);
+        if (interrupted.worktree && fs.existsSync(interrupted.worktree)) git(config.root, ['worktree', 'remove', '--force', interrupted.worktree]);
+        saveRun(config, { status: 'running', ...selfProcess() });
+        const result = publish(config, { branch: interrupted.branch, push, title: interrupted.title, body: interrupted.body });
+        last = { ts: nowIso(), ...interrupted.last };
+        return { ...result, resumed: true };
       }
+      log('lessons: an earlier run was interrupted; starting it over.');
+      if (!local) discardRun(config, interrupted);
     }
-    // Agent definitions have generated copies for Claude Code; keep them in sync with any retro edit.
-    if (changedFiles(root).some((c) => /^\.github\/agents\/[^/]+\.agent\.md$/.test(c.file))) {
-      const sync = path.join(root, 'scripts/sync-agents.mjs');
-      run(process.execPath, [fs.existsSync(sync) ? sync : path.join(INSTALL_ROOT, 'scripts/sync-agents.mjs')], { cwd: root });
+    if (resume && !interrupted) {
+      log('lessons: no interrupted run to resume.');
+      return { status: 'nothing-to-resume' };
     }
-    const proposals = digest ? proposalsFrom(result.output) : [];
-    for (const agent of LESSON_AGENTS) {
-      const file = lessonsPath(config, agent, root);
-      if (!fs.existsSync(file)) continue;
-      const count = parseRules(fs.readFileSync(file, 'utf8')).length;
-      if (count > config.lessons.maxRules) throw new Error(`${agent} lessons file has ${count} rules (max ${config.lessons.maxRules}).`);
+    const lastRun = readJson(lastFile, {});
+    if (ifDue && !interrupted && lastRun.ts && Date.now() - Date.parse(lastRun.ts) < config.lessons.intervalDays * 86_400_000) {
+      log(`lessons: last run ${lastRun.ts}; not due yet.`);
+      return { status: 'not-due' };
     }
-    if (local) return { status: 'applied-locally', reports: actionable, proposals };
-    const toCommit = changedFiles(root).map((c) => c.file);
-    if (!toCommit.length) return { status: 'no-edits', reports: actionable, proposals };
-    git(root, ['add', '--', ...toCommit]);
-    // Carry calibration audits run in this checkout (e.g. by CI) into the PR so they are not lost.
-    const calibration = path.join(config.metricsDir, 'calibration.jsonl');
-    if (fs.existsSync(path.join(config.root, calibration))) {
-      fs.mkdirSync(path.join(root, config.metricsDir), { recursive: true });
-      fs.copyFileSync(path.join(config.root, calibration), path.join(root, calibration));
-      git(root, ['add', '--', calibration]);
+    const data = loadMetrics(config);
+    const reports = LESSON_AGENTS.map((agent) => {
+      const file = lessonsPath(config, agent);
+      return lessonCandidates(config, data, agent, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+    });
+    const actionable = reports.filter((r) => r.actionable);
+    const retro = config.lessons.retro?.enabled === false ? null : retroDigest(config, data.decisions ?? [], retroSince(config));
+    const digest = retro && !digestIsEmpty(retro) ? retro : null;
+    const summaryOfRun = { actionable: actionable.map((r) => r.agent), retro: digest ? digest.counts : null };
+    last = { ts: nowIso(), ...summaryOfRun };
+    if (dryRun || (actionable.length === 0 && !digest)) {
+      log(dryRun ? 'lessons: dry run' : 'lessons: no recurring denials past the threshold, no rules to retire or revert and no new decisions to review.');
+      return { status: dryRun ? 'dry-run' : 'nothing-to-do', reports, digest };
     }
-    const summary =
-      actionable
-        .map((r) => `- **${r.agent}**: ${[...r.changes.map((c) => `${c.action} ${c.category}${c.subtype ? `/${c.subtype}` : ''} (${c.stories} stories)`), ...r.rules.filter((x) => x.action !== 'keep').map((x) => `${x.action} ${x.id} ${x.category}`)].join('; ')}`)
-        .join('\n') || '- No lessons file changes.';
-    const factory = proposals.length
-      ? `\n\n### Proposed factory changes (needs human review)\n\nFrom the decision log since ${digest.since}:\n\n${proposals.map((p) => `- \`${p.file}\`: ${p.why}`).join('\n')}`
-      : '';
-    const message = `Update agent lessons from verifier, architecture review and PR check findings\n\n${summary}${factory}\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`;
-    git(root, ['commit', '-m', message], { allowFail: false });
-    if (!push) return { status: 'committed', branch, worktree: root };
-    git(root, ['push', '-u', 'origin', branch], { allowFail: false });
-    const body = `Generated by \`node scripts/qe/qe.mjs lessons\` from \`.agent-metrics/\`.\n\n${summary}${factory}\n\nReview each rule: it should be concrete, generalize beyond the examples, and not contradict the agent definition.`;
-    const pr = run('gh', ['pr', 'create', '--head', branch, '--title', 'Update agent lessons from verifier, architecture review and PR check findings', '--body', body], { cwd: root });
-    log(pr.status === 0 ? `lessons: opened ${pr.stdout.trim()}` : `lessons: push done, PR creation failed: ${pr.stderr}`);
-    return { status: 'pr', branch, url: pr.stdout.trim(), proposals };
+
+    let root = config.root;
+    let branch = null;
+    if (!local) {
+      branch = `qe/lessons-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
+      root = path.join(stateDir(config), 'worktrees', branch.replace('/', '-'));
+    }
+    writeJson(lessonsRunFile(config), { status: 'running', ...selfProcess(), startedAt: nowIso(), requestedAt: nowIso(), phase: 'agent', local, push, branch, worktree: local ? null : root, last: summaryOfRun, ...kept });
+    if (!local) {
+      const base = revExists(config.root, config.baseRef) ? config.baseRef : 'HEAD';
+      const added = git(config.root, ['worktree', 'add', '-b', branch, root, base]);
+      if (added.status !== 0) throw new Error(`git worktree add failed: ${added.stderr}`);
+    }
+    try {
+      const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root, digest) });
+      if (!result.ok) throw new Error('lessons agent failed');
+      const writable = [config.lessonsDir, ...(digest ? allowedPaths(config) : [])];
+      const outside = changedFiles(root).filter((c) => !inside(c.file, writable));
+      if (outside.length) {
+        log(`lessons: discarding edits outside ${writable.join(', ')}: ${outside.map((c) => c.file).join(', ')}`);
+        if (!local) {
+          const tracked = outside.filter((c) => !c.untracked).map((c) => c.file);
+          if (tracked.length) git(root, ['checkout', '--', ...tracked]);
+          for (const c of outside.filter((x) => x.untracked)) fs.rmSync(path.join(root, c.file), { force: true });
+        }
+      }
+      // Agent definitions have generated copies for Claude Code; keep them in sync with any retro edit.
+      if (changedFiles(root).some((c) => /^\.github\/agents\/[^/]+\.agent\.md$/.test(c.file))) {
+        const sync = path.join(root, 'scripts/sync-agents.mjs');
+        run(process.execPath, [fs.existsSync(sync) ? sync : path.join(INSTALL_ROOT, 'scripts/sync-agents.mjs')], { cwd: root });
+      }
+      const proposals = digest ? proposalsFrom(result.output) : [];
+      for (const agent of LESSON_AGENTS) {
+        const file = lessonsPath(config, agent, root);
+        if (!fs.existsSync(file)) continue;
+        const count = parseRules(fs.readFileSync(file, 'utf8')).length;
+        if (count > config.lessons.maxRules) throw new Error(`${agent} lessons file has ${count} rules (max ${config.lessons.maxRules}).`);
+      }
+      if (local) return { status: 'applied-locally', reports: actionable, proposals };
+      const toCommit = changedFiles(root).map((c) => c.file);
+      if (!toCommit.length) return { status: 'no-edits', reports: actionable, proposals };
+      git(root, ['add', '--', ...toCommit]);
+      // Carry calibration audits run in this checkout (e.g. by CI) into the PR so they are not lost.
+      const calibration = path.join(config.metricsDir, 'calibration.jsonl');
+      if (fs.existsSync(path.join(config.root, calibration))) {
+        fs.mkdirSync(path.join(root, config.metricsDir), { recursive: true });
+        fs.copyFileSync(path.join(config.root, calibration), path.join(root, calibration));
+        git(root, ['add', '--', calibration]);
+      }
+      const summary =
+        actionable
+          .map((r) => `- **${r.agent}**: ${[...r.changes.map((c) => `${c.action} ${c.category}${c.subtype ? `/${c.subtype}` : ''} (${c.stories} stories)`), ...r.rules.filter((x) => x.action !== 'keep').map((x) => `${x.action} ${x.id} ${x.category}`)].join('; ')}`)
+          .join('\n') || '- No lessons file changes.';
+      const factory = proposals.length
+        ? `\n\n### Proposed factory changes (needs human review)\n\nFrom the decision log since ${digest.since}:\n\n${proposals.map((p) => `- \`${p.file}\`: ${p.why}`).join('\n')}`
+        : '';
+      const title = 'Update agent lessons from verifier, architecture review and PR check findings';
+      const message = `${title}\n\n${summary}${factory}\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`;
+      const body = `Generated by \`node scripts/qe/qe.mjs lessons\` from \`.agent-metrics/\`.\n\n${summary}${factory}\n\nReview each rule: it should be concrete, generalize beyond the examples, and not contradict the agent definition.`;
+      git(root, ['commit', '-m', message], { allowFail: false });
+      saveRun(config, { phase: 'committed', title, body });
+      return { ...publish(config, { branch, push, title, body }), worktree: push ? undefined : root, proposals };
+    } finally {
+      if (!local) git(config.root, ['worktree', 'remove', '--force', root]);
+    }
+  } catch (err) {
+    if (readRun(config)?.pid === process.pid) saveRun(config, { status: 'failed', error: String(err.message ?? err) });
+    throw err;
   } finally {
-    if (!local) git(config.root, ['worktree', 'remove', '--force', root]);
+    // Reached unless the process died: the run ended (or failed) and is not resumed.
+    if (last) writeJson(lastFile, last);
+    const current = readRun(config);
+    if (current && ['starting', 'running'].includes(current.status) && current.pid === process.pid) saveRun(config, { status: 'done', finishedAt: nowIso(), ...RECOVERY_DONE });
+    releaseLock(lock);
   }
+}
+
+// Resumes a lessons run that died, in the background, with the shared backoff; escalates after
+// recovery.maxAttempts. `force` restarts one escalated as crashed.
+export function recoverLessons(config, { force = false } = {}) {
+  let runRec = readRun(config);
+  if (!runRec) return null;
+  if (runRec.status === 'crashed') {
+    if (!force) return null;
+    clearEscalation(config, LESSONS_STORY, 'qe');
+    runRec = { ...runRec, status: 'running', pid: null, requestedAt: null, recoveries: 0, retryAt: null };
+  }
+  if (!runDied(config, runRec, { active: ['starting', 'running'], lock: lessonsLock(config) })) return null;
+  const next = nextAttempt(config, runRec, { force });
+  if (next.action === 'waiting') return { kind: 'lessons', action: 'waiting', retryAt: next.retryAt };
+  if (next.action === 'crashed') {
+    writeJson(lessonsRunFile(config), { ...runRec, status: 'crashed' });
+    escalate(config, LESSONS_STORY, 'qe', `lessons run crashed ${next.attempts} times`, `The lessons and factory retro run (\`qe lessons\`) died ${next.attempts} times. Last log: ${runRec.log ?? 'none'}.\nRetry with \`node scripts/qe/qe.mjs resume --force\`.`);
+    return { kind: 'lessons', action: 'crashed' };
+  }
+  const file = logFile(config, LESSONS_KEY, 'lessons');
+  const logPath = path.relative(config.root, file);
+  writeJson(lessonsRunFile(config), { ...runRec, status: 'starting', pid: null, boot: null, requestedAt: nowIso(), log: logPath, ...next.fields });
+  spawnQe(config, LESSONS_KEY, 'lessons', ['lessons', '--resume'], file);
+  return { kind: 'lessons', action: 'resumed', attempt: next.attempt, log: logPath };
+}
+
+export function formatLessonsRecovery(r) {
+  if (r.action === 'resumed') return `QE: resumed the interrupted lessons and factory retro run (attempt ${r.attempt}, log: ${r.log}).`;
+  if (r.action === 'waiting') return `QE: the lessons and factory retro run crashed; it is retried after ${r.retryAt}.`;
+  return 'QE: the lessons and factory retro run kept crashing and was escalated (.agent-state/escalations/lessons-qe.md).';
 }
 
 // Re-checks recent 10/10 results with a stricter auditor so the verifiers themselves can improve.

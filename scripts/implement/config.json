@@ -12,6 +12,8 @@
     "maxImplementerRuns": 8,
     "maxBugFixCycles": 2,
     "qeTimeoutSec": 14400,
-    "qePollSec": 5
+    "qePollSec": 5,
+    "maxWorkerRetries": 2,
+    "retryDelaySec": 30
   }
 }

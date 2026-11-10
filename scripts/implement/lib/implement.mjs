@@ -4,17 +4,23 @@ import { spawn } from 'node:child_process';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { formatBugs } from '../../pipeline/lib/decisions.mjs';
-import { git, revExists } from '../../pipeline/lib/git.mjs';
+import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
-import { appendJsonl, extractResult, isPidAlive, log, nowIso, readJson, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
+import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
+import { appendJsonl, extractResult, isProcessAlive, log, nowIso, readJson, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { branchFor, collectStories, orderStories, worktreeFor } from './batch.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
-const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan']);
+const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
+// Outcomes from a run that died rather than finished: the next run resumes them, and the batch retries
+// them itself a few times.
+const INTERRUPTED = new Set(['error', 'qe-crashed', 'qe-not-started', 'qe-timed-out']);
+const RETRYABLE = new Set(['error', 'qe-not-started']);
 
 export const runsDir = (config) => path.join(config.root, config.stateDir, 'implement');
 const runFile = (config, key) => path.join(runsDir(config), `${key}.json`);
 export const loadRun = (config, key) => readJson(runFile(config, key), null);
+export const batchFile = (config) => path.join(runsDir(config), 'batch.json');
 const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(loadRun(config, key) ?? {}), key, ...patch, updatedAt: nowIso() });
 
 // ---------------------------------------------------------------------------------------------
@@ -24,11 +30,22 @@ const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(lo
 export function plan(config, inputs, { base = config.baseRef, force = false } = {}) {
   const stories = orderStories(collectStories(inputs));
   const byKey = new Map(stories.map((s) => [s.key, s]));
-  for (const s of stories) s.skip = s.implemented && !force ? 'already implemented (has "## Implementation Notes"; --force to redo)' : null;
-  // Blockers already implemented are on the base branch, so only the ones built in this run count.
+  for (const s of stories) {
+    s.skip = s.implemented && !force ? 'already implemented (has "## Implementation Notes"; --force to redo)' : null;
+    // A later run continues where an interrupted one stopped: finished stories are kept, stories that
+    // died part-way resume in their worktree.
+    const prev = force || s.skip ? null : loadRun(config, s.key);
+    if (prev?.outcome === 'done' && prev.branch && revExists(config.root, `refs/heads/${prev.branch}`)) {
+      s.skip = `done in a previous run (--force to redo)`;
+      s.doneBefore = true;
+    }
+    s.resume = Boolean(prev && !s.doneBefore && (prev.status === 'running' || INTERRUPTED.has(prev.outcome)) && prev.worktree && fs.existsSync(prev.worktree));
+  }
+  // Blockers already implemented are on the base branch, so only the ones built in this run (or kept
+  // from an earlier one, still on their branch) count.
   const ancestors = new Map();
   for (const s of stories) {
-    s.deps = s.deps.filter((k) => !byKey.get(k).skip);
+    s.deps = s.deps.filter((k) => !byKey.get(k).skip || byKey.get(k).doneBefore);
     ancestors.set(s.key, new Set(s.deps.flatMap((k) => [k, ...ancestors.get(k)])));
   }
   for (const s of stories) {
@@ -46,14 +63,19 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
 
 export function describePlan(stories) {
   return stories
-    .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)
+    .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}${s.resume ? '  (resume)' : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)
     .join('\n');
 }
 
 export async function runBatch(config, stories, { parallel = 1, pr = false, script }) {
   fs.mkdirSync(runsDir(config), { recursive: true });
   const outcome = new Map(stories.filter((s) => s.skip).map((s) => [s.key, { outcome: 'skipped', reason: s.skip }]));
-  for (const s of stories) saveRun(config, s.key, s.skip ? { outcome: 'skipped', reason: s.skip, status: 'finished' } : { status: 'queued', outcome: null, reason: null, branch: s.branch, worktree: s.worktree, base: s.base });
+  for (const s of stories) {
+    if (s.doneBefore) continue;
+    saveRun(config, s.key, s.skip ? { outcome: 'skipped', reason: s.skip, status: 'finished' } : { status: 'queued', outcome: null, reason: null, branch: s.branch, worktree: s.worktree, base: s.base });
+  }
+  const retries = new Map();
+  const { maxWorkerRetries = 0, retryDelaySec = 0 } = config.implement;
 
   const pending = stories.filter((s) => !s.skip);
   const running = new Map();
@@ -78,6 +100,14 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
     if (!running.size) continue;
     const [s, result] = await Promise.race(running.values());
     running.delete(s.key);
+    const attempt = (retries.get(s.key) ?? 0) + 1;
+    if (RETRYABLE.has(result.outcome) && attempt <= maxWorkerRetries) {
+      retries.set(s.key, attempt);
+      s.resume = true;
+      log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}; retrying (${attempt}/${maxWorkerRetries}).`);
+      running.set(s.key, sleep(retryDelaySec * 1000 * attempt).then(() => startWorker(config, s, { pr, script })).then((r) => [s, r]));
+      continue;
+    }
     outcome.set(s.key, result);
     log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}`);
   }
@@ -92,7 +122,8 @@ function startWorker(config, story, { pr, script }) {
   const args = ['story', story.key, '--file', story.file, '--base', story.base, '--branch', story.branch, '--worktree', story.worktree, '--result', resultFile];
   if (story.merge.length) args.push('--merge', story.merge.join(','));
   if (pr) args.push('--pr');
-  saveRun(config, story.key, { status: 'running', startedAt: nowIso(), log: path.relative(config.root, logPath) });
+  if (story.resume) args.push('--resume');
+  saveRun(config, story.key, { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) });
   log(`${story.key}: started on ${story.branch} (log: ${path.relative(config.root, logPath)})`);
   const fd = fs.openSync(logPath, 'a');
   const env = { ...process.env };
@@ -177,13 +208,20 @@ function implementerTask({ key, storyFile, branch, worktree, base, feedback }) {
   return lines.join('\n');
 }
 
-async function waitForQe(config, key, timeoutSec, pollSec) {
+// A QE run that dies is handed to the QE stage's own recovery (`pipeline resume`), which resumes it from
+// its last round, backs off, and gives up as "crashed" after a few attempts.
+async function waitForQe(config, key, { timeoutSec, pollSec, recover }) {
   const startedAt = Date.now();
   const deadline = startedAt + timeoutSec * 1000;
+  let nextRecover = 0;
   for (;;) {
     const a = loadState(config, key).automation;
     if (QE_TERMINAL.has(a.status) && !a.requestedHash) return a;
-    if (a.status === 'running' && a.pid && !isPidAlive(a.pid)) return { ...a, status: 'crashed' };
+    const dead = (a.status === 'running' && !isProcessAlive(a.pid, a.boot)) || (a.status === 'starting' && Date.now() - Date.parse(a.requestedAt ?? 0) > config.recovery.startingGraceSec * 1000);
+    if (dead && Date.now() >= nextRecover) {
+      recover();
+      nextRecover = Date.now() + Math.max(pollSec * 1000, 10_000);
+    }
     if (a.status === 'idle' && Date.now() - startedAt > 30_000) return { ...a, status: 'not-started' };
     if (Date.now() > deadline) return { ...a, status: 'timed-out' };
     await sleep(pollSec * 1000);
@@ -200,14 +238,30 @@ export async function implementStory(config, opts) {
   const prep = prepareWorktree(config, opts);
   if (prep.error) return finish('blocked', prep.error);
   const wt = prep.config;
-  const start = pipeline(worktree, base, ['start', key]);
-  if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
-
+  // Resuming a story whose review already approved the code on disk goes straight to QE; otherwise the
+  // implementer continues from the work left in the worktree.
+  const prior = opts.resume ? loadState(wt, key) : null;
+  const hash = prior ? implChanges(wt).hash : null;
+  let skipImplementer = Boolean(hash && prior.done && prior.review.lastVerdict === 'APPROVED' && prior.review.approvedHash === hash);
   let feedback = null;
+  if (skipImplementer) {
+    log(`${key}: resuming after the approved review; (re)starting QE.`);
+    pipeline(worktree, base, ['hook', 'stop'], '{}');
+  } else {
+    // A resumed story that was already started keeps its review rounds and stage state; `start` would reset them.
+    const alreadyStarted = Boolean(prior) && path.basename(activeStoryFile(wt) ?? '').startsWith(`${key}-`);
+    if (!alreadyStarted) {
+      const start = pipeline(worktree, base, ['start', key]);
+      if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
+    }
+    if (opts.resume) feedback = 'A previous run of this story was interrupted. Its work so far is on this branch (committed, or still uncommitted in the worktree). Review it and continue the implementation rather than starting over.';
+  }
+
   let qe;
   for (;;) {
     // Implementation and review loop: the review's stop hook blocks with findings until it approves.
-    let approved = false;
+    let approved = skipImplementer;
+    skipImplementer = false;
     while (!approved) {
       if (metrics.implementerRuns >= settings.maxImplementerRuns) return finish('unresolved', `still not approved after ${metrics.implementerRuns} implementer runs`);
       metrics.implementerRuns++;
@@ -247,7 +301,7 @@ export async function implementStory(config, opts) {
     }
 
     // QE writes and verifies the tests in the background; wait for its verdict.
-    qe = await waitForQe(wt, key, settings.qeTimeoutSec, settings.qePollSec);
+    qe = await waitForQe(wt, key, { timeoutSec: settings.qeTimeoutSec, pollSec: settings.qePollSec, recover: () => pipeline(worktree, base, ['resume', key]) });
     if (qe.status !== 'product-bug') break;
     if (metrics.bugFixCycles >= settings.maxBugFixCycles) break;
     metrics.bugFixCycles++;

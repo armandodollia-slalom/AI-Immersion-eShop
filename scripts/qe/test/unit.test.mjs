@@ -8,7 +8,7 @@ import { lessonCandidates, parseRules } from '../lib/lessons.mjs';
 import { retroDigest } from '../lib/retro.mjs';
 import { clip, decisionRecord, formatBugs, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { computeMetrics } from '../lib/metrics.mjs';
-import { extractResult, parseFrontMatter, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
+import { acquireLock, bootId, extractResult, isProcessAlive, lockHolder, parseFrontMatter, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 import { attributedAgent, normalizeVerdict } from '../lib/verify.mjs';
 
 const config = {
@@ -226,4 +226,16 @@ test('readEvidence ignores manifests from older runs and formats failed tests wi
   assert.match(text, /expected 1 got 0/);
   assert.ok(text.includes(`1. step failed: add: \`${frame}\``));
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('a pid recorded before a reboot is never alive, and locks from older versions (pid only) still count', () => {
+  assert.equal(isProcessAlive(process.pid, bootId()), true);
+  if (bootId()) assert.equal(isProcessAlive(process.pid, 'another-boot'), false, 'the pid may have been reused since');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lock-')), 'run.lock');
+  fs.writeFileSync(file, String(process.pid));
+  assert.equal(lockHolder(file), process.pid);
+  assert.equal(acquireLock(file), false);
+  fs.writeFileSync(file, `${process.pid} another-boot`);
+  if (bootId()) assert.equal(acquireLock(file), true, 'a lock left by an earlier boot is taken over');
+  fs.rmSync(path.dirname(file), { recursive: true, force: true });
 });
