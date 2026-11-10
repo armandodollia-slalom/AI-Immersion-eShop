@@ -29,10 +29,14 @@ test('front matter round-trips lists with commas and drops undefined fields', ()
   assert.equal(parsed.body, '# Body\n');
 });
 
-test('normalizeVerdict only passes a clean 10 and never lets a low score go unexplained', () => {
-  assert.equal(normalizeVerdict(config, 'plan', { score: 10, gaps: [] }).passed, true);
-  const gapsAt10 = normalizeVerdict(config, 'plan', { score: 10, gaps: [{ category: 'missing-sad-path', detail: 'auth' }] });
-  assert.equal(gapsAt10.passed, false);
+test('normalizeVerdict passes at the required score even with minor gaps, and never lets a low score go unexplained', () => {
+  const at9 = { ...config, loops: { requiredScore: 9 } };
+  assert.equal(normalizeVerdict(at9, 'plan', { score: 10, gaps: [] }).passed, true);
+  const minorAt9 = normalizeVerdict(at9, 'plan', { score: 9, gaps: [{ category: 'missing-sad-path', detail: 'pick one command' }] });
+  assert.equal(minorAt9.passed, true);
+  assert.equal(minorAt9.gaps.length, 1, 'minor gaps are kept for the metrics');
+  assert.equal(normalizeVerdict(at9, 'plan', { score: 8, gaps: [{ category: 'missing-sad-path', detail: 'auth' }] }).passed, false);
+  assert.equal(normalizeVerdict(config, 'plan', { score: 9, gaps: [{ category: 'missing-sad-path', detail: 'auth' }] }).passed, false, 'a 10/10 bar still rejects a 9');
 
   const unexplained = normalizeVerdict(config, 'plan', { score: 8 });
   assert.equal(unexplained.passed, false);

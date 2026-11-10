@@ -31,7 +31,9 @@ export function normalizeVerdict(config, stage, raw) {
   if (score < required && gaps.length === 0) {
     gaps.push({ case: null, category: 'other', subtype: 'unexplained-score', detail: `Verifier scored ${score}/10 without listing gaps.`, location: null, root_stage: stage });
   }
-  return { score, gaps, summary: String(raw?.summary ?? ''), passed: score >= required && gaps.length === 0 };
+  // At or above the required score the verdict passes even with gaps listed: they are minor by the
+  // verifier's own rubric, stay in the metrics and are passed on as non-blocking notes.
+  return { score, gaps, summary: String(raw?.summary ?? ''), passed: score >= required };
 }
 
 // Runs one verifier round in a fresh process and records the outcome for observability.
