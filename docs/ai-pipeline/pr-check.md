@@ -20,6 +20,7 @@ npm run pr-check -- run --pr 42 --no-fix        # one report-only round; the PR 
 npm run pr-check -- run --story PROMO-3         # the current branch against a story, no PR needed
 npm run pr-check -- run --pr 42 --videos test-results,https://example.com/demo.webm --comment --push
 npm run pr-check -- status [pr-42]
+npm run pr-check -- resume [PROMO-3|pr-42] [--force]   # continue checks that died
 npm run pr-check -- metrics [--json] [--since 2026-01-01]
 ```
 
@@ -35,6 +36,7 @@ Or ask the `pr-check` agent (Copilot or Claude Code) to check a PR; it runs the 
 | `--max-rounds <n>`, `--debate-turns <n>` | 6, 2 | loop limits |
 | `--comment`, `--push` | off | post the report on the PR; push the fix commits |
 | `--json` | off | print `result.json` instead of the report |
+| `--resume` | off | continue the interrupted run of the same check from its last saved round |
 
 Exit code 0 means PASS (10/10); anything else is FAIL or ESCALATED. Fix mode needs the PR branch checked out at the PR head with a clean working tree; `--push` is skipped for PRs from forks. report-only mode reviews a PR that isn't checked out in a temporary detached worktree.
 
@@ -61,6 +63,11 @@ Hook runs are recorded in `.agent-metrics/pr-checks.jsonl` in the working tree, 
 | `codeAgents` | `implementer` | subagents whose `SubagentStop` triggers the check (main-session stops always do) |
 
 `npm run pr-check -- status <KEY>` shows the last result.
+
+## Interrupted checks
+
+- **Stop-hook checks:** the waiter records its pid and boot in the story state. If it dies (crash, kill, reboot), the next session start, Stop or `pr-check resume` starts it again for the same code, or marks it `stale` if the code has changed. After `recovery.maxAttempts` (3) restarts, with growing delays, it is marked `crashed` and escalated; `resume <KEY> --force` retries it.
+- **Manual checks (`run`):** the run keeps `.agent-state/pr-check/<id>/progress.json` up to date with its flags, its process and, in fix mode, the loop state after each critique and fix. The next session start lists interrupted runs, and `pr-check resume` (or `pipeline resume`) restarts each with `run --resume` in the background. It continues after the last finished round; a fix that was cut short runs again on the changes it left (a dirty tree is allowed for this), unless its commit was already made. Report-only runs are one round, so they start over. A run that fails rather than dies (bad flags, a dirty tree) is not resumed.
 
 ## The loop
 

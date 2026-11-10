@@ -347,6 +347,53 @@ test('pipeline start resets the review rounds even when hooks are disabled', () 
   assert.deepEqual([stateOf('DEMO-1').review.rounds, stateOf('DEMO-1').review.lastVerdict], [0, null]);
 });
 
+test('an interrupted review round runs again on the next stop, escalates after repeated crashes, and resume --force retries it', () => {
+  const review = (args, input = '{}') => {
+    const r = cli('scripts/review/review.mjs', args, { input });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  const stop = () => {
+    const out = review(['hook', 'stop']);
+    return out ? JSON.parse(out) : null;
+  };
+  const implHash = () => spawnSync(process.execPath, ['--input-type=module', '-e', "import { loadConfig } from './scripts/pipeline/lib/config.mjs'; import { implChanges } from './scripts/pipeline/lib/git.mjs'; console.log(implChanges(loadConfig('review')).hash);"], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  // What a review round leaves behind when its process dies mid-run.
+  const crashed = (recoveries = 0) => {
+    const state = stateOf('DEMO-1');
+    Object.assign(state.review, { recoveries, inProgress: { hash: implHash(), round: state.review.rounds + 1, pid: 999999, boot: null, startedAt: new Date().toISOString() } });
+    write('.agent-state/stories/DEMO-1.json', JSON.stringify(state));
+  };
+  const config = JSON.parse(read('scripts/review/config.json'));
+  config.review.policy.enabled = false;
+  write('scripts/review/config.json', JSON.stringify(config, null, 2));
+  agentScript({ 'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }] });
+  assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
+  assert.equal(pipeline(['done']).status, 0);
+
+  write('src/Basket/Coupons.cs', '// coupons v6\n');
+  crashed();
+  assert.match(review(['resume']), /DEMO-1: architecture review round 1 was interrupted; it runs again when the code agent finishes its turn/);
+  assert.match(review(['hook', 'session-start']), /round 1 was interrupted/);
+  assert.match(pipeline(['resume']).stdout, /\[review\]\nDEMO-1: architecture review round 1 was interrupted/);
+  assert.match(stop().systemMessage, /approved DEMO-1 \(round 1\)/);
+  assert.deepEqual([stateOf('DEMO-1').review.inProgress, stateOf('DEMO-1').review.recoveries, calls()['architecture-reviewer']], [null, 0, 1]);
+
+  write('src/Basket/Coupons.cs', '// coupons v7\n');
+  crashed(3);
+  assert.match(stop().systemMessage, /architecture review of DEMO-1 crashed 3 times/);
+  assert.equal(stateOf('DEMO-1').review.lastVerdict, 'CRASHED');
+  assert.match(read('.agent-state/escalations/DEMO-1-review.md'), /review round crashed 3 times/);
+  assert.equal(stop(), null, 'a crashed review waits for a human');
+  assert.equal(calls()['architecture-reviewer'], 1);
+  assert.match(review(['resume', 'DEMO-1']), /crashed 3 times; run `node scripts\/review\/review.mjs resume DEMO-1 --force`/);
+
+  assert.match(review(['resume', 'DEMO-1', '--force']), /review reset/);
+  assert.equal(fs.existsSync(path.join(repo, '.agent-state/escalations/DEMO-1-review.md')), false);
+  assert.match(stop().systemMessage, /approved DEMO-1/);
+  assert.equal(calls()['architecture-reviewer'], 2);
+});
+
 test('adding a story starts no agent unless qe.autoPlan is on, and a story with no plan yet can be pushed', async () => {
   const branch = gitc('branch', '--show-current').stdout.trim();
   gitc('add', '-A');

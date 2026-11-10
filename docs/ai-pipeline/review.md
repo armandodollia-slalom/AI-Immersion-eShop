@@ -24,6 +24,10 @@ flowchart LR
 - On approval it records the approved implementation hash in `review.approvedHash` in the story state. The `qe` stage starts automation only for that exact hash, so code changed after an approval is reviewed again first.
 - `pipeline start <KEY>` resets the review rounds.
 
+## Interrupted reviews
+
+A round records itself in `review.inProgress` (code hash, round, pid and boot) and holds `.agent-state/locks/<KEY>-review.lock` while it runs. If the round dies (crash, kill, reboot, or the hook timing out), the next session start says so and the next Stop runs the round again. After `recovery.maxAttempts` (3) dead rounds for the same code the review escalates with verdict `CRASHED` instead; `node scripts/review/review.mjs resume <KEY> --force` (or `pipeline resume <KEY> --force`) clears it so the next Stop retries. A second Stop while a round is running gets a notice instead of a second reviewer.
+
 Every round is appended to `.agent-metrics/arch-reviews.jsonl` (story, round, verdict, and each finding's severity, category, file, line and issue). Rounds blocked by the policy pack carry `reviewer: arch-review-agent`, the `review_id` and each finding's `rule`.
 
 ## How the implementer improves
@@ -38,6 +42,7 @@ Review denials feed back into the code agents at two speeds:
 ```bash
 node scripts/review/review.mjs run [PROMO-3]       # one review round now, printed
 node scripts/review/review.mjs status [PROMO-3]
+node scripts/review/review.mjs resume [PROMO-3] [--force]   # report interrupted rounds; --force retries a CRASHED review
 node scripts/review/review.mjs metrics [--json] [--since 2026-01-01]
 ```
 

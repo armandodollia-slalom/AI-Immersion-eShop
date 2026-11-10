@@ -50,10 +50,10 @@ Each story's log is under `.agent-state/logs/implement-<KEY>-*.log` in the main 
 
 ## Interrupted runs
 
-Each run saves its story list and options to `.agent-state/implement/batch.json`, and each story's progress to `.agent-state/implement/<KEY>.json`. If the machine crashes or the runner is killed, `implement status` says so, and `implement resume` (or the same `implement run` again) continues:
+Each run saves its story list and options to `.agent-state/implement/batch.json`, and each story's progress to `.agent-state/implement/<KEY>.json`. If the machine crashes or the runner is killed, `implement status` and the next agent session say so. `pipeline resume` restarts the batch in the background (log in `.agent-state/logs/`), and `implement resume` (or the same `implement run` again) continues it in the foreground:
 
 - stories that finished `done` and still have their branch are kept, and their dependents still stack on them (`--force` redoes them);
-- stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there, the runner goes straight to the tests; otherwise the implementer continues from the work on the branch;
+- stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there, the runner goes straight to the tests; otherwise the implementer continues from the work on the branch, and the review keeps its round count;
 - the rest run as usual.
 
 A QE run that dies while the runner waits is resumed by the QE stage's own [recovery](qe.md#crash-recovery). A worker that fails with `error` or `qe-not-started` is retried `maxWorkerRetries` times in the same run.

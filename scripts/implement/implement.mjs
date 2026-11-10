@@ -4,12 +4,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnBackground } from '../pipeline/lib/background.mjs';
 import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
-import { loadConfig } from '../pipeline/lib/config.mjs';
+import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
 import { resolveStory } from '../pipeline/lib/stories.mjs';
-import { isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
+import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
+import { collectStories } from './lib/batch.mjs';
 import { batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
 
 setLogTag('implement');
@@ -21,10 +23,16 @@ const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
         implement every <KEY>-<title>.md story given: each gets a worktree and branch, the implementer
         agent, the review loop and verified tests. Stories "Blocked by" another story in the batch run
         after it, stacked on its branch.
-  resume [--parallel N] [--pr]   continue the last run that did not finish: stories it finished are
-                                 kept, interrupted ones resume in their worktree, the rest run
+  resume [KEY] [--parallel N] [--pr] [--background]
+                                 continue the last run that did not finish: stories it finished are
+                                 kept, interrupted ones resume in their worktree, the rest run.
+                                 --background (used by \`pipeline resume\`) starts it detached, and
+                                 only if it was interrupted (and includes KEY, if given)
   status [story]                 progress of the latest run
   metrics [--json] [--since <iso-date>]
+
+Hooks (called by scripts/pipeline/pipeline.mjs)
+  hook session-start             says so when the last implement run was interrupted
 
 Internal
   story <KEY> --file <path> --base <ref> --branch <name> --worktree <dir> --result <file> [--merge b1,b2] [--pr] [--resume]`;
@@ -47,6 +55,25 @@ async function runStories(config, inputs, { base, force = false, parallel, pr = 
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
   console.log(`\n${formatSummary(results)}`);
   return results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done') ? 0 : 1;
+}
+
+// `pipeline resume` fans out to every stage and waits for each, so the batch restarts detached.
+function resumeInBackground(config, key) {
+  const batch = interruptedBatch(config);
+  if (!batch) {
+    console.log('No interrupted implement run.');
+    return 0;
+  }
+  const inputs = batch.inputs.filter((p) => fs.existsSync(p));
+  if (key && !collectStories(inputs).some((s) => s.key === key.toUpperCase())) {
+    console.log(`The interrupted implement run does not include ${key}.`);
+    return 0;
+  }
+  const bg = spawnBackground(config, { script: SCRIPT, key: 'batch', stage: 'implement', args: ['resume'] });
+  // Claimed right away so a second `resume` does not start the batch twice.
+  writeJson(batchFile(config), { ...batch, pid: bg.pid, boot: bootId() });
+  console.log(`Resumed the interrupted implement run in the background (pid ${bg.pid}, log: ${bg.log}).`);
+  return 0;
 }
 
 async function main() {
@@ -81,6 +108,7 @@ async function main() {
     }
 
     case 'resume': {
+      if (flags.background) return resumeInBackground(config, positional[0]);
       const batch = readJson(batchFile(config), null);
       if (!batch) {
         console.log('No implement run to resume.');
@@ -97,6 +125,12 @@ async function main() {
       }
       const parallel = Math.max(1, Number(flags.parallel ?? batch.parallel) || 1);
       return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr) });
+    }
+
+    case 'hook': {
+      if (positional[0] !== 'session-start' || isDisabled()) return 0;
+      if (interruptedBatch(config)) process.stdout.write('The last implement run was interrupted (crash, kill or reboot). Run `node scripts/pipeline/pipeline.mjs resume` to continue it in the background.');
+      return 0;
     }
 
     case 'story': {

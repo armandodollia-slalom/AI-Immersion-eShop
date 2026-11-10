@@ -18,8 +18,10 @@ Implementation agent
   start <story>                 set the story you are working on (resets its review)
   done [story]                  mark the line of work complete; the stages run when your turn ends
   status [story]                state of every stage for a story
-  resume [story] [--force]      resume background runs that died (crash, kill, reboot); --force also
-                                restarts runs escalated after crashing repeatedly
+  resume [story] [--force]      continue every stage's runs that died (crash, kill, reboot): implement
+                                batches, review rounds, QE plan/automation, PR checks. Each restarts in
+                                the background from its last saved round; --force also restarts runs
+                                escalated after crashing repeatedly
 
 Pipeline
   implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
@@ -82,7 +84,8 @@ async function main() {
     }
 
     case 'resume': {
-      const args = [...(positional[0] ? [requireStory(config, positional[0]).key] : []), ...(flags.force ? ['--force'] : [])];
+      // Each stage restarts its interrupted runs in the background, so this returns right away.
+      const args = [...(positional[0] ? [requireStory(config, positional[0]).key] : []), ...(flags.force ? ['--force'] : []), '--background'];
       for (const { stage, stdout } of dispatchText(config, stages, 'commands', 'resume', args)) console.log(`[${stage}]\n${stdout.trimEnd()}`);
       return 0;
     }

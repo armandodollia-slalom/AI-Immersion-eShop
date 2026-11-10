@@ -5,6 +5,7 @@ import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
 import { appendJsonl, extractResult, isProcessAlive, log, nowIso, readJson, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { branchFor, collectStories, orderStories, worktreeFor } from './batch.mjs';
 
@@ -246,8 +247,12 @@ export async function implementStory(config, opts) {
     log(`${key}: resuming after the approved review; (re)starting QE.`);
     pipeline(worktree, base, ['hook', 'stop'], '{}');
   } else {
-    const start = pipeline(worktree, base, ['start', key]);
-    if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
+    // A resumed story that was already started keeps its review rounds and stage state; `start` would reset them.
+    const alreadyStarted = Boolean(prior) && path.basename(activeStoryFile(wt) ?? '').startsWith(`${key}-`);
+    if (!alreadyStarted) {
+      const start = pipeline(worktree, base, ['start', key]);
+      if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
+    }
     if (opts.resume) feedback = 'A previous run of this story was interrupted. Its work so far is on this branch (committed, or still uncommitted in the worktree). Review it and continue the implementation rather than starting over.';
   }
 

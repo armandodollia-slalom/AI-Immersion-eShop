@@ -134,6 +134,8 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   edit('batch.json', { pid: 2 ** 22 + 7, finishedAt: null });
   edit('DEMO-3.json', { status: 'running', outcome: null });
   assert.match(pipeline(['implement', 'status']).stdout, /last implement run was interrupted.*implement resume/);
+  assert.match(JSON.parse(pipeline(['hook', 'session-start']).stdout).additionalContext, /last implement run was interrupted[\s\S]*pipeline.mjs resume/, 'the next session is told');
+  assert.match(pipeline(['implement', 'resume', 'DEMO-9', '--background']).stdout, /does not include DEMO-9/, 'a story-scoped resume leaves other batches alone');
   fs.writeFileSync(
     scriptFile,
     JSON.stringify({
@@ -153,4 +155,5 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   assert.equal(calls().implementer, 2, 'only the unfinished stories run again');
   assert.match(prompts(), /=== implementer #1[\s\S]*previous run of this story was interrupted/);
   assert.match(pipeline(['implement', 'resume']).stdout, /DEMO-4 +skip: done in a previous run/, 'a finished run resumes to nothing');
+  assert.match(pipeline(['resume']).stdout, /\[implement\]\nNo interrupted implement run\./);
 });

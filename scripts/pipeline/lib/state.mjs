@@ -5,11 +5,11 @@ import { log, readJson, writeJson } from './util.mjs';
 const emptyState = (key) => ({
   story: key,
   done: null,
-  review: { rounds: 0, lastHash: null, lastVerdict: null, lastReason: null, approvedHash: null, unchangedBlocks: 0 },
+  review: { rounds: 0, lastHash: null, lastVerdict: null, lastReason: null, approvedHash: null, unchangedBlocks: 0, inProgress: null, recoveries: 0 },
   automation: { status: 'idle', requestedHash: null, verifiedHash: null, pid: null, log: null, bugs: [], progress: null, recoveries: 0, retryAt: null },
   plan: { status: 'idle', pid: null, log: null, progress: null, recoveries: 0, retryAt: null },
   implement: { status: 'idle', worktree: null, branch: null, runs: 0, pid: null, log: null, lastResult: null },
-  prCheck: { status: 'idle', hash: null, pid: null, log: null, verdict: null, score: null, openFindings: [], report: null, reason: null, deliveries: 0, runs: 0 },
+  prCheck: { status: 'idle', hash: null, pid: null, log: null, verdict: null, score: null, openFindings: [], report: null, reason: null, deliveries: 0, runs: 0, recoveries: 0, retryAt: null },
 });
 
 export const stateDir = (config) => path.join(config.root, config.stateDir);

@@ -16,8 +16,9 @@ import {
   stampIndex,
 } from './plans.mjs';
 import { clearEscalation, escalate, lockFile, logFile, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
+import { RECOVERY_DONE, nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { casePrefix, storySha } from '../../pipeline/lib/stories.mjs';
-import { acquireLock, appendJsonl, extractResult, isProcessAlive, lockHolder, log, nowIso, releaseLock, run, runAsync, selfProcess, sleep, tail } from '../../pipeline/lib/util.mjs';
+import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, runAsync, selfProcess, sleep, tail } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, formatGaps, runVerifier } from './verify.mjs';
 
 const QE_SCRIPT = fileURLToPath(new URL('../qe.mjs', import.meta.url));
@@ -110,7 +111,7 @@ export async function planLoop(config, story, { force = false, resume = false, s
     log(`${story.key}: plan run already in progress (pid ${lockHolder(lock)}).`);
     return { status: 'busy' };
   }
-  const finished = (status, extra = {}) => updateState(config, story.key, (s) => Object.assign(s.plan, { status, pid: null, boot: null, progress: null, recoveries: 0, retryAt: null, finishedAt: nowIso(), ...extra }));
+  const finished = (status, extra = {}) => updateState(config, story.key, (s) => Object.assign(s.plan, { status, pid: null, boot: null, ...RECOVERY_DONE, finishedAt: nowIso(), ...extra }));
   try {
     const initial = planStatus(config, story);
     if (initial.state === 'verified' && !force && !seedFeedback) {
@@ -385,7 +386,7 @@ export async function automationLoop(config, story, { implHash = null, skipTests
       const result = await automationPass(config, story, { skipTests, maxRounds, targetHash, resume, saved: saved?.hash === targetHash ? saved : null });
       resume = false;
       const state = updateState(config, story.key, (s) => {
-        Object.assign(s.automation, { status: result.status, pid: null, boot: null, progress: null, recoveries: 0, retryAt: null, finishedAt: nowIso() });
+        Object.assign(s.automation, { status: result.status, pid: null, boot: null, ...RECOVERY_DONE, finishedAt: nowIso() });
         if (result.status === 'verified') s.automation.verifiedHash = targetHash;
         if (result.bugs) s.automation.bugs = result.bugs;
       });
@@ -493,7 +494,7 @@ export function startAutomation(config, story, implHash) {
   // write after the spawn could race it and drop the log path or reset the status.
   const file = logFile(config, story.key, 'automation');
   const log = path.relative(config.root, file);
-  updateState(config, story.key, (s) => Object.assign(s.automation, { status: 'starting', pid: null, boot: null, log, requestedHash: null, workingHash: implHash, requestedAt: nowIso(), progress: null, recoveries: 0, retryAt: null }));
+  updateState(config, story.key, (s) => Object.assign(s.automation, { status: 'starting', pid: null, boot: null, log, requestedHash: null, workingHash: implHash, requestedAt: nowIso(), ...RECOVERY_DONE }));
   return spawnQe(config, story.key, 'automation', ['automate', story.key, '--impl-hash', implHash], file);
 }
 
@@ -509,15 +510,9 @@ function resumeFeedback(kind, feedback) {
   return feedback ? `${note}\n\n${feedback}` : note;
 }
 
-// The run recorded itself as active but its process is gone. The lock, held for the whole run, wins
-// over the recorded pid; "starting" (and a queued batch member) gets a grace period to take the lock.
-export function isInterrupted(config, story, kind, state = loadState(config, story.key)) {
-  const s = state[kind];
-  if (!['running', 'queued', 'starting'].includes(s.status)) return false;
-  if (lockHolder(lockFile(config, story.key, kind))) return false;
-  if (s.status === 'starting') return Date.now() - Date.parse(s.requestedAt ?? 0) > config.recovery.startingGraceSec * 1000;
-  return !isProcessAlive(s.pid, s.boot);
-}
+// The run recorded itself as active but its process is gone ("queued" covers the rest of a plan batch).
+export const isInterrupted = (config, story, kind, state = loadState(config, story.key)) =>
+  runDied(config, state[kind], { active: ['running', 'queued', 'starting'], lock: lockFile(config, story.key, kind) });
 
 // Resumes one interrupted run in the background. `force` also restarts a run that used up its
 // attempts ("crashed") and ignores the backoff. Returns what happened, or null if nothing needed doing.
@@ -526,7 +521,6 @@ export function recoverRun(config, story, kind, { force = false } = {}) {
   const s = state[kind];
   if (!isInterrupted(config, story, kind, state) && !(force && s.status === 'crashed')) return null;
   const set = (fields) => updateState(config, story.key, (st) => Object.assign(st[kind], fields));
-  const attempts = force ? 0 : s.recoveries ?? 0;
 
   let hash = null;
   if (kind === 'automation') {
@@ -536,22 +530,20 @@ export function recoverRun(config, story, kind, { force = false } = {}) {
       return { kind, action: 'abandoned', reason: 'the implementation changed since it started' };
     }
   }
-  if (!force && s.retryAt && Date.now() < Date.parse(s.retryAt)) return { kind, action: 'waiting', retryAt: s.retryAt };
-  const { maxAttempts, backoffSec } = config.recovery;
-  if (attempts >= maxAttempts) {
+  const next = nextAttempt(config, s, { force });
+  if (next.action === 'waiting') return { kind, ...next };
+  if (next.action === 'crashed') {
     set({ status: 'crashed', pid: null, boot: null });
-    escalate(config, story, kind, `${kind} run crashed ${attempts + 1} times`, `Last log: ${s.log ?? 'none'}\n\nAfter fixing the cause, resume it with \`node scripts/pipeline/pipeline.mjs resume ${story.key} --force\`.`);
-    return { kind, action: 'crashed', attempts };
+    escalate(config, story, kind, `${kind} run crashed ${next.attempts + 1} times`, `Last log: ${s.log ?? 'none'}\n\nAfter fixing the cause, resume it with \`node scripts/pipeline/pipeline.mjs resume ${story.key} --force\`.`);
+    return { kind, ...next };
   }
   const file = logFile(config, story.key, kind);
   const rel = path.relative(config.root, file);
-  // A run that crashes again right away waits backoffSec, then twice that, before the next attempt.
-  const retryAt = new Date(Date.now() + backoffSec * 1000 * 2 ** attempts).toISOString();
-  set({ status: 'starting', pid: null, boot: null, log: rel, requestedAt: nowIso(), recoveries: attempts + 1, retryAt });
+  set({ status: 'starting', pid: null, boot: null, log: rel, requestedAt: nowIso(), ...next.fields });
   const args = kind === 'automation' ? ['automate', story.key, '--impl-hash', hash, '--resume'] : ['plan', story.key, '--resume'];
   spawnQe(config, story.key, kind, args, file);
-  log(`${story.key}: resumed the interrupted ${kind} run (attempt ${attempts + 1}/${maxAttempts}, log ${rel}).`);
-  return { kind, action: 'resumed', attempt: attempts + 1, round: s.progress?.round ?? 1, log: rel };
+  log(`${story.key}: resumed the interrupted ${kind} run (attempt ${next.attempt}/${next.maxAttempts}, log ${rel}).`);
+  return { kind, action: 'resumed', attempt: next.attempt, round: s.progress?.round ?? 1, log: rel };
 }
 
 // Every story with an interrupted run, or only `keys`. Stories missing from this checkout are skipped.
