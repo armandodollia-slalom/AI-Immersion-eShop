@@ -1,0 +1,55 @@
+name: graphify cache prune
+
+# Builds keep shared graphify cache entries for every doc version, so other branches can reuse
+# them. Once a week this deletes entries that no remote branch or open pull request needs (and
+# that are older than the grace period), then opens a pull request for review. No API key needed.
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      grace_days:
+        description: Keep unused entries committed within this many days
+        type: number
+        default: 14
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: graphify-cache-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: astral-sh/setup-uv@v6
+    - name: Install graphify
+      run: |
+        version="$(sed -n 's/^GRAPHIFY_VERSION="\([^"]*\)".*/\1/p' scripts/graphify-build.sh)"
+        uv tool install "graphifyy[sql]==$version"
+    - name: Prune
+      run: scripts/graphify-build.sh --prune --grace-days "${{ inputs.grace_days || 14 }}" | tee -a "$GITHUB_STEP_SUMMARY"
+    - name: Open pull request
+      run: |
+        if [ -z "$(git status --porcelain -- graphify-out/cache)" ]; then
+          echo "Nothing to prune." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        branch="chore/graphify-cache-prune-$(date -u +%Y%m%d)"
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git switch -c "$branch"
+        git add -A -- graphify-out/cache
+        git commit -m "chore(graphify): prune unused semantic cache entries"
+        git push -f origin "$branch"
+        gh pr view "$branch" --json number >/dev/null 2>&1 || gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" \
+          --title "chore(graphify): prune unused semantic cache entries" \
+          --body "Automated by \`.github/workflows/graphify-cache-prune.yml\`. Removes shared graphify cache entries that no remote branch or open pull request needs and that are older than the grace period. See \`scripts/graphify-prune-cache.sh\`."
