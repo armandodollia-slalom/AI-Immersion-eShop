@@ -1,4 +1,4 @@
-// Require a public Program class to implement the
+﻿// Require a public Program class to implement the
 // fixture for the WebApplicationFactory in the
 // integration tests. Using IVT is not sufficient
 // in this case, because the accessibility of the

@@ -91,7 +91,7 @@ test('implement run: each story gets a worktree and branch, loops with the revie
 
   const dry = pipeline(['implement', 'run', incoming, '--dry-run']);
   assert.equal(dry.status, 0, dry.stderr);
-  assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon  \(blocked by DEMO-1\)/);
+  assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon {2}\(blocked by DEMO-1\)/);
   assert.ok(!fs.existsSync(`${scriptFile}.calls.json`), 'a dry run starts no agents');
 
   const result = pipeline(['implement', 'run', incoming]);

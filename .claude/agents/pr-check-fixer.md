@@ -18,7 +18,7 @@ You get the round folder with the story, the diff and `rulings.json` (each uphel
 2. Change nothing the rulings do not ask for. No refactors, no extra features, no reformatting of untouched code.
 3. If a finding needs a missing test, add or update the test next to the existing ones for that service. If a finding is about a video, you cannot re-record it: say so in `notFixed` and describe what the recording must show.
 4. If the right fix is unclear or conflicts with the story, do not guess: put it in `notFixed` with the question for a human.
-5. Check your work: `dotnet build eShop.Web.slnf` and `dotnet test --project tests/<Service>.UnitTests` for each service you touched (on Linux/macOS `dotnet` may need `export PATH=$HOME/.dotnet:$PATH`), `npx markdownlint-cli <files>` for changed markdown, and `graphify update .` after code changes.
+5. Check your work: `dotnet build eShop.Web.slnf` and `dotnet test --project tests/<Service>.UnitTests` for each service you touched (on Linux/macOS `dotnet` may need `export PATH=$HOME/.dotnet:$PATH`), `npm run lint` (ESLint, dotnet format, markdownlint), and `graphify update .` after code changes.
 6. Do not commit, push, reset, stash or switch branches; the PR check script commits your changes.
 
 ## Output

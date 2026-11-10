@@ -1,8 +1,8 @@
 ﻿namespace Webhooks.API.IntegrationEvents;
 
 public class OrderStatusChangedToPaidIntegrationEventHandler(
-    IWebhooksRetriever retriever, 
-    IWebhooksSender sender, 
+    IWebhooksRetriever retriever,
+    IWebhooksSender sender,
     ILogger<OrderStatusChangedToShippedIntegrationEventHandler> logger) : IIntegrationEventHandler<OrderStatusChangedToPaidIntegrationEvent>
 {
     public async Task Handle(OrderStatusChangedToPaidIntegrationEvent @event)

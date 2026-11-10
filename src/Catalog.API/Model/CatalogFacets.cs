@@ -1,4 +1,4 @@
-namespace eShop.Catalog.API.Model;
+﻿namespace eShop.Catalog.API.Model;
 
 public record CatalogFacetCount(int Id, int Count);
 

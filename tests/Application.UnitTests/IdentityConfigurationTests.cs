@@ -1,4 +1,4 @@
-using eShop.Identity.API.Configuration;
+﻿using eShop.Identity.API.Configuration;
 using eShop.Identity.API.Services;
 using Microsoft.Extensions.Configuration;
 

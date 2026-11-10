@@ -39,7 +39,7 @@ var identityApi = builder.AddDotnetProject("identity-api", "../Identity.API", o 
     .WithHttpHealthCheck("/health");
 
 var identityEndpoint = identityApi.GetEndpoint(launchProfileName);
-    
+
 var basketApi = builder.AddDotnetProject("basket-api", "../Basket.API")
     .WithReference(redis)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
@@ -60,7 +60,7 @@ var orderProcessor = builder.AddDotnetProject("order-processor", "../OrderProces
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WithReference(orderDb)
     .WaitFor(orderingApi); // wait for the orderingApi to be ready because that contains the EF migrations
-    
+
 var paymentProcessor = builder.AddDotnetProject("payment-processor", "../PaymentProcessor")
     .WithReference(rabbitMq).WaitFor(rabbitMq);
 

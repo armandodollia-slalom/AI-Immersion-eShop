@@ -19,7 +19,7 @@ public class UpdateOrderWhenBuyerAndPaymentMethodVerifiedDomainEventHandler : IN
     public async Task Handle(BuyerAndPaymentMethodVerifiedDomainEvent domainEvent, CancellationToken cancellationToken)
     {
         var orderToUpdate = await _orderRepository.GetAsync(domainEvent.OrderId);
-        orderToUpdate.SetPaymentMethodVerified(domainEvent.Buyer.Id, domainEvent.Payment.Id); 
+        orderToUpdate.SetPaymentMethodVerified(domainEvent.Buyer.Id, domainEvent.Payment.Id);
         OrderingApiTrace.LogOrderPaymentMethodUpdated(_logger, domainEvent.OrderId, nameof(domainEvent.Payment), domainEvent.Payment.Id);
     }
 }

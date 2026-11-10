@@ -1,4 +1,4 @@
-using eShop.EventBus.Abstractions;
+﻿using eShop.EventBus.Abstractions;
 using eShop.OrderProcessor;
 using eShop.OrderProcessor.Events;
 using eShop.OrderProcessor.Services;

@@ -4,7 +4,7 @@ global using System.Threading;
 global using System.Threading.Tasks;
 global using Microsoft.AspNetCore.Http;
 global using Microsoft.AspNetCore.Mvc;
-global using NSubstitute;
 global using Microsoft.VisualStudio.TestTools.UnitTesting;
+global using NSubstitute;
 
 [assembly: Parallelize(Workers = 0, Scope = ExecutionScope.MethodLevel)]

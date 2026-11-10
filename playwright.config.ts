@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- must load .env before the config below reads it
 require('dotenv').config({ path: './.env', quiet: true });
 import path from 'path';
 

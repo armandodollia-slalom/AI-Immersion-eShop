@@ -203,7 +203,7 @@ export async function implementStory(config, opts) {
   if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
 
   let feedback = null;
-  let qe = null;
+  let qe;
   for (;;) {
     // Implementation and review loop: the review's stop hook blocks with findings until it approves.
     let approved = false;
@@ -228,7 +228,7 @@ export async function implementStory(config, opts) {
       const done = pipeline(worktree, base, ['done', key]);
       if (/\(0 implementation file/.test(done.stdout)) return finish('no-changes', reported?.reason ?? 'the implementer changed no implementation files');
       const stop = pipeline(worktree, base, ['hook', 'stop'], '{}');
-      let output = null;
+      let output;
       try {
         output = stop.stdout.trim() ? JSON.parse(stop.stdout) : null;
       } catch {

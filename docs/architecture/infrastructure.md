@@ -79,7 +79,7 @@ Each service applies its own EF Core migrations and seed data on startup (`Migra
 | `pr-validation.yml` | `dotnet build eShop.Web.slnf` and `dotnet test` (unit + functional; functional tests spin up containers via Aspire/Testcontainers-style fixtures) |
 | `pr-validation-maui.yml` | Installs MAUI workloads and builds the mobile apps |
 | `playwright.yml` | Runs Playwright E2E (`e2e/`: browse, cart, checkout, login setup) against the running AppHost |
-| `markdownlint.yml` | Lints Markdown |
+| `lint.yml` | ESLint (JS/TS under `scripts/`, `e2e/`, root configs), markdownlint (`**/*.md`) and `dotnet format --verify-no-changes` (C#) on every PR; run locally with `npm run lint` |
 
 Test projects (approximate test-method counts): Ordering.UnitTests (40), ClientApp.UnitTests (40), Catalog.FunctionalTests (19), Application.UnitTests (17), Ordering.FunctionalTests (11), Basket.UnitTests (9), eShop.AppHost.UnitTests (5), Basket.FunctionalTests (2), Webhooks.FunctionalTests (2). There are no tests for PaymentProcessor, OrderProcessor, Identity.API, or the RabbitMQ event bus.
 
