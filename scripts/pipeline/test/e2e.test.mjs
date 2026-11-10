@@ -280,3 +280,33 @@ test('pipeline start resets the review rounds even when hooks are disabled', () 
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual([stateOf('DEMO-1').review.rounds, stateOf('DEMO-1').review.lastVerdict], [0, null]);
 });
+
+test('adding a story starts no agent unless qe.autoPlan is on, and a story with no plan yet can be pushed', async () => {
+  const branch = gitc('branch', '--show-current').stdout.trim();
+  gitc('add', '-A');
+  gitc('commit', '-qm', 'wip', '--allow-empty');
+  gitc('checkout', '-qb', 'feature/DEMO-9');
+  try {
+    agentScript({ 'qe-plan': [{ writePlan: happySad }], 'qe-plan-verifier': [{ result: { score: 10, gaps: [] } }] });
+    write('product-research/stories/DEMO-9-gift-cards.md', '# DEMO-9 Gift cards\n\nRule: a gift card pays for the basket.\n');
+    gitc('add', '-A');
+    gitc('commit', '-qm', 'add story');
+
+    assert.equal(pipeline(['git-hook', 'post-commit']).status, 0);
+    assert.equal(pipeline(['git-hook', 'post-merge']).status, 0);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.deepEqual(calls(), {}, 'no agent runs on commit or merge by default');
+
+    const head = gitc('rev-parse', 'HEAD').stdout.trim();
+    const prePush = pipeline(['git-hook', 'pre-push'], { input: `refs/heads/feature/DEMO-9 ${head} refs/heads/feature/DEMO-9 ${'0'.repeat(40)}\n` });
+    assert.equal(prePush.status, 0, prePush.stdout + prePush.stderr);
+    assert.equal(qe(['check', '--changed-from', 'main']).status, 0);
+
+    gitc('config', 'qe.autoPlan', 'true');
+    assert.equal(pipeline(['git-hook', 'post-commit']).status, 0);
+    await waitFor(() => calls()['qe-plan-verifier'] === 1);
+  } finally {
+    gitc('config', '--unset', 'qe.autoPlan');
+    gitc('checkout', '-qf', branch);
+  }
+});

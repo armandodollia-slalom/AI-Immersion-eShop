@@ -65,4 +65,4 @@ The agent CLI is the pipeline's (`PIPELINE_AGENT_CLI`, Claude Code by default). 
 
 ## Not automatic
 
-Merging stories to `product-research/stories` does not start implementation: post-commit and post-merge only write test plans. Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI logged in.
+Adding or merging stories to `product-research/stories` starts nothing: no implementation and no test plans (unless you opted in with `git config qe.autoPlan true`). Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI logged in.

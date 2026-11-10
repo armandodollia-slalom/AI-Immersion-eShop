@@ -16,7 +16,7 @@ flowchart LR
   D --> R[review stage]
   R -->|changes requested: block<br/>findings go back to the agent| I
   R -->|approved| Q[qe stage<br/>automation in the background]
-  S[Story committed] -->|post-commit / post-merge| D2{{dispatcher}} --> QP[qe stage<br/>test plan in the background]
+  C[You run a command<br/>implement run, pipeline start, qe plan] --> I
   P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
 ```
 
@@ -47,12 +47,12 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | `pipeline start` | (command) | `story-start` | review, qe | none |
 | Agent session start/resume | `SessionStart` | `hook session-start` | review, qe | none |
 | Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe | LLM, only after `pipeline done` |
-| Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe (plans for changed stories, in the background) | LLM |
-| Push | `.githooks/pre-push` | `git-hook pre-push` | qe (plans and tests for touched stories are verified and current) | none |
+| Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
+| Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
 | Weekly | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
-`scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan false`) are listed in each stage's docs.
+No agent starts on its own when stories or epics are added or changed: agent work starts only from a command (`implement run`, `pipeline start`, `qe plan`, `qe automate`) or from `pipeline done` in a session you started. `scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan true`) are listed in each stage's docs.
 
 ## The dispatcher
 

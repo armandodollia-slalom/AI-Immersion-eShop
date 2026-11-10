@@ -62,7 +62,8 @@ function checkStories(config, stories, reader, { allowMissing = false } = {}) {
   return failed;
 }
 
-// Plans and tests for every story touched by the pushed commits must be verified and current.
+// Plans and tests for every story touched by the pushed commits must be verified and current. Stories with
+// no plan yet pass: nothing starts work on a new story until someone runs `qe plan` or `implement run`.
 function prePush(config, input) {
   if (process.env.QE_SKIP === '1') return 0;
   let failed = 0;
@@ -71,7 +72,7 @@ function prePush(config, input) {
     if (!localSha || /^0+$/.test(localSha)) continue;
     const from = /^0+$/.test(remoteSha ?? '') || !revExists(config.root, remoteSha) ? mergeBase(config.root, config.baseRef) : remoteSha;
     const reader = gitReader(config.root, localSha);
-    failed += checkStories(config, touchedStories(config, changedFiles(config.root, from, localSha), reader), reader);
+    failed += checkStories(config, touchedStories(config, changedFiles(config.root, from, localSha), reader), reader, { allowMissing: true });
   }
   if (failed) console.error('\nQE: push blocked. Run `node scripts/qe/qe.mjs plan <story>` (and commit the plan) or re-run `automate`. Bypass once with QE_SKIP=1.');
   return failed ? 1 : 0;
@@ -131,7 +132,7 @@ async function main() {
         console.log('No stories, plans or story tests changed.');
         return 0;
       }
-      return checkStories(config, stories, reader) ? 1 : 0;
+      return checkStories(config, stories, reader, { allowMissing: true }) ? 1 : 0;
     }
 
     case 'automate': {
@@ -205,7 +206,8 @@ async function main() {
     case 'git-hook': {
       const event = positional[0];
       if (event === 'pre-push') return prePush(config, readStdin());
-      if (isDisabled() || git(config.root, ['config', '--bool', 'qe.autoPlan']).stdout.trim() === 'false') return 0;
+      // Agents only start from a command. Background planning on commit/merge is opt-in: git config qe.autoPlan true.
+      if (isDisabled() || git(config.root, ['config', '--bool', 'qe.autoPlan']).stdout.trim() !== 'true') return 0;
       let paths = [];
       if (event === 'post-commit') {
         paths = revExists(config.root, 'HEAD~1')
