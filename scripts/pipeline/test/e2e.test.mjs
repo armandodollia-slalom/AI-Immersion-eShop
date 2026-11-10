@@ -381,6 +381,45 @@ test('the lessons run holds a factory retro over the decision log and keeps only
   gitc('branch', '-D', branch);
 });
 
+test('a lessons run killed mid-retro is resumed from the start, then escalated after repeated crashes', async () => {
+  const runFile = path.join(repo, '.agent-state/lessons-run.json');
+  const runOf = () => JSON.parse(fs.readFileSync(runFile, 'utf8'));
+  const lastTs = () => JSON.parse(read('.agent-state/lessons-last.json')).ts;
+  const before = lastTs();
+  agentScript({
+    'qe-lessons': [
+      { writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nfirst attempt\n' }, killPidIn: runFile },
+      { writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nsecond attempt\n' }, result: { status: 'done', proposals: [] } },
+    ],
+  });
+  const killed = qe(['lessons', '--no-push']);
+  assert.equal(killed.signal, 'SIGKILL', killed.stderr);
+  const dead = runOf();
+  assert.deepEqual([dead.status, dead.phase, fs.existsSync(dead.worktree)], ['running', 'agent', true]);
+  assert.equal(lastTs(), before, 'a crashed run must stay due');
+  // Not skipped as "not due": the crashed run is started over, its leftover worktree and branch removed.
+  const rerun = qe(['lessons', '--if-due']);
+  assert.match(rerun.stderr, /interrupted; starting it over/);
+  assert.equal(runOf().status, 'done');
+  assert.equal(calls()['qe-lessons'], 2);
+  assert.equal(fs.existsSync(dead.worktree), false);
+  assert.match(gitc('show', `${dead.branch}:docs/ai-pipeline/qe.md`).stdout, /second attempt/);
+  assert.notEqual(lastTs(), before);
+  gitc('branch', '-D', dead.branch);
+
+  fs.writeFileSync(runFile, JSON.stringify({ ...dead, status: 'running', pid: 999999, boot: null, recoveries: 3, retryAt: null }));
+  assert.match(qe(['resume']).stdout, /lessons and factory retro run kept crashing and was escalated/);
+  assert.equal(runOf().status, 'crashed');
+  assert.ok(fs.existsSync(path.join(repo, '.agent-state/escalations/lessons-qe.md')));
+  assert.match(qe(['resume']).stdout, /No interrupted QE runs/);
+  agentScript({ 'qe-lessons': [{ writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nforced\n' }, result: { status: 'done', proposals: [] } }] });
+  assert.match(qe(['resume', '--force']).stdout, /resumed the interrupted lessons and factory retro run \(attempt 1/);
+  await waitFor(() => runOf().status === 'done');
+  assert.equal(fs.existsSync(path.join(repo, '.agent-state/escalations/lessons-qe.md')), false);
+  assert.equal(calls()['qe-lessons'], 1);
+  gitc('branch', '-D', runOf().branch);
+});
+
 test('pipeline start resets the review rounds even when hooks are disabled', () => {
   const file = `.agent-state/stories/DEMO-1.json`;
   const state = stateOf('DEMO-1');

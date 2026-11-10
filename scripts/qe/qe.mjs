@@ -6,7 +6,7 @@ import { changedFiles, fsReader, git, gitReader, mergeBase, revExists } from '..
 import { loadState, updateState } from '../pipeline/lib/state.mjs';
 import { CASE_ID, activeStory, listStories, storiesFromPaths } from '../pipeline/lib/stories.mjs';
 import { log, selfProcess, setLogTag } from '../pipeline/lib/util.mjs';
-import { calibrateCommand, lessonsCommand } from './lib/lessons.mjs';
+import { calibrateCommand, formatLessonsRecovery, lessonsCommand, recoverLessons } from './lib/lessons.mjs';
 import { computeMetrics, formatMetrics } from './lib/metrics.mjs';
 import { automationFiles, automationStatus, planStatus } from './lib/plans.mjs';
 import { automationLoop, formatRecovery, hookStop, planLoop, recoverAll, sessionContext, spawnQe } from './lib/workflows.mjs';
@@ -25,11 +25,12 @@ Workflow 2 (review-approved implementation -> verified automated tests)
 
 Recovery
   resume [story...] [--force]   resume plan and automation runs that died (crash, kill, reboot) from
-                                their last round; --force also restarts runs escalated as crashed
+                                their last round, and (without stories) the lessons run; --force also
+                                restarts runs escalated as crashed
 
 Observability and improvement
   metrics [--json] [--since <iso-date>]
-  lessons [--dry-run] [--local] [--if-due] [--no-push]
+  lessons [--dry-run] [--local] [--if-due] [--no-push] [--resume]
   calibrate [--stage plan|automation] [--sample <n>]
 
 Hooks (called by scripts/pipeline/pipeline.mjs)
@@ -163,7 +164,10 @@ async function main() {
       const keys = positional.length ? positional.map((a) => requireStory(config, a).key) : null;
       const results = recoverAll(config, listStories(config), { keys, force: Boolean(flags.force) });
       for (const r of results) console.log(formatRecovery(r));
-      if (!results.length) console.log(`No interrupted QE runs${keys ? ` for ${keys.join(', ')}` : ''}.`);
+      // The lessons run is not tied to a story, so a story-scoped resume leaves it alone.
+      const lessons = keys ? null : recoverLessons(config, { force: Boolean(flags.force) });
+      if (lessons) console.log(formatLessonsRecovery(lessons));
+      if (!results.length && !lessons) console.log(`No interrupted QE runs${keys ? ` for ${keys.join(', ')}` : ''}.`);
       return 0;
     }
 
@@ -188,7 +192,7 @@ async function main() {
     }
 
     case 'lessons': {
-      const result = await lessonsCommand(config, { dryRun: Boolean(flags['dry-run']), local: Boolean(flags.local), ifDue: Boolean(flags['if-due']), push: !flags['no-push'] });
+      const result = await lessonsCommand(config, { dryRun: Boolean(flags['dry-run']), local: Boolean(flags.local), ifDue: Boolean(flags['if-due']), push: !flags['no-push'], resume: Boolean(flags.resume) });
       console.log(JSON.stringify(result, null, 2));
       return 0;
     }
@@ -216,7 +220,8 @@ async function main() {
       }
       if (event === 'session-start') {
         const recovered = recoverAll(config, listStories(config));
-        process.stdout.write(sessionContext(config, story, recovered));
+        const lessons = recoverLessons(config);
+        process.stdout.write([sessionContext(config, story, recovered), lessons && formatLessonsRecovery(lessons)].filter(Boolean).join('\n'));
         return 0;
       }
       console.error(`Unknown hook event "${event}".`);

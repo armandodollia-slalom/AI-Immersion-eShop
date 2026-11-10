@@ -75,6 +75,8 @@ A loop saves its round and the feedback for that round in the story state before
 
 Automation for code that has changed since the run started is dropped, and the Stop hook starts a fresh run for the new code. Each run is resumed up to `recovery.maxAttempts` times (in `scripts/pipeline/config.json`, default 3), waiting `recovery.backoffSec` (60 s) and then twice as long before each retry, so a run that crashes on start does not loop. After that its status is `crashed` and an escalation is written; fix the cause, then run `pipeline resume KEY --force`.
 
+The lessons and factory retro run (`qe lessons`, see [Auto-improvement](#auto-improvement)) is not tied to a story. It records itself in `.agent-state/lessons-run.json` (pid, boot, phase, branch) and holds `.agent-state/locks/lessons.lock`, and it writes `lessons-last.json` only when it ends, so a run that died is still due. The next `qe lessons` (including `--if-due`) starts it over after removing the dead run's worktree and branch; if it had already committed, it only pushes and opens the PR. Session start, `qe resume` and `pipeline resume` (without a story) restart it in the background with the same backoff, and escalate it after `recovery.maxAttempts` (`.agent-state/escalations/lessons-qe.md`); `resume --force` retries it.
+
 ## Observability
 
 All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are in `arch-reviews.jsonl`, see [review.md](review.md); PR checks are in `pr-checks.jsonl`, see [pr-check.md](pr-check.md)), which are committed with the plans and tests they describe (`merge=union` keeps every record across branches):
@@ -135,11 +137,11 @@ Models are named by alias. `agent.allowedModels` in `scripts/pipeline/config.jso
 node scripts/qe/qe.mjs status [PROMO-3]
 node scripts/qe/qe.mjs plan PROMO-3 | --stale | --all [--force] [--background]
 node scripts/qe/qe.mjs automate PROMO-3 [--skip-tests] [--background]
-node scripts/qe/qe.mjs resume [PROMO-3] [--force]   # resume runs that died; --force also escalated ones
+node scripts/qe/qe.mjs resume [PROMO-3] [--force]   # resume runs that died (and, without a story, the lessons run); --force also escalated ones
 node scripts/qe/qe.mjs check [--all] [--changed-from origin/main]
 node scripts/qe/qe.mjs metrics [--json] [--since 2026-01-01]
 node scripts/qe/qe.mjs calibrate [--stage plan|automation] [--sample 3]
-node scripts/qe/qe.mjs lessons [--dry-run] [--local]
+node scripts/qe/qe.mjs lessons [--dry-run] [--local] [--if-due] [--resume]
 npm run test:pipeline                          # all pipeline tests (fake agent, no LLM)
 ```
 

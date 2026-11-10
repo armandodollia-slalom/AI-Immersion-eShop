@@ -219,6 +219,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
   | review | the round in progress (`review.inProgress`) | the next Stop reruns the round ([review](review.md#interrupted-reviews)) |
   | qe | plan and automation round and feedback | session start, Stop, `pipeline resume` ([qe](qe.md#crash-recovery)) |
   | pr-check | Stop-hook waiter in the story state; manual runs in `progress.json` after each critique and fix | session start, Stop, `pipeline resume` ([pr-check](pr-check.md#interrupted-checks)) |
+  | lessons and factory retro (`qe lessons`) | `lessons-run.json`: phase, branch and process | the next `qe lessons`, session start, `pipeline resume` ([qe](qe.md#crash-recovery)) |
 
 - **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files. `decisions.jsonl` is shared: every stage records why its agents decided what they did (`scripts/pipeline/lib/decisions.mjs`, see [qe](qe.md#decision-log)), and the weekly lessons run turns it into lessons and proposed factory changes.
 
