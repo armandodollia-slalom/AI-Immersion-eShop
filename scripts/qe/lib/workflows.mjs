@@ -17,7 +17,7 @@ import {
 } from './plans.mjs';
 import { clearEscalation, escalate, lockFile, logFile, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { casePrefix, storySha } from '../../pipeline/lib/stories.mjs';
-import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, tail } from '../../pipeline/lib/util.mjs';
+import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, sleep, tail } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, formatGaps, runVerifier } from './verify.mjs';
 
 const QE_SCRIPT = fileURLToPath(new URL('../qe.mjs', import.meta.url));
@@ -331,7 +331,16 @@ async function automationPass(config, story, { skipTests, maxRounds }) {
   const status = planStatus(config, story);
   if (status.state !== 'verified') {
     log(`${story.key}: plan is ${status.state}; running the plan loop first.`);
-    const plan = await planLoop(config, story);
+    let plan = await planLoop(config, story);
+    // A plan run already in progress (for example the post-commit hook after the story's notes were
+    // committed) holds the lock: wait for it, then use its plan (or run the loop if it didn't verify).
+    const lock = lockFile(config, story.key, 'plan');
+    const deadline = Date.now() + config.timeoutsSec.plan * 1000 * (config.loops.planMaxRounds + 1);
+    while (plan.status === 'busy' && Date.now() < deadline) {
+      log(`${story.key}: waiting for the running plan loop (pid ${lockHolder(lock)}).`);
+      while (lockHolder(lock) && Date.now() < deadline) await sleep(5000);
+      plan = planStatus(config, story).state === 'verified' ? { status: 'verified' } : await planLoop(config, story);
+    }
     if (plan.status !== 'verified') return { status: 'blocked-on-plan' };
   }
   const implFiles = implChanges(config).files;
