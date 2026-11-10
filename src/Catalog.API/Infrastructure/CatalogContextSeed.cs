@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using eShop.Catalog.API.Services;
 using Pgvector;
 
@@ -46,17 +46,17 @@ public partial class CatalogContextSeed(
             var catalogItems = sourceItems
                 .Where(source => source.Name != null && source.Brand != null && source.Type != null)
                 .Select(source => new CatalogItem(source.Name!)
-            {
-                Id = source.Id,
-                Description = source.Description,
-                Price = source.Price,
-                CatalogBrandId = brandIdsByName[source.Brand!],
-                CatalogTypeId = typeIdsByName[source.Type!],
-                AvailableStock = 100,
-                MaxStockThreshold = 200,
-                RestockThreshold = 10,
-                PictureFileName = $"{source.Id}.webp",
-            }).ToArray();
+                {
+                    Id = source.Id,
+                    Description = source.Description,
+                    Price = source.Price,
+                    CatalogBrandId = brandIdsByName[source.Brand!],
+                    CatalogTypeId = typeIdsByName[source.Type!],
+                    AvailableStock = 100,
+                    MaxStockThreshold = 200,
+                    RestockThreshold = 10,
+                    PictureFileName = $"{source.Id}.webp",
+                }).ToArray();
 
             if (catalogAI.IsEnabled)
             {

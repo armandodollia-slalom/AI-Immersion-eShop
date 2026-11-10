@@ -54,7 +54,7 @@ public class IdentifiedCommandHandlerTest
         var result = await handler.Handle(fakeOrderCmd, CancellationToken.None);
 
         // Assert
-       await  _mediator.DidNotReceive().Send(Arg.Any<IRequest<bool>>(), default);
+        await _mediator.DidNotReceive().Send(Arg.Any<IRequest<bool>>(), default);
     }
 
     private CreateOrderCommand FakeOrderRequest(Dictionary<string, object> args = null)

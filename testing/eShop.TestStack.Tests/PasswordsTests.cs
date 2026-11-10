@@ -1,4 +1,4 @@
-namespace eShop.TestStack.Tests;
+﻿namespace eShop.TestStack.Tests;
 
 [TestClass]
 public sealed class PasswordsTests

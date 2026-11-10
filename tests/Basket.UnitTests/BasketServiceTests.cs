@@ -1,12 +1,12 @@
 ﻿using System.Security.Claims;
-using eShop.Basket.API.Repositories;
 using eShop.Basket.API.Grpc;
 using eShop.Basket.API.IntegrationEvents.EventHandling;
 using eShop.Basket.API.IntegrationEvents.EventHandling.Events;
 using eShop.Basket.API.Model;
+using eShop.Basket.API.Repositories;
 using eShop.Basket.UnitTests.Helpers;
-using Microsoft.Extensions.Logging.Abstractions;
 using Grpc.Core;
+using Microsoft.Extensions.Logging.Abstractions;
 using BasketItem = eShop.Basket.API.Model.BasketItem;
 
 namespace eShop.Basket.UnitTests;

@@ -1,4 +1,4 @@
-using eShop.Catalog.API.Model;
+﻿using eShop.Catalog.API.Model;
 using eShop.Catalog.API.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;

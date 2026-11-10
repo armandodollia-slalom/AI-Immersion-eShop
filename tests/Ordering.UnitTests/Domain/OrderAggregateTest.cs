@@ -52,9 +52,9 @@ public class OrderAggregateTest
         var discount = 15;
         var pictureUrl = "FakeUrl";
         var units = 1;
-        
+
         //Act - Assert
-        Assert.ThrowsExactly<OrderingDomainException>(() => new OrderItem(productId, productName, unitPrice, discount, pictureUrl, units));       
+        Assert.ThrowsExactly<OrderingDomainException>(() => new OrderItem(productId, productName, unitPrice, discount, pictureUrl, units));
     }
 
     [TestMethod]
