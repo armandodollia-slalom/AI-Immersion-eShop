@@ -20,6 +20,11 @@
     },
     "resultParseRetries": 1
   },
+  "recovery": {
+    "maxAttempts": 3,
+    "backoffSec": 60,
+    "startingGraceSec": 120
+  },
   "implExclude": [
     "tests",
     "e2e",

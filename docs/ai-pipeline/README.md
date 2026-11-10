@@ -29,6 +29,7 @@ flowchart LR
 node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-run   # order, branches, bases
 node scripts/pipeline/pipeline.mjs implement run path/to/stories [--parallel 2] [--pr]
 node scripts/pipeline/pipeline.mjs implement status
+node scripts/pipeline/pipeline.mjs implement resume                    # after a crash: continue the last run
 ```
 
 Each story gets its own worktree and branch, the implementer agent, the architecture review loop and verified tests. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
@@ -111,11 +112,12 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 - **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
 - **State:** `.agent-state/` (not committed) holds the active story, one `stories/<KEY>.json` per story with a section per stage, locks, background logs (`logs/`) and escalations (`escalations/<KEY>-<stage>.md`, which the next agent session is told about).
+- **Recovery:** background runs record their pid and the boot they started in, and hold a lock for the whole run, so a pid reused after a reboot is never mistaken for the run. A run that died (crash, kill, reboot) is picked up on the next session start or Stop hook, or by `pipeline resume`, and continues from its last round. Each run is retried `recovery.maxAttempts` times (default 3), waiting `recovery.backoffSec` (60 s) and then twice as long each time, then escalated. `pipeline resume <KEY> --force` restarts an escalated run.
 - **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files.
 
 ## Adding a stage
 
-1. Create `scripts/<stage>/<stage>.mjs` using the shared lib (`loadConfig('<stage>')`, `runMain`, `readPayload`). Implement the events it needs: `hook stop` (print nothing, a `systemMessage`, or a block), `hook session-start` (print plain text), `hook story-start <KEY>`, `git-hook <event>` (exit nonzero only on `pre-push` to fail the push), plus `status [story]` and `metrics [--json]`.
+1. Create `scripts/<stage>/<stage>.mjs` using the shared lib (`loadConfig('<stage>')`, `runMain`, `readPayload`). Implement the events it needs: `hook stop` (print nothing, a `systemMessage`, or a block), `hook session-start` (print plain text), `hook story-start <KEY>`, `git-hook <event>` (exit nonzero only on `pre-push` to fail the push), plus `status [story]` and `metrics [--json]`. A stage with background runs can also implement `resume [story] [--force]` to restart those that died.
 2. Add it to `scripts/pipeline/stages.json` in the right order, listing its `hooks`, `gitHooks` and `commands`. A stage that must wait for another reads that stage's section of the story state (as `qe` reads `review.approvedHash`).
 3. Put its tests in `scripts/<stage>/test/`; `npm run test:pipeline` and CI pick them up. For a PR gate, add a reusable workflow and call it from `ai-pipeline.yml`.
 4. Document it in `docs/ai-pipeline/<stage>.md` and add it to the table above. No agent tool config changes are needed.
@@ -124,7 +126,9 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
+node scripts/pipeline/pipeline.mjs resume [KEY] [--force]       # restart background runs that died
 node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement resume [--parallel N] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]

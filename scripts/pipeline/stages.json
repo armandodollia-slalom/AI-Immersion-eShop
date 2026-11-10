@@ -22,7 +22,7 @@
       "cli": "scripts/qe/qe.mjs",
       "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": ["post-commit", "post-merge", "pre-push"],
-      "commands": ["status", "metrics"]
+      "commands": ["status", "resume", "metrics"]
     },
     {
       "name": "pr-check",

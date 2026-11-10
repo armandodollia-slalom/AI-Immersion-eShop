@@ -3,25 +3,29 @@
 import { parseArgs as parse, readPayload, readStdin, requireStory, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { changedFiles, fsReader, git, gitReader, mergeBase, revExists } from '../pipeline/lib/git.mjs';
-import { loadState } from '../pipeline/lib/state.mjs';
+import { loadState, updateState } from '../pipeline/lib/state.mjs';
 import { CASE_ID, activeStory, listStories, storiesFromPaths } from '../pipeline/lib/stories.mjs';
-import { log, setLogTag } from '../pipeline/lib/util.mjs';
+import { log, selfProcess, setLogTag } from '../pipeline/lib/util.mjs';
 import { calibrateCommand, lessonsCommand } from './lib/lessons.mjs';
 import { computeMetrics, formatMetrics } from './lib/metrics.mjs';
 import { automationFiles, automationStatus, planStatus } from './lib/plans.mjs';
-import { automationLoop, hookStop, planLoop, sessionContext, spawnQe } from './lib/workflows.mjs';
+import { automationLoop, formatRecovery, hookStop, planLoop, recoverAll, sessionContext, spawnQe } from './lib/workflows.mjs';
 
 setLogTag('qe');
 
 const USAGE = `Usage: node scripts/qe/qe.mjs <command> [options]
 
 Workflow 1 (story -> verified test plan)
-  plan <story...> | --stale | --all [--force] [--background]
+  plan <story...> | --stale | --all [--force] [--resume] [--background]
   check [--changed-from <ref>] [--rev <rev>] [--all] [--pre-push]
 
 Workflow 2 (review-approved implementation -> verified automated tests)
-  automate <story> [--impl-hash <h>] [--skip-tests] [--background]
+  automate <story> [--impl-hash <h>] [--skip-tests] [--resume] [--background]
   status [story]
+
+Recovery
+  resume [story...] [--force]   resume plan and automation runs that died (crash, kill, reboot) from
+                                their last round; --force also restarts runs escalated as crashed
 
 Observability and improvement
   metrics [--json] [--since <iso-date>]
@@ -107,9 +111,16 @@ async function main() {
         console.log('No stories to plan.');
         return 0;
       }
+      // Stories still waiting in this batch are "queued" under this process, so a crash leaves them
+      // recoverable too, not only the one being planned.
+      for (const story of stories.slice(1)) {
+        updateState(config, story.key, (s) => {
+          if (!['running', 'starting'].includes(s.plan.status)) Object.assign(s.plan, { status: 'queued', ...selfProcess(), progress: null });
+        });
+      }
       let failed = 0;
       for (const story of stories) {
-        const result = await planLoop(config, story, { force: Boolean(flags.force) });
+        const result = await planLoop(config, story, { force: Boolean(flags.force), resume: Boolean(flags.resume) });
         console.log(`${story.key}: ${result.status}`);
         if (!['verified', 'busy'].includes(result.status)) failed++;
       }
@@ -138,14 +149,22 @@ async function main() {
     case 'automate': {
       const story = requireStory(config, positional[0], { fallbackActive: true });
       if (flags.background) {
-        const args = ['automate', story.key, ...(flags['impl-hash'] ? ['--impl-hash', flags['impl-hash']] : []), ...(flags['skip-tests'] ? ['--skip-tests'] : [])];
+        const args = ['automate', story.key, ...(flags['impl-hash'] ? ['--impl-hash', flags['impl-hash']] : []), ...(flags['skip-tests'] ? ['--skip-tests'] : []), ...(flags.resume ? ['--resume'] : [])];
         const bg = spawnQe(config, story.key, 'automation', args);
         console.log(`Automation started in the background (pid ${bg.pid}, log ${bg.log}).`);
         return 0;
       }
-      const result = await automationLoop(config, story, { implHash: flags['impl-hash'] ?? null, skipTests: Boolean(flags['skip-tests']) });
+      const result = await automationLoop(config, story, { implHash: flags['impl-hash'] ?? null, skipTests: Boolean(flags['skip-tests']), resume: Boolean(flags.resume) });
       console.log(`${story.key}: ${result.status}`);
       return ['verified', 'busy'].includes(result.status) ? 0 : 1;
+    }
+
+    case 'resume': {
+      const keys = positional.length ? positional.map((a) => requireStory(config, a).key) : null;
+      const results = recoverAll(config, listStories(config), { keys, force: Boolean(flags.force) });
+      for (const r of results) console.log(formatRecovery(r));
+      if (!results.length) console.log(`No interrupted QE runs${keys ? ` for ${keys.join(', ')}` : ''}.`);
+      return 0;
     }
 
     case 'status': {
@@ -196,7 +215,8 @@ async function main() {
         return 0;
       }
       if (event === 'session-start') {
-        process.stdout.write(sessionContext(config, story));
+        const recovered = recoverAll(config, listStories(config));
+        process.stdout.write(sessionContext(config, story, recovered));
         return 0;
       }
       console.error(`Unknown hook event "${event}".`);

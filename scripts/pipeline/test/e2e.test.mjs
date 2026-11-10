@@ -217,6 +217,68 @@ test('workflow 2: the dispatcher runs the review stage first, then automation lo
   assert.deepEqual([metrics.review.rounds, metrics.review.approvals, metrics.review.findingsByCategory.security], [2, 1, 1]);
 });
 
+test('a crashed automation run resumes from its last round, is retried, then escalated, and --force restarts it', async () => {
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // The runner sits on the killed state with its recorded process gone.
+  const crashed = () => waitFor(() => stateOf('DEMO-1').automation.status === 'running' && !alive(stateOf('DEMO-1').automation.pid));
+  const stop = () => {
+    const r = pipeline(['hook', 'stop'], { input: '{}' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout ? JSON.parse(r.stdout) : null;
+  };
+  const pipelineConfig = read('scripts/pipeline/config.json');
+  const config = JSON.parse(pipelineConfig);
+  config.recovery = { maxAttempts: 1, backoffSec: 0, startingGraceSec: 120 };
+  write('scripts/pipeline/config.json', JSON.stringify(config, null, 2));
+  try {
+    agentScript({
+      'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }],
+      // Round 1 leaves two cases untested (precheck fails); the runner dies in round 2.
+      'qe-automation': [{ writeTests: [1], result: { status: 'done' } }, { killRunner: 'automation' }, { writeTests: [1, 2, 3], result: { status: 'done' } }],
+      'qe-automation-verifier': [{ result: { score: 10, gaps: [] } }],
+    });
+    assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
+    assert.equal(pipeline(['done']).status, 0);
+    write('src/Basket/Coupons.cs', '// coupons v3 survives a crash\n');
+    assert.match(stop().systemMessage, /test automation for DEMO-1 started in the background/);
+    await crashed();
+    assert.equal(stop()?.systemMessage.includes('resumed the interrupted test automation run for DEMO-1 at round 2 (attempt 1'), true, 'the Stop hook resumes it');
+    await waitFor(() => !['starting', 'running'].includes(stateOf('DEMO-1').automation.status));
+    const state = stateOf('DEMO-1');
+    assert.equal(state.automation.status, 'verified', read(state.automation.log));
+    assert.deepEqual([state.automation.recoveries, state.automation.progress], [0, null]);
+    assert.equal(calls()['qe-automation'], 3, 'round 1 is not redone');
+    assert.match(prompts().split('=== qe-automation #3')[1], /previous test automation run was interrupted[\s\S]*TC-DEMO-1-02 has no automated test/, 'the resumed round keeps its feedback');
+
+    // A run that keeps crashing is escalated once its attempts are used up, and not restarted by itself.
+    agentScript({ 'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }], 'qe-automation': [{ killRunner: 'automation' }] });
+    write('src/Basket/Coupons.cs', '// coupons v3 crashes the runner\n');
+    assert.match(stop().systemMessage, /started in the background/);
+    await crashed();
+    assert.match(pipeline(['resume', 'DEMO-1']).stdout, /resumed the interrupted test automation run for DEMO-1 at round 1 \(attempt 1/);
+    await crashed();
+    assert.match(qe(['resume']).stdout, /kept crashing and was escalated/);
+    assert.equal(stateOf('DEMO-1').automation.status, 'crashed');
+    assert.match(read('.agent-state/escalations/DEMO-1-automation.md'), /automation run crashed 2 times[\s\S]*resume DEMO-1 --force/);
+    assert.equal(stop(), null, 'a crashed run waits for a person');
+    assert.match(qe(['resume']).stdout, /No interrupted QE runs/);
+
+    agentScript({ 'qe-automation': [{ writeTests: [1, 2, 3], result: { status: 'done' } }], 'qe-automation-verifier': [{ result: { score: 10, gaps: [] } }] });
+    assert.match(pipeline(['resume', 'DEMO-1', '--force']).stdout, /resumed the interrupted test automation run/);
+    await waitFor(() => !['starting', 'running'].includes(stateOf('DEMO-1').automation.status));
+    assert.equal(stateOf('DEMO-1').automation.status, 'verified');
+  } finally {
+    write('scripts/pipeline/config.json', pipelineConfig);
+  }
+});
+
 test('the Architecture Policy Pack gates each review round for code agents and loops until satisfied', async () => {
   const policyFile = path.join(repo, '..', `${path.basename(repo)}-policy.json`);
   const item = (outcome, rule) => ({ finding_id: `${rule}-abc`, rule_id: rule, rule_title: 'Rule title', category: 'security', outcome, file: 'src/Basket/Coupons.cs', line: 1, message: 'violation', fix: 'apply the pattern', patterns: ['PAT-X'], repeat_mistake: outcome === 'BLOCK' });

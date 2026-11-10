@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnBackground } from '../../pipeline/lib/background.mjs';
 import { implChanges } from '../../pipeline/lib/git.mjs';
 import { clearEscalation, escalate, lockFile, loadState, logFile, updateState } from '../../pipeline/lib/state.mjs';
-import { isPidAlive, lockHolder, log, nowIso, sleep } from '../../pipeline/lib/util.mjs';
+import { bootId, isProcessAlive, lockHolder, log, nowIso, selfProcess, sleep } from '../../pipeline/lib/util.mjs';
 
 const SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'pr-check.mjs');
 const block = (reason) => ({ decision: 'block', reason });
@@ -63,7 +63,7 @@ export function hookStop(config, story, payload = {}) {
 
   if (pc.hash === hash) {
     if (pc.status === 'done') return deliver(config, story, pc, payload);
-    if (['waiting', 'running'].includes(pc.status) && (!pc.pid || isPidAlive(pc.pid))) return null;
+    if (['waiting', 'running'].includes(pc.status) && (!pc.pid || isProcessAlive(pc.pid, pc.boot))) return null;
     if (['skipped', 'error', 'escalated'].includes(pc.status)) return null;
   }
 
@@ -80,7 +80,7 @@ export function hookStop(config, story, payload = {}) {
   updateState(config, story.key, (s) => Object.assign(s.prCheck, { status: 'waiting', hash, pid: null, log: rel, reason: null, deliveries: 0 }));
   const bg = spawnBackground(config, { script: SCRIPT, key: story.key, stage: 'pr-check', args: ['hook-run', story.key, '--hash', hash], file });
   updateState(config, story.key, (s) => {
-    if (s.prCheck.hash === hash && !s.prCheck.pid) s.prCheck.pid = bg.pid;
+    if (s.prCheck.hash === hash && !s.prCheck.pid) Object.assign(s.prCheck, { pid: bg.pid, boot: bootId() });
   });
   return notice(`PR check: ${story.key} will be checked against its story in the background once QE has verified the tests (log: ${bg.log}). Findings come back on your next stop.`);
 }
@@ -98,7 +98,7 @@ export async function hookRun(config, story, hash, executeCheck) {
   const current = () => loadState(config, story.key).prCheck.hash === hash;
 
   if (!current()) return 0;
-  set({ pid: process.pid });
+  set(selfProcess());
   for (;;) {
     if (!current()) {
       log(`superseded: ${story.key} has a newer PR check`);

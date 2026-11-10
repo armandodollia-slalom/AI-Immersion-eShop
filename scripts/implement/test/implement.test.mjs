@@ -127,4 +127,30 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   const status = pipeline(['implement', 'status']);
   assert.match(status.stdout, /DEMO-2 +finished +done +feat\/demo-2-coupon-history/);
   assert.match(status.stdout, /DEMO-4 +finished +skipped/);
+
+  // The machine dies while DEMO-3 is being worked on: its runner never records an outcome.
+  const runs = path.join(repo, '.agent-state/implement');
+  const edit = (file, patch) => fs.writeFileSync(path.join(runs, file), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(runs, file), 'utf8')), ...patch }));
+  edit('batch.json', { pid: 2 ** 22 + 7, finishedAt: null });
+  edit('DEMO-3.json', { status: 'running', outcome: null });
+  assert.match(pipeline(['implement', 'status']).stdout, /last implement run was interrupted.*implement resume/);
+  fs.writeFileSync(
+    scriptFile,
+    JSON.stringify({
+      implementer: [{ writeImpl: 'src/Loyalty/Points.cs', result: { status: 'done', reason: 'points' } }],
+      'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }],
+      'qe-plan': [{ writePlan: happySad }],
+      'qe-plan-verifier': [{ result: { score: 10, summary: 'ok', gaps: [] } }],
+      'qe-automation': [{ writeTests: [1, 2], result: { status: 'done' } }],
+      'qe-automation-verifier': [{ result: { score: 10, gaps: [] } }],
+    }),
+  );
+  for (const suffix of ['.calls.json', '.prompts.log']) fs.rmSync(scriptFile + suffix, { force: true });
+  const resumed = pipeline(['implement', 'resume']);
+  assert.equal(resumed.status, 0, resumed.stdout + resumed.stderr);
+  assert.match(resumed.stdout, /DEMO-1 +skip: done in a previous run[\s\S]*DEMO-3 +feat\/demo-3-loyalty <- main  \(resume\)[\s\S]*DEMO-4 +feat\/demo-4-loyalty-tiers <- feat\/demo-3-loyalty/);
+  assert.match(resumed.stdout, /DEMO-3 +done[\s\S]*DEMO-4 +done/);
+  assert.equal(calls().implementer, 2, 'only the unfinished stories run again');
+  assert.match(prompts(), /=== implementer #1[\s\S]*previous run of this story was interrupted/);
+  assert.match(pipeline(['implement', 'resume']).stdout, /DEMO-4 +skip: done in a previous run/, 'a finished run resumes to nothing');
 });

@@ -9,8 +9,8 @@ import { loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
 import { resolveStory } from '../pipeline/lib/stories.mjs';
-import { log, readJsonl, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
-import { describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
+import { isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
+import { batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
 
 setLogTag('implement');
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -21,11 +21,33 @@ const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
         implement every <KEY>-<title>.md story given: each gets a worktree and branch, the implementer
         agent, the review loop and verified tests. Stories "Blocked by" another story in the batch run
         after it, stacked on its branch.
+  resume [--parallel N] [--pr]   continue the last run that did not finish: stories it finished are
+                                 kept, interrupted ones resume in their worktree, the rest run
   status [story]                 progress of the latest run
   metrics [--json] [--since <iso-date>]
 
 Internal
-  story <KEY> --file <path> --base <ref> --branch <name> --worktree <dir> --result <file> [--merge b1,b2] [--pr]`;
+  story <KEY> --file <path> --base <ref> --branch <name> --worktree <dir> --result <file> [--merge b1,b2] [--pr] [--resume]`;
+
+// The batch is saved so `resume` can repeat it after a crash; finishedAt marks a run that completed.
+const interruptedBatch = (config) => {
+  const batch = readJson(batchFile(config), null);
+  return batch && !batch.finishedAt && !isProcessAlive(batch.pid, batch.boot) ? batch : null;
+};
+
+async function runStories(config, inputs, { base, force = false, parallel, pr = false, dryRun = false }) {
+  const stories = plan(config, inputs, { base, force });
+  console.log(describePlan(stories));
+  if (dryRun || stories.every((s) => s.skip)) return 0;
+  // Agents may read only the stories handed to this run (scripts/pipeline/lib/story-guard.mjs).
+  process.env.PIPELINE_STORY_SOURCES = inputs.map((p) => path.resolve(p)).join(path.delimiter);
+  const batch = { inputs: inputs.map((p) => path.resolve(p)), base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
+  writeJson(batchFile(config), batch);
+  const results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
+  writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
+  console.log(`\n${formatSummary(results)}`);
+  return results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done') ? 0 : 1;
+}
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
@@ -54,15 +76,27 @@ async function main() {
         }
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
-      const stories = plan(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force) });
-      console.log(describePlan(stories));
-      if (flags['dry-run'] || stories.every((s) => s.skip)) return 0;
-      // Agents may read only the stories handed to this run (scripts/pipeline/lib/story-guard.mjs).
-      process.env.PIPELINE_STORY_SOURCES = positional.map((p) => path.resolve(p)).join(path.delimiter);
       const parallel = Math.max(1, Number(flags.parallel ?? config.implement.parallel) || 1);
-      const results = await runBatch(config, stories, { parallel, pr: Boolean(flags.pr), script: SCRIPT });
-      console.log(`\n${formatSummary(results)}`);
-      return results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done') ? 0 : 1;
+      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']) });
+    }
+
+    case 'resume': {
+      const batch = readJson(batchFile(config), null);
+      if (!batch) {
+        console.log('No implement run to resume.');
+        return 0;
+      }
+      if (!batch.finishedAt && isProcessAlive(batch.pid, batch.boot)) {
+        console.error(`The last implement run is still going (pid ${batch.pid}).`);
+        return 1;
+      }
+      const inputs = batch.inputs.filter((p) => fs.existsSync(p));
+      if (!inputs.length) {
+        console.error(`The stories of the last run are gone: ${batch.inputs.join(', ')}.`);
+        return 1;
+      }
+      const parallel = Math.max(1, Number(flags.parallel ?? batch.parallel) || 1);
+      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr) });
     }
 
     case 'story': {
@@ -75,6 +109,7 @@ async function main() {
         worktree: flags.worktree,
         merge: flags.merge ? String(flags.merge).split(',') : [],
         pr: Boolean(flags.pr),
+        resume: Boolean(flags.resume),
       }).catch((error) => ({ key, outcome: 'error', reason: error.message }));
       writeJson(flags.result, result);
       return 0;
@@ -84,6 +119,7 @@ async function main() {
       const dir = runsDir(config);
       const keys = positional.length ? positional : fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^[A-Z][A-Z0-9]*-\d+\.json$/.test(f)).map((f) => f.slice(0, -5)) : [];
       if (!keys.length) console.log('No implement runs.');
+      if (interruptedBatch(config)) console.log('The last implement run was interrupted. Continue it with `node scripts/pipeline/pipeline.mjs implement resume`.');
       for (const key of keys) {
         const r = loadRun(config, key);
         if (!r) continue;

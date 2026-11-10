@@ -68,5 +68,11 @@ if (step.writeImpl) {
   fs.writeFileSync(step.writeImpl, `// fixed ${n}\n`);
 }
 
+// Simulates a crash of the QE runner that called this agent: SIGKILL, so nothing gets cleaned up.
+if (step.killRunner) {
+  const state = JSON.parse(fs.readFileSync(`.agent-state/stories/${field('Story')}.json`, 'utf8'));
+  process.kill(state[step.killRunner].pid, 'SIGKILL');
+}
+
 process.stdout.write(`Working...\n${step.result ? `AGENT_RESULT: ${JSON.stringify(step.result)}\n` : ''}`);
 process.exit(step.exit ?? 0);

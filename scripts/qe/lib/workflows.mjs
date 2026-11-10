@@ -17,7 +17,7 @@ import {
 } from './plans.mjs';
 import { clearEscalation, escalate, lockFile, logFile, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { casePrefix, storySha } from '../../pipeline/lib/stories.mjs';
-import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, runAsync, sleep, tail } from '../../pipeline/lib/util.mjs';
+import { acquireLock, appendJsonl, extractResult, isProcessAlive, lockHolder, log, nowIso, releaseLock, run, runAsync, selfProcess, sleep, tail } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, formatGaps, runVerifier } from './verify.mjs';
 
 const QE_SCRIPT = fileURLToPath(new URL('../qe.mjs', import.meta.url));
@@ -104,25 +104,29 @@ function planVerifierTask(config, story, plan) {
   return lines.join('\n');
 }
 
-export async function planLoop(config, story, { force = false, seedFeedback = null, maxRounds = config.loops.planMaxRounds } = {}) {
+export async function planLoop(config, story, { force = false, resume = false, seedFeedback = null, maxRounds = config.loops.planMaxRounds } = {}) {
   const lock = lockFile(config, story.key, 'plan');
   if (!acquireLock(lock)) {
     log(`${story.key}: plan run already in progress (pid ${lockHolder(lock)}).`);
     return { status: 'busy' };
   }
+  const finished = (status, extra = {}) => updateState(config, story.key, (s) => Object.assign(s.plan, { status, pid: null, boot: null, progress: null, recoveries: 0, retryAt: null, finishedAt: nowIso(), ...extra }));
   try {
     const initial = planStatus(config, story);
     if (initial.state === 'verified' && !force && !seedFeedback) {
       log(`${story.key}: plan is verified and up to date.`);
+      finished('verified');
       return { status: 'verified' };
     }
-    updateState(config, story.key, (s) => Object.assign(s.plan, { status: 'running', pid: process.pid, startedAt: nowIso() }));
+    const saved = resume ? loadState(config, story.key).plan.progress : null;
+    updateState(config, story.key, (s) => Object.assign(s.plan, { status: 'running', ...selfProcess(), startedAt: nowIso() }));
     const mode = initial.state === 'missing' ? 'create' : 'update';
     const storyDiff = mode === 'update' ? storyDiffSince(config, story, initial.plan.index?.data['story-sha']) : null;
-    let feedback = seedFeedback;
+    let feedback = resume ? resumeFeedback('plan', saved?.feedback ?? seedFeedback) : seedFeedback;
     let consecutive = 0;
     let lastGaps = [];
-    for (let round = 1; round <= maxRounds; round++) {
+    for (let round = Math.min(saved?.round ?? 1, maxRounds); round <= maxRounds; round++) {
+      updateState(config, story.key, (s) => (s.plan.progress = { round, feedback }));
       log(`${story.key}: plan round ${round}/${maxRounds} (${mode})`);
       const producer = runAgent(config, {
         name: PRODUCER.plan,
@@ -167,7 +171,7 @@ export async function planLoop(config, story, { force = false, seedFeedback = nu
           'verified-by': `${PRODUCER.plan}@${producer.version}/${verdict.verifierVersion}`,
         });
         clearEscalation(config, story, 'plan');
-        updateState(config, story.key, (s) => Object.assign(s.plan, { status: 'verified', pid: null, rounds: round, finishedAt: nowIso() }));
+        finished('verified', { rounds: round });
         log(`${story.key}: plan verified ${verdict.score}/10 after ${round} round(s).`);
         return { status: 'verified', rounds: round };
       }
@@ -175,7 +179,7 @@ export async function planLoop(config, story, { force = false, seedFeedback = nu
       feedback = `The verifier scored the plan ${verdict.score}/10. Fix every gap:\n${formatGaps(verdict.gaps)}`;
     }
     escalate(config, story, 'plan', `plan did not reach ${config.loops.requiredScore}/10 in ${maxRounds} rounds`, lastGaps.length ? formatGaps(lastGaps) : feedback ?? '');
-    updateState(config, story.key, (s) => Object.assign(s.plan, { status: 'escalated', pid: null, finishedAt: nowIso() }));
+    finished('escalated');
     return { status: 'escalated' };
   } finally {
     releaseLock(lock);
@@ -366,7 +370,7 @@ function automationVerifierTask(config, story, tests, evidence = []) {
 export const planVerifierTaskFor = (config, story) => planVerifierTask(config, story, readPlan(config, story));
 export const automationVerifierTaskFor = (config, story) => automationVerifierTask(config, story, automationFiles(config, story).tests);
 
-export async function automationLoop(config, story, { implHash = null, skipTests = false, maxRounds = config.loops.automationMaxRounds } = {}) {
+export async function automationLoop(config, story, { implHash = null, skipTests = false, resume = false, maxRounds = config.loops.automationMaxRounds } = {}) {
   const lock = lockFile(config, story.key, 'automation');
   if (!acquireLock(lock)) {
     updateState(config, story.key, (s) => (s.automation.requestedHash = implHash ?? s.automation.requestedHash));
@@ -376,10 +380,12 @@ export async function automationLoop(config, story, { implHash = null, skipTests
   try {
     let targetHash = implHash ?? implChanges(config).hash;
     for (;;) {
-      updateState(config, story.key, (s) => Object.assign(s.automation, { status: 'running', pid: process.pid, requestedHash: null, workingHash: targetHash, startedAt: nowIso(), bugs: [] }));
-      const result = await automationPass(config, story, { skipTests, maxRounds });
+      const saved = resume ? loadState(config, story.key).automation.progress : null;
+      updateState(config, story.key, (s) => Object.assign(s.automation, { status: 'running', ...selfProcess(), requestedHash: null, workingHash: targetHash, startedAt: nowIso(), bugs: [] }));
+      const result = await automationPass(config, story, { skipTests, maxRounds, targetHash, resume, saved: saved?.hash === targetHash ? saved : null });
+      resume = false;
       const state = updateState(config, story.key, (s) => {
-        Object.assign(s.automation, { status: result.status, pid: null, finishedAt: nowIso() });
+        Object.assign(s.automation, { status: result.status, pid: null, boot: null, progress: null, recoveries: 0, retryAt: null, finishedAt: nowIso() });
         if (result.status === 'verified') s.automation.verifiedHash = targetHash;
         if (result.bugs) s.automation.bugs = result.bugs;
       });
@@ -393,11 +399,11 @@ export async function automationLoop(config, story, { implHash = null, skipTests
   }
 }
 
-async function automationPass(config, story, { skipTests, maxRounds }) {
+async function automationPass(config, story, { skipTests, maxRounds, targetHash, resume = false, saved = null }) {
   const status = planStatus(config, story);
   if (status.state !== 'verified') {
     log(`${story.key}: plan is ${status.state}; running the plan loop first.`);
-    let plan = await planLoop(config, story);
+    let plan = await planLoop(config, story, { resume });
     // A plan run already in progress (for example the post-commit hook after the story's notes were
     // committed) holds the lock: wait for it, then use its plan (or run the loop if it didn't verify).
     const lock = lockFile(config, story.key, 'plan');
@@ -410,9 +416,10 @@ async function automationPass(config, story, { skipTests, maxRounds }) {
     if (plan.status !== 'verified') return { status: 'blocked-on-plan' };
   }
   const implFiles = implChanges(config).files;
-  let feedback = null;
+  let feedback = resume ? resumeFeedback('automation', saved?.feedback) : null;
   let lastGaps = [];
-  for (let round = 1; round <= maxRounds; round++) {
+  for (let round = Math.min(saved?.round ?? 1, maxRounds); round <= maxRounds; round++) {
+    updateState(config, story.key, (s) => (s.automation.progress = { hash: targetHash, round, feedback }));
     const mode = automationFiles(config, story).tests.size ? 'update' : 'create';
     log(`${story.key}: automation round ${round}/${maxRounds} (${mode})`);
     const producer = runAgent(config, {
@@ -486,8 +493,86 @@ export function startAutomation(config, story, implHash) {
   // write after the spawn could race it and drop the log path or reset the status.
   const file = logFile(config, story.key, 'automation');
   const log = path.relative(config.root, file);
-  updateState(config, story.key, (s) => Object.assign(s.automation, { status: 'starting', pid: null, log, requestedHash: null }));
+  updateState(config, story.key, (s) => Object.assign(s.automation, { status: 'starting', pid: null, boot: null, log, requestedHash: null, workingHash: implHash, requestedAt: nowIso(), progress: null, recoveries: 0, retryAt: null }));
   return spawnQe(config, story.key, 'automation', ['automate', story.key, '--impl-hash', implHash], file);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Crash recovery: background plan and automation runs that died (crash, kill, reboot) are resumed
+// from their last round, retried a few times with growing delays, then escalated.
+// ---------------------------------------------------------------------------------------------
+
+export const RUN_KINDS = ['plan', 'automation'];
+
+function resumeFeedback(kind, feedback) {
+  const note = `A previous ${kind === 'plan' ? 'plan' : 'test automation'} run was interrupted before it finished. Keep the work already on disk and complete it.`;
+  return feedback ? `${note}\n\n${feedback}` : note;
+}
+
+// The run recorded itself as active but its process is gone. The lock, held for the whole run, wins
+// over the recorded pid; "starting" (and a queued batch member) gets a grace period to take the lock.
+export function isInterrupted(config, story, kind, state = loadState(config, story.key)) {
+  const s = state[kind];
+  if (!['running', 'queued', 'starting'].includes(s.status)) return false;
+  if (lockHolder(lockFile(config, story.key, kind))) return false;
+  if (s.status === 'starting') return Date.now() - Date.parse(s.requestedAt ?? 0) > config.recovery.startingGraceSec * 1000;
+  return !isProcessAlive(s.pid, s.boot);
+}
+
+// Resumes one interrupted run in the background. `force` also restarts a run that used up its
+// attempts ("crashed") and ignores the backoff. Returns what happened, or null if nothing needed doing.
+export function recoverRun(config, story, kind, { force = false } = {}) {
+  const state = loadState(config, story.key);
+  const s = state[kind];
+  if (!isInterrupted(config, story, kind, state) && !(force && s.status === 'crashed')) return null;
+  const set = (fields) => updateState(config, story.key, (st) => Object.assign(st[kind], fields));
+  const attempts = force ? 0 : s.recoveries ?? 0;
+
+  let hash = null;
+  if (kind === 'automation') {
+    hash = s.workingHash ?? null;
+    if (!hash || hash !== implChanges(config).hash) {
+      set({ status: 'interrupted', pid: null, boot: null, progress: null });
+      return { kind, action: 'abandoned', reason: 'the implementation changed since it started' };
+    }
+  }
+  if (!force && s.retryAt && Date.now() < Date.parse(s.retryAt)) return { kind, action: 'waiting', retryAt: s.retryAt };
+  const { maxAttempts, backoffSec } = config.recovery;
+  if (attempts >= maxAttempts) {
+    set({ status: 'crashed', pid: null, boot: null });
+    escalate(config, story, kind, `${kind} run crashed ${attempts + 1} times`, `Last log: ${s.log ?? 'none'}\n\nAfter fixing the cause, resume it with \`node scripts/pipeline/pipeline.mjs resume ${story.key} --force\`.`);
+    return { kind, action: 'crashed', attempts };
+  }
+  const file = logFile(config, story.key, kind);
+  const rel = path.relative(config.root, file);
+  // A run that crashes again right away waits backoffSec, then twice that, before the next attempt.
+  const retryAt = new Date(Date.now() + backoffSec * 1000 * 2 ** attempts).toISOString();
+  set({ status: 'starting', pid: null, boot: null, log: rel, requestedAt: nowIso(), recoveries: attempts + 1, retryAt });
+  const args = kind === 'automation' ? ['automate', story.key, '--impl-hash', hash, '--resume'] : ['plan', story.key, '--resume'];
+  spawnQe(config, story.key, kind, args, file);
+  log(`${story.key}: resumed the interrupted ${kind} run (attempt ${attempts + 1}/${maxAttempts}, log ${rel}).`);
+  return { kind, action: 'resumed', attempt: attempts + 1, round: s.progress?.round ?? 1, log: rel };
+}
+
+// Every story with an interrupted run, or only `keys`. Stories missing from this checkout are skipped.
+export function recoverAll(config, stories, { keys = null, force = false } = {}) {
+  const results = [];
+  for (const story of stories) {
+    if (keys && !keys.includes(story.key)) continue;
+    for (const kind of RUN_KINDS) {
+      const r = recoverRun(config, story, kind, { force });
+      if (r) results.push({ story: story.key, ...r });
+    }
+  }
+  return results;
+}
+
+export function formatRecovery(r) {
+  const what = r.kind === 'plan' ? 'test plan' : 'test automation';
+  if (r.action === 'resumed') return `QE: resumed the interrupted ${what} run for ${r.story} at round ${r.round} (attempt ${r.attempt}, log: ${r.log}).`;
+  if (r.action === 'waiting') return `QE: the ${what} run for ${r.story} crashed; it is retried after ${r.retryAt}.`;
+  if (r.action === 'crashed') return `QE: the ${what} run for ${r.story} kept crashing and was escalated (.agent-state/escalations/${r.story}-${r.kind}.md).`;
+  return `QE: dropped the interrupted ${what} run for ${r.story}: ${r.reason}.`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -502,16 +587,23 @@ export function hookStop(config, story) {
   const { hash } = implChanges(config);
   if (!hash || state.review.lastVerdict !== 'APPROVED' || state.review.approvedHash !== hash) return null;
   const automation = state.automation;
-  if (automation.verifiedHash === hash || automation.workingHash === hash || ['running', 'starting'].includes(automation.status)) return null;
+  if (automation.verifiedHash === hash) return null;
+  if (isInterrupted(config, story, 'automation', state)) {
+    const recovered = recoverRun(config, story, 'automation');
+    if (recovered && recovered.action !== 'abandoned') return { systemMessage: formatRecovery({ story: story.key, ...recovered }) };
+  } else if (['running', 'starting'].includes(automation.status) || (automation.workingHash === hash && automation.status !== 'interrupted')) {
+    return null;
+  }
   const bg = startAutomation(config, story, hash);
   return { systemMessage: `QE: test automation for ${story.key} ${bg.queued ? 'queued behind the running job' : `started in the background (log: ${bg.log})`}.` };
 }
 
 // Context injected at session start so agents see QE state without asking.
 // Only the active story: agents are not told about other stories (story guard).
-export function sessionContext(config, story) {
+export function sessionContext(config, story, recovered = []) {
   const lines = [];
   if (story) {
+    for (const r of recovered.filter((r) => r.story === story.key)) lines.push(formatRecovery(r));
     const state = loadState(config, story.key);
     lines.push(`QE for ${story.key}: plan ${planStatus(config, story).state}, test automation ${state.automation.status}.`);
     if (state.automation.bugs?.length) lines.push(`QE found implementation bugs:\n${state.automation.bugs.map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n')}`);

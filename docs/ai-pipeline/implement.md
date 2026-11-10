@@ -9,6 +9,7 @@ node scripts/pipeline/pipeline.mjs implement run path/to/stories --parallel 3 --
 node scripts/pipeline/pipeline.mjs implement run product-research/stories/PROMO-3-cart-pricing-evaluation-api.md
 node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, from storiesDir
 node scripts/pipeline/pipeline.mjs implement status                            # live progress, from another terminal
+node scripts/pipeline/pipeline.mjs implement resume                            # continue a run that was interrupted
 node scripts/pipeline/pipeline.mjs implement metrics
 ```
 
@@ -47,6 +48,16 @@ The review and QE stages run against the worktree (`PIPELINE_ROOT`) using the pi
 
 Each story's log is under `.agent-state/logs/implement-<KEY>-*.log` in the main checkout. `implement status` shows where each story is. Per-story pipeline state (review rounds, QE status, escalations) is in the worktree's own `.agent-state/`; run `pipeline status <KEY>` from inside the worktree to see it.
 
+## Interrupted runs
+
+Each run saves its story list and options to `.agent-state/implement/batch.json`, and each story's progress to `.agent-state/implement/<KEY>.json`. If the machine crashes or the runner is killed, `implement status` says so, and `implement resume` (or the same `implement run` again) continues:
+
+- stories that finished `done` and still have their branch are kept, and their dependents still stack on them (`--force` redoes them);
+- stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there, the runner goes straight to the tests; otherwise the implementer continues from the work on the branch;
+- the rest run as usual.
+
+A QE run that dies while the runner waits is resumed by the QE stage's own [recovery](qe.md#crash-recovery). A worker that fails with `error` or `qe-not-started` is retried `maxWorkerRetries` times in the same run.
+
 ## Config
 
 `scripts/implement/config.json`:
@@ -60,6 +71,8 @@ Each story's log is under `.agent-state/logs/implement-<KEY>-*.log` in the main 
 | `implement.maxImplementerRuns` | 8 | Implementer runs per story (first run, review fixes and bug fixes) |
 | `implement.maxBugFixCycles` | 2 | Times QE-found bugs go back to the implementer |
 | `implement.qeTimeoutSec` | 14400 | How long to wait for QE |
+| `implement.maxWorkerRetries` | 2 | Retries of a story whose worker failed (`error`, `qe-not-started`), resuming in its worktree |
+| `implement.retryDelaySec` | 30 | Wait before a retry, times the attempt number |
 | `agent.models.implementer` | `null` (CLI default) | Model for the implementer |
 
 The agent CLI is the pipeline's (`PIPELINE_AGENT_CLI`, Claude Code by default). Parallel stories each run their own implementer, reviewer and QE agents, so `--parallel` multiplies LLM usage. Implementers must not use the shared teststack (the implementer agent already avoids it). QE's precheck may still run tests, so keep `--parallel` low if your tests share infrastructure.
