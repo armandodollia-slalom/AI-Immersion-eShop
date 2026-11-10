@@ -16,6 +16,8 @@ You often run in your own git worktree while other implementers work on other st
 
 The caller gives you a story ID (`PROMO-3`) or a path. Resolve it to `product-research/stories/{ID}-*.md`. If no file matches, stop and say so.
 
+When `pipeline implement` runs you headless, its task says the worktree, branch and pipeline registration already exist and replaces step 1.1, step 1.7 and the `pipeline done` in step 7. Follow the task where it differs from this file, and end with the `AGENT_RESULT` line it asks for.
+
 ## 1. Worktree, branch and setup
 
 1. `git fetch origin` and create `feat/{id-lowercase}-{short-kebab-title}` (e.g. `feat/promo-3-cart-pricing-evaluation`) from `origin/main`. If you are already on a fresh worktree branch, rename it with `git branch -m` and reset it onto `origin/main`. Never commit to `main`.

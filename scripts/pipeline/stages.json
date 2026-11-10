@@ -1,6 +1,14 @@
 {
   "stages": [
     {
+      "name": "implement",
+      "description": "Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages",
+      "cli": "scripts/implement/implement.mjs",
+      "hooks": [],
+      "gitHooks": [],
+      "commands": ["status", "metrics"]
+    },
+    {
       "name": "review",
       "description": "Architecture review of the implementation, looping with the implementation agent until approved",
       "cli": "scripts/review/review.mjs",
