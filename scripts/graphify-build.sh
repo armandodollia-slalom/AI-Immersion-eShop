@@ -24,8 +24,20 @@ if [ "$installed" != "$GRAPHIFY_VERSION" ]; then
   fi
 fi
 
+# graphify prunes cache entries whose source content no longer matches the
+# current checkout, including the committed entries other branches still use.
+# Put back any tracked entry it deleted so the shared cache stays append-only.
+# Hooks are skipped so the restore can't trigger another background build.
+restore_shared_cache() {
+  local deleted
+  deleted="$(git ls-files -d -- graphify-out/cache/semantic)"
+  [ -n "$deleted" ] || return 0
+  printf '%s\n' "$deleted" | git -c core.hooksPath=/dev/null checkout -q --pathspec-from-file=- 2>/dev/null
+}
+export GRAPHIFY_BUILDING=1
+
 log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
+trap 'rm -f "$log"; restore_shared_cache' EXIT
 
 if [ "${1:-}" = "--extract" ]; then
   if ! command -v claude >/dev/null 2>&1; then
