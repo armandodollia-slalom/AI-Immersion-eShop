@@ -210,7 +210,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 - **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
 - **State:** `.agent-state/` (not committed) holds the active story, one `stories/<KEY>.json` per story with a section per stage, locks, background logs (`logs/`) and escalations (`escalations/<KEY>-<stage>.md`, which the next agent session is told about).
-- **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files.
+- **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files. `decisions.jsonl` is shared: every stage records why its agents decided what they did (`scripts/pipeline/lib/decisions.mjs`, see [qe](qe.md#decision-log)), and the weekly lessons run turns it into lessons and proposed factory changes.
 
 ## Adding a stage
 

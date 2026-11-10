@@ -3,12 +3,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentDefinition, runAgent } from '../../pipeline/lib/agents.mjs';
 import { spawnBackground } from '../../pipeline/lib/background.mjs';
+import { formatBugs, logDecision, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges } from '../../pipeline/lib/git.mjs';
 import { readEvidence, formatEvidence } from './evidence.mjs';
 import {
   INDEX,
   automationFiles,
   automationSha,
+  caseDecisions,
   planContentSha,
   planStatus,
   precheckPlan,
@@ -104,6 +106,28 @@ function planVerifierTask(config, story, plan) {
   return lines.join('\n');
 }
 
+// Why the plan agent wrote this plan: its summary and exclusions, and each case's "## Why".
+// Logged every round that passes the precheck, so it pairs with that round's verifier decision.
+function logPlanDecision(config, story, round, producer, feedback) {
+  const reported = extractResult(producer.output) ?? {};
+  const excluded = (Array.isArray(reported.excluded) ? reported.excluded : []).map((e) =>
+    e && typeof e === 'object' ? { item: e.item ?? null, reason: e.why ?? e.reason ?? null } : { item: String(e), reason: null },
+  );
+  logDecision(config, {
+    stage: 'plan',
+    story: story.key,
+    round,
+    agent: PRODUCER.plan,
+    agentVer: producer.version,
+    subject: PRODUCER.plan,
+    decision: 'plan-written',
+    reason: reported.summary ?? null,
+    trigger: round === 1 && !feedback ? 'story' : 'feedback',
+    excluded,
+    items: caseDecisions(readPlan(config, story)),
+  });
+}
+
 export async function planLoop(config, story, { force = false, seedFeedback = null, maxRounds = config.loops.planMaxRounds } = {}) {
   const lock = lockFile(config, story.key, 'plan');
   if (!acquireLock(lock)) {
@@ -142,6 +166,7 @@ export async function planLoop(config, story, { force = false, seedFeedback = nu
         feedback = `Structural check failed:\n${pre.errors.map((e) => `- ${e}`).join('\n')}`;
         continue;
       }
+      logPlanDecision(config, story, round, producer, feedback);
       let verdict;
       do {
         verdict = runVerifier(config, {
@@ -425,7 +450,18 @@ async function automationPass(config, story, { skipTests, maxRounds }) {
     const reported = extractResult(producer.output);
     if (reported?.status === 'product-bug') {
       const bugs = Array.isArray(reported.bugs) ? reported.bugs : [];
-      escalate(config, story, 'automation', 'tests found implementation bugs', bugs.map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n'));
+      logDecision(config, {
+        stage: 'automation',
+        story: story.key,
+        round,
+        agent: PRODUCER.automation,
+        agentVer: producer.version,
+        subject: 'implementer',
+        decision: 'product-bug',
+        reason: reported.summary ?? `${bugs.length} implementation bug(s)`,
+        items: normalizeBugs(bugs),
+      });
+      escalate(config, story, 'automation', 'tests found implementation bugs', formatBugs(bugs));
       return { status: 'product-bug', bugs };
     }
     if (!producer.ok) {
@@ -514,7 +550,7 @@ export function sessionContext(config, story) {
   if (story) {
     const state = loadState(config, story.key);
     lines.push(`QE for ${story.key}: plan ${planStatus(config, story).state}, test automation ${state.automation.status}.`);
-    if (state.automation.bugs?.length) lines.push(`QE found implementation bugs:\n${state.automation.bugs.map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n')}`);
+    if (state.automation.bugs?.length) lines.push(`QE found implementation bugs:\n${formatBugs(state.automation.bugs)}`);
   }
   return lines.join('\n');
 }

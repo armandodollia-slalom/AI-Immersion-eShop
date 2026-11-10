@@ -28,7 +28,18 @@
     "retireAfterStories": 10,
     "revertMinRounds": 6,
     "intervalDays": 7,
-    "examplesPerCategory": 5
+    "examplesPerCategory": 5,
+    "retro": {
+      "enabled": true,
+      "windowDays": 7,
+      "allowedPaths": [
+        ".github/agents/",
+        ".claude/agents/",
+        "docs/",
+        "product-research/",
+        "architecture-policy/"
+      ]
+    }
   },
   "testRoots": [
     "e2e",

@@ -16,7 +16,7 @@ export function agentDefinition(config, name) {
 export function buildPrompt(definition, task) {
   const parts = [definition.body];
   if (definition.lessons) {
-    parts.push(`## Lessons from earlier verifier denials (follow these)\n\n${definition.lessons}`);
+    parts.push(`## Lessons from earlier reviews, verifier denials and test failures (follow these)\n\n${definition.lessons}`);
   }
   parts.push(`## Task\n\n${task}`);
   return parts.join('\n\n');

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { formatEvidence, readEvidence } from '../lib/evidence.mjs';
 import { lessonCandidates, parseRules } from '../lib/lessons.mjs';
+import { retroDigest } from '../lib/retro.mjs';
+import { clip, decisionRecord, formatBugs, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { computeMetrics } from '../lib/metrics.mjs';
 import { extractResult, parseFrontMatter, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 import { attributedAgent, normalizeVerdict } from '../lib/verify.mjs';
@@ -135,6 +137,48 @@ test('PR check findings teach the implementer (round 1), the fixer (not fixed) a
   assert.deepEqual(lessonCandidates(config, data, 'pr-check-fixer', '').changes.map((c) => [c.category, c.subtype, c.count]), [['not-fixed', 'acceptance', 3]]);
   assert.deepEqual(lessonCandidates(config, data, 'pr-check-style', '').changes.map((c) => [c.category, c.stories]), [['dismissed-finding', 3]]);
   assert.equal(lessonCandidates(config, data, 'pr-check-acceptance', '').changes.length, 0);
+});
+
+test('decision records strip control characters and cap reasons, items included', () => {
+  const record = decisionRecord({ stage: 'review', story: 'A-1', agent: 'architecture-reviewer', subject: 'implementer', decision: 'approved', reason: 'ok\u0007 fine', items: [{ reason: 'x'.repeat(1500), undefinedField: undefined }] });
+  assert.equal(record.reason, 'ok fine');
+  assert.equal(record.items[0].reason.length, 1000);
+  assert.ok(!('undefinedField' in record.items[0]));
+  assert.equal(clip('   '), null);
+});
+
+test('product bugs are normalized from objects or legacy strings and formatted for the implementer', () => {
+  const bugs = normalizeBugs([{ case: 'TC-A-1-02', expected: '404', actual: '500', location: 'src/A.cs:9', why: 'no not-found check' }, 'TC-A-1-03: expected 400, got 200', 'free text']);
+  assert.deepEqual(bugs.map((b) => [b.case, b.reason]), [['TC-A-1-02', 'no not-found check'], ['TC-A-1-03', 'expected 400, got 200'], [null, 'free text']]);
+  assert.equal(formatBugs(bugs.slice(0, 2)), '- TC-A-1-02: expected 404, got 500 (no not-found check) at src/A.cs:9\n- TC-A-1-03: expected 400, got 200');
+});
+
+test('product bugs from the decision log teach the implementer', () => {
+  const bug = (story) => ({ ts: '2026-01-02', stage: 'automation', story, round: 1, decision: 'product-bug', items: [{ case: `TC-${story}-01`, expected: '404', actual: '500', location: 'src/A.cs:9', reason: 'missing check' }] });
+  const data = { denials: [], runs: [], calibration: [], reviews: [], prChecks: [], decisions: ['A-1', 'B-1', 'C-1'].map(bug) };
+  const report = lessonCandidates(config, data, 'implementer', '');
+  assert.deepEqual(report.changes.map((c) => [c.action, c.category, c.stories]), [['add', 'product-bug', 3]]);
+  assert.deepEqual(report.changes[0].examples.at(-1), { story: 'C-1', case: 'TC-C-1-01', detail: 'expected 404; got 500; missing check', location: 'src/A.cs:9' });
+});
+
+test('the retro digest ties later findings back to why each case was written', () => {
+  const d = (stage, decision, extra) => ({ ts: '2026-01-02', story: 'A-1', round: 1, stage, decision, ...extra });
+  const decisions = [
+    d('plan', 'plan-written', { ts: '2025-12-01', reason: 'old', items: [] }),
+    d('plan', 'plan-written', { reason: 'split by rule', excluded: [{ item: 'rate limits', reason: 'out of scope' }], items: [{ case: 'TC-A-1-01', reason: 'protects AC1' }, { case: 'TC-A-1-02', reason: 'auth sad path' }] }),
+    d('automation-verify', 'denied', { score: 7, reason: 'case 2 is ambiguous', items: [{ case: 'TC-A-1-02', category: 'other', root_stage: 'plan', subject: 'qe-plan', reason: 'no expected body' }] }),
+    d('automation', 'product-bug', { items: [{ case: 'TC-A-1-01', expected: '404', actual: '500', reason: 'no check' }] }),
+    d('review', 'changes-requested', { agent: 'arch-review-agent', reason: 'secret in code', items: [{ severity: 'blocking', category: 'security', rule: 'SEC-001', file: 'src/A.cs', line: 3, reason: 'literal password', fix: 'use options' }] }),
+    d('review', 'approved', { agent: 'architecture-reviewer', reason: 'fits the Apis/ layout' }),
+  ];
+  const digest = retroDigest({ lessons: { examplesPerCategory: 5 } }, decisions, '2026-01-01');
+  assert.deepEqual(digest.counts, { 'plan:plan-written': 1, 'automation-verify:denied': 1, 'automation:product-bug': 1, 'review:changes-requested': 1, 'review:approved': 1 });
+  assert.deepEqual(digest.plans.stories, [{ story: 'A-1', rounds: 1, cases: 2, summary: 'split by rule', excluded: [{ item: 'rate limits', reason: 'out of scope' }] }]);
+  assert.equal(digest.plans.casesTracedBackToPlan[0].why_written, 'auth sad path');
+  assert.deepEqual(digest.plans.casesThatCaughtBugs, [{ story: 'A-1', case: 'TC-A-1-01', why_written: 'protects AC1' }]);
+  assert.deepEqual(digest.review.blocked[0].examples, [{ story: 'A-1', case: undefined, location: 'src/A.cs:3', reason: 'literal password', fix: 'use options' }]);
+  assert.equal(digest.review.approvals[0].reason, 'fits the Apis/ layout');
+  assert.equal(digest.productBugs[0].why_written, 'protects AC1');
 });
 
 test('computeMetrics summarizes loops per stage and categories per attributed agent', () => {

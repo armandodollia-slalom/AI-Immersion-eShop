@@ -3,6 +3,8 @@ name: PR check
 # Adversarial AI review of a pull request against its story (acceptance criteria, flow, UI design,
 # code style, video evidence). Opt-in: add the `ai-pr-check` label, or run it by hand. Report only:
 # the scores and findings are posted as a PR comment; fixing runs locally (docs/ai-pipeline/pr-check.md).
+# The run's records (.agent-metrics/) are committed back to the PR branch so the weekly lessons run
+# (qe-lessons.yml) learns from them once the PR merges. Fork PRs only get them as an artifact.
 on:
   pull_request:
     types: [labeled, synchronize]
@@ -18,7 +20,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 concurrency:
@@ -56,6 +58,11 @@ jobs:
     - name: Install ffmpeg
       if: steps.agent.outputs.ready == 'true'
       run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+    - name: Note the metrics already on disk
+      if: steps.agent.outputs.ready == 'true'
+      run: |
+        mkdir -p "$RUNNER_TEMP/metrics-before"
+        for f in .agent-metrics/*.jsonl; do [ -f "$f" ] && wc -l < "$f" > "$RUNNER_TEMP/metrics-before/$(basename "$f")"; done; true
     - name: Run the PR check
       if: steps.agent.outputs.ready == 'true'
       run: |
@@ -66,6 +73,27 @@ jobs:
         report=$(node -e "console.log(require('./result.json').report)")
         cat "$report" >> "$GITHUB_STEP_SUMMARY"
         exit "${status:-0}"
+    - name: Commit the run's records to the PR branch
+      if: always() && steps.agent.outputs.ready == 'true'
+      run: |
+        pr=$(gh pr view "$PR_NUMBER" --json headRefName,isCrossRepository)
+        if [ "$(jq -r .isCrossRepository <<<"$pr")" = "true" ]; then echo "Fork PR: records are in the artifact only."; exit 0; fi
+        head=$(jq -r .headRefName <<<"$pr")
+        git fetch --quiet origin "$head"
+        git worktree add --quiet "$RUNNER_TEMP/pr-head" FETCH_HEAD
+        for f in .agent-metrics/*.jsonl; do
+          [ -f "$f" ] || continue
+          before=$(cat "$RUNNER_TEMP/metrics-before/$(basename "$f")" 2>/dev/null || echo 0)
+          tail -n +"$((before + 1))" "$f" >> "$RUNNER_TEMP/pr-head/$f"
+        done
+        cd "$RUNNER_TEMP/pr-head"
+        if [ -z "$(git status --porcelain -- .agent-metrics)" ]; then echo "No new records."; exit 0; fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add .agent-metrics/*.jsonl
+        git commit --quiet -m "Record PR check results for #$PR_NUMBER"
+        # Pushes made with GITHUB_TOKEN do not trigger workflows, so this does not re-run the check.
+        git push --quiet origin "HEAD:$head" || echo "::warning::Could not push the records to $head (the branch moved); they are in the artifact."
     - name: Upload the run
       if: always() && steps.agent.outputs.ready == 'true'
       uses: actions/upload-artifact@v4
@@ -73,5 +101,5 @@ jobs:
         name: pr-check-${{ env.PR_NUMBER }}
         path: |
           .agent-state/pr-check/
-          .agent-metrics/pr-checks.jsonl
+          .agent-metrics/*.jsonl
         if-no-files-found: ignore

@@ -48,7 +48,7 @@ if (step.writePlan) {
     const sad = c.type === 'sad' ? '\nsad-path: validation' : '';
     fs.writeFileSync(
       path.join(dir, `${ids[i]}-case.md`),
-      `---\nid: ${ids[i]}\ntitle: ${c.title}\ntype: ${c.type}${sad}\nlayer: functional\ncovers: ["Rule, part 1"]\n---\n\n# ${ids[i]}: ${c.title}\n\n## Preconditions\n\n- data\n\n## Steps\n\n1. call\n\n## Expected result\n\n- ${c.expected ?? '200'}\n`,
+      `---\nid: ${ids[i]}\ntitle: ${c.title}\ntype: ${c.type}${sad}\nlayer: functional\ncovers: ["Rule, part 1"]\n---\n\n# ${ids[i]}: ${c.title}\n\n## Why\n\n- ${c.why ?? 'covers the rule'}\n\n## Preconditions\n\n- data\n\n## Steps\n\n1. call\n\n## Expected result\n\n- ${c.expected ?? '200'}\n`,
     );
   });
 }
@@ -66,6 +66,11 @@ if (step.writeTests) {
 if (step.writeImpl) {
   fs.mkdirSync(path.dirname(step.writeImpl), { recursive: true });
   fs.writeFileSync(step.writeImpl, `// fixed ${n}\n`);
+}
+
+for (const [file, content] of Object.entries(step.writeFiles ?? {})) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
 }
 
 process.stdout.write(`Working...\n${step.result ? `AGENT_RESULT: ${JSON.stringify(step.result)}\n` : ''}`);

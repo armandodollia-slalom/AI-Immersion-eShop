@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
+import { INSTALL_ROOT } from '../../pipeline/lib/config.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { AGENT_STAGE, categoryStats, loadMetrics } from './metrics.mjs';
 import { automationStatus, planStatus } from './plans.mjs';
 import { automationVerifierTaskFor, planVerifierTaskFor } from './workflows.mjs';
 import { stateDir } from '../../pipeline/lib/state.mjs';
 import { listStories } from '../../pipeline/lib/stories.mjs';
-import { appendJsonl, log, nowIso, readJson, run, writeJson } from '../../pipeline/lib/util.mjs';
+import { appendJsonl, extractResult, log, nowIso, readJson, run, writeJson } from '../../pipeline/lib/util.mjs';
+import { digestIsEmpty, retroDigest, retroSince } from './retro.mjs';
 import { VERIFIER, metricsFile, runVerifier } from './verify.mjs';
 import { LENSES } from '../../pr-check/lib/loop.mjs';
 
@@ -57,6 +59,25 @@ function reviewDenials(reviews = []) {
     );
 }
 
+// Implementation bugs the integration tests found (decision log, stage automation): the implementer
+// shipped code that contradicts a verified test case. Category product-bug; no subtype.
+function productBugs(decisions = []) {
+  return decisions
+    .filter((d) => d.stage === 'automation' && d.decision === 'product-bug')
+    .flatMap((d) =>
+      (d.items ?? []).map((b) => ({
+        ts: d.ts,
+        story: d.story,
+        attributed_agent: IMPLEMENTER,
+        category: 'product-bug',
+        subtype: null,
+        case: b.case ?? `automation round ${d.round}`,
+        detail: [b.expected && `expected ${b.expected}`, b.actual && `got ${b.actual}`, b.reason].filter(Boolean).join('; ') || null,
+        location: b.location ?? null,
+      })),
+    );
+}
+
 // The PR check (.agent-metrics/pr-checks.jsonl) teaches three kinds of agent:
 // - implementer: findings upheld in round 1, i.e. against the code as the implementer wrote it;
 // - pr-check-fixer: findings upheld again after the fixer had a round to fix them;
@@ -88,7 +109,7 @@ function prCheckEntries(checks = [], agent) {
 }
 
 function entriesFor(data, agent) {
-  if (agent === IMPLEMENTER) return [...reviewDenials(data.reviews), ...prCheckEntries(data.prChecks, agent)];
+  if (agent === IMPLEMENTER) return [...reviewDenials(data.reviews), ...prCheckEntries(data.prChecks, agent), ...productBugs(data.decisions)];
   if (PR_CHECK_AGENTS.includes(agent)) return prCheckEntries(data.prChecks, agent);
   if (agent.endsWith('-verifier')) return data.calibration.filter((d) => d.attributed_agent === agent);
   return data.denials.filter((d) => d.attributed_agent === agent);
@@ -147,10 +168,12 @@ export function lessonCandidates(config, data, agent, lessonsText) {
 
 export const LESSON_AGENTS = ['qe-plan', 'qe-automation', VERIFIER.plan, VERIFIER.automation, IMPLEMENTER, ...PR_CHECK_AGENTS];
 
-function lessonsTask(config, reports, root) {
+function lessonsTask(config, reports, root, digest = null) {
   const lines = [
     `Maximum rules per file: ${config.lessons.maxRules}. Today: ${nowIso()}.`,
-    'Edit only the lessons files listed below. Every rule you add or rewrite must carry the tracking marker on the line after its heading, with added set to today.',
+    reports.length
+      ? 'Edit the lessons files listed below as requested. Every rule you add or rewrite must carry the tracking marker on the line after its heading, with added set to today.'
+      : 'No lessons file needs a change this time.',
     '',
   ];
   for (const report of reports) {
@@ -158,7 +181,32 @@ function lessonsTask(config, reports, root) {
     lines.push(`## ${report.agent} (${file})`, '', 'Current file:', '', '````markdown', fs.existsSync(path.join(root, file)) ? fs.readFileSync(path.join(root, file), 'utf8').trimEnd() : '(missing)', '````', '');
     lines.push('Requested changes (JSON):', '', '```json', JSON.stringify({ changes: report.changes, rules: report.rules.filter((r) => r.action !== 'keep') }, null, 2), '```', '');
   }
+  if (digest) {
+    lines.push(
+      '## Factory retro',
+      '',
+      `The decision log since ${digest.since}: why each agent decided what it did. Look for root causes that a lessons rule cannot fix (an unclear agent definition, a gap in the docs or the story template, a policy rule that keeps misfiring, a verifier that is too strict or too lax) and fix them by editing files under: ${allowedPaths(config).join(', ')}.`,
+      'Only propose changes the evidence supports across stories; list every file you change in `proposals` with the evidence. Leave everything else alone.',
+      '',
+      '```json',
+      JSON.stringify(digest, null, 2),
+      '```',
+      '',
+    );
+  }
   return lines.join('\n');
+}
+
+const allowedPaths = (config) => config.lessons.retro?.allowedPaths ?? [];
+const inside = (file, dirs) => dirs.some((d) => file === d.replace(/\/$/, '') || file.startsWith(d.endsWith('/') ? d : `${d}/`));
+
+// Files changed in a checkout, including untracked files.
+const changedFiles = (root) =>
+  git(root, ['status', '--porcelain', '--untracked-files=all']).stdout.split('\n').filter(Boolean).map((l) => ({ file: l.slice(3).replace(/^.* -> /, ''), untracked: l.startsWith('??') }));
+
+function proposalsFrom(output) {
+  const proposals = extractResult(output)?.proposals;
+  return (Array.isArray(proposals) ? proposals : []).filter((p) => p?.file).map((p) => ({ file: String(p.file), why: String(p.why ?? '') }));
 }
 
 export async function lessonsCommand(config, { dryRun = false, local = false, ifDue = false, push = true } = {}) {
@@ -174,10 +222,12 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
     return lessonCandidates(config, data, agent, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
   });
   const actionable = reports.filter((r) => r.actionable);
-  writeJson(lastFile, { ts: nowIso(), actionable: actionable.map((r) => r.agent) });
-  if (dryRun || actionable.length === 0) {
-    log(actionable.length ? 'lessons: dry run' : 'lessons: no recurring denials past the threshold and no rules to retire or revert.');
-    return { status: actionable.length ? 'dry-run' : 'nothing-to-do', reports };
+  const retro = config.lessons.retro?.enabled === false ? null : retroDigest(config, data.decisions ?? [], retroSince(config));
+  const digest = retro && !digestIsEmpty(retro) ? retro : null;
+  writeJson(lastFile, { ts: nowIso(), actionable: actionable.map((r) => r.agent), retro: digest ? digest.counts : null });
+  if (dryRun || (actionable.length === 0 && !digest)) {
+    log(dryRun ? 'lessons: dry run' : 'lessons: no recurring denials past the threshold, no rules to retire or revert and no new decisions to review.');
+    return { status: dryRun ? 'dry-run' : 'nothing-to-do', reports, digest };
   }
 
   let root = config.root;
@@ -190,23 +240,34 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
     if (added.status !== 0) throw new Error(`git worktree add failed: ${added.stderr}`);
   }
   try {
-    const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root) });
+    const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root, digest) });
     if (!result.ok) throw new Error('lessons agent failed');
-    const changed = git(root, ['status', '--porcelain']).stdout.split('\n').filter(Boolean).map((l) => l.slice(3));
-    const outside = changed.filter((f) => !f.startsWith(`${config.lessonsDir}/`));
+    const writable = [config.lessonsDir, ...(digest ? allowedPaths(config) : [])];
+    const outside = changedFiles(root).filter((c) => !inside(c.file, writable));
     if (outside.length) {
-      log(`lessons: discarding edits outside ${config.lessonsDir}: ${outside.join(', ')}`);
-      if (!local) git(root, ['checkout', '--', ...outside]);
+      log(`lessons: discarding edits outside ${writable.join(', ')}: ${outside.map((c) => c.file).join(', ')}`);
+      if (!local) {
+        const tracked = outside.filter((c) => !c.untracked).map((c) => c.file);
+        if (tracked.length) git(root, ['checkout', '--', ...tracked]);
+        for (const c of outside.filter((x) => x.untracked)) fs.rmSync(path.join(root, c.file), { force: true });
+      }
     }
+    // Agent definitions have generated copies for Claude Code; keep them in sync with any retro edit.
+    if (changedFiles(root).some((c) => /^\.github\/agents\/[^/]+\.agent\.md$/.test(c.file))) {
+      const sync = path.join(root, 'scripts/sync-agents.mjs');
+      run(process.execPath, [fs.existsSync(sync) ? sync : path.join(INSTALL_ROOT, 'scripts/sync-agents.mjs')], { cwd: root });
+    }
+    const proposals = digest ? proposalsFrom(result.output) : [];
     for (const agent of LESSON_AGENTS) {
       const file = lessonsPath(config, agent, root);
       if (!fs.existsSync(file)) continue;
       const count = parseRules(fs.readFileSync(file, 'utf8')).length;
       if (count > config.lessons.maxRules) throw new Error(`${agent} lessons file has ${count} rules (max ${config.lessons.maxRules}).`);
     }
-    if (local) return { status: 'applied-locally', reports: actionable };
-    if (!git(root, ['status', '--porcelain', '--', config.lessonsDir]).stdout.trim()) return { status: 'no-edits', reports: actionable };
-    git(root, ['add', '--', config.lessonsDir]);
+    if (local) return { status: 'applied-locally', reports: actionable, proposals };
+    const toCommit = changedFiles(root).map((c) => c.file);
+    if (!toCommit.length) return { status: 'no-edits', reports: actionable, proposals };
+    git(root, ['add', '--', ...toCommit]);
     // Carry calibration audits run in this checkout (e.g. by CI) into the PR so they are not lost.
     const calibration = path.join(config.metricsDir, 'calibration.jsonl');
     if (fs.existsSync(path.join(config.root, calibration))) {
@@ -214,17 +275,21 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
       fs.copyFileSync(path.join(config.root, calibration), path.join(root, calibration));
       git(root, ['add', '--', calibration]);
     }
-    const summary = actionable
-      .map((r) => `- **${r.agent}**: ${[...r.changes.map((c) => `${c.action} ${c.category}${c.subtype ? `/${c.subtype}` : ''} (${c.stories} stories)`), ...r.rules.filter((x) => x.action !== 'keep').map((x) => `${x.action} ${x.id} ${x.category}`)].join('; ')}`)
-      .join('\n');
-    const message = `Update agent lessons from verifier, architecture review and PR check findings\n\n${summary}\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`;
+    const summary =
+      actionable
+        .map((r) => `- **${r.agent}**: ${[...r.changes.map((c) => `${c.action} ${c.category}${c.subtype ? `/${c.subtype}` : ''} (${c.stories} stories)`), ...r.rules.filter((x) => x.action !== 'keep').map((x) => `${x.action} ${x.id} ${x.category}`)].join('; ')}`)
+        .join('\n') || '- No lessons file changes.';
+    const factory = proposals.length
+      ? `\n\n### Proposed factory changes (needs human review)\n\nFrom the decision log since ${digest.since}:\n\n${proposals.map((p) => `- \`${p.file}\`: ${p.why}`).join('\n')}`
+      : '';
+    const message = `Update agent lessons from verifier, architecture review and PR check findings\n\n${summary}${factory}\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`;
     git(root, ['commit', '-m', message], { allowFail: false });
     if (!push) return { status: 'committed', branch, worktree: root };
     git(root, ['push', '-u', 'origin', branch], { allowFail: false });
-    const body = `Generated by \`node scripts/qe/qe.mjs lessons\` from \`.agent-metrics/\`.\n\n${summary}\n\nReview each rule: it should be concrete, generalize beyond the examples, and not contradict the agent definition.`;
+    const body = `Generated by \`node scripts/qe/qe.mjs lessons\` from \`.agent-metrics/\`.\n\n${summary}${factory}\n\nReview each rule: it should be concrete, generalize beyond the examples, and not contradict the agent definition.`;
     const pr = run('gh', ['pr', 'create', '--head', branch, '--title', 'Update agent lessons from verifier, architecture review and PR check findings', '--body', body], { cwd: root });
     log(pr.status === 0 ? `lessons: opened ${pr.stdout.trim()}` : `lessons: push done, PR creation failed: ${pr.stderr}`);
-    return { status: 'pr', branch, url: pr.stdout.trim() };
+    return { status: 'pr', branch, url: pr.stdout.trim(), proposals };
   } finally {
     if (!local) git(config.root, ['worktree', 'remove', '--force', root]);
   }

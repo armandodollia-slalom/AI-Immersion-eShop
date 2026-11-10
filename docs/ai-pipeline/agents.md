@@ -13,7 +13,7 @@ Part of the [AI development pipeline](README.md). Every agent is defined once in
 | `qe-plan-verifier` | [qe](qe.md) | plan loop | read-only | the story and the plan | score 0-10 and gaps |
 | `qe-automation` | [qe](qe.md) | QE after review approval, or `qe automate` | writes tests and `testing/scenarios/` | the verified plan, the implementation | tests, or `product-bug` |
 | `qe-automation-verifier` | [qe](qe.md) | automation loop | read-only | case files, tests, scenario, keyframes | score 0-10 and gaps (with `root_stage`) |
-| `qe-lessons` | [qe](qe.md#auto-improvement) | `qe lessons` (weekly) | writes `.github/agents/lessons/` | aggregated metrics and existing lessons | updated lessons files (opened as a PR) |
+| `qe-lessons` | [qe](qe.md#auto-improvement) | `qe lessons` (weekly) | writes `.github/agents/lessons/`, plus agent definitions and docs in `lessons.retro.allowedPaths` (other edits are discarded) | aggregated metrics, the decision-log retro digest and existing lessons | updated lessons files and proposed factory changes (opened as a PR) |
 | `pr-check` | [pr-check](pr-check.md) | you (Copilot or Claude Code) | runs `npm run pr-check` | the PR or branch | summary of the report |
 | `pr-check-acceptance` | [pr-check](pr-check.md) | PR check round | read-only | story, diff | lens score and findings |
 | `pr-check-flow` | [pr-check](pr-check.md) | PR check round | read-only | story, diff | lens score and findings |
@@ -50,7 +50,7 @@ Each agent appends `.github/agents/lessons/<name>.md` to its prompt when that fi
 
 | Lessons file | Learns from |
 | --- | --- |
-| `implementer.md` | blocking architecture review findings; PR check findings upheld in round 1 |
+| `implementer.md` | blocking architecture review findings; product bugs the integration tests found; PR check findings upheld in round 1 |
 | `qe-plan.md`, `qe-automation.md` | verifier denials attributed to that agent |
 | `qe-plan-verifier.md`, `qe-automation-verifier.md` | gaps the calibration audit found that the verifier missed |
 | `pr-check-<lens>.md` | that critic's findings the judge dismissed |
