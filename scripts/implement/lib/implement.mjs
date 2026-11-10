@@ -97,7 +97,8 @@ export function implementStory(config, story, { maxRuns = config.implement.maxRu
   const record = (patch) => updateState(config, story.key, (s) => Object.assign(s.implement, patch));
   try {
     const wt = prepareWorktree(config, story);
-    const wtRel = path.relative(config.root, wt.dir);
+    // Forward slashes on every OS: the path is stored in state and printed.
+    const wtRel = path.relative(config.root, wt.dir).replace(/\\/g, '/');
     log(`${story.key}: ${wt.created ? 'created' : 'reusing'} worktree ${wtRel} on ${wt.branch}`);
     record({ status: 'running', worktree: wtRel, branch: wt.branch, pid: process.pid, startedAt: nowIso(), lastResult: null });
     clearEscalation(config, story, 'implement');

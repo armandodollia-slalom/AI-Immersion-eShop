@@ -75,7 +75,7 @@ before(() => {
 });
 
 after(() => {
-  fs.rmSync(repo, { recursive: true, force: true });
+  fs.rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   for (const suffix of ['', '.calls.json', '.prompts.log']) fs.rmSync(scriptFile + suffix, { force: true });
 });
 
