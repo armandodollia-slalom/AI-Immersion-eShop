@@ -26,11 +26,12 @@ Only raise findings that matter. Style nits that a formatter would fix are not f
 
 - `APPROVED` when there are no blocking findings. You may include `minor` findings as advice.
 - `CHANGES_REQUESTED` when at least one finding is `blocking`. Each blocking finding must say exactly what to change.
+- Your `summary`, and each finding's `issue` and `fix`, go into the pipeline's decision log, which is used to improve the implementer and the pipeline. On approval, say why the change fits; on changes requested, say what the root cause is (for example a missed convention), not just the symptom.
 
 End your final message with one line (valid JSON, no code fence):
 
-`AGENT_RESULT: {"verdict": "APPROVED|CHANGES_REQUESTED", "summary": "<one or two sentences>", "findings": [{"severity": "blocking|minor", "category": "fit|correctness|security|data|resilience|maintainability", "file": "<path>", "line": <number or null>, "issue": "<what is wrong>", "fix": "<what to change>"}]}`
+`AGENT_RESULT: {"verdict": "APPROVED|CHANGES_REQUESTED", "summary": "<one or two sentences: why this verdict>", "findings": [{"severity": "blocking|minor", "category": "fit|correctness|security|data|resilience|maintainability", "file": "<path>", "line": <number or null>, "issue": "<what is wrong>", "fix": "<what to change>"}]}`
 
 ## Lessons
 
-If `.github/agents/lessons/architecture-reviewer.md` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)
+If `.github/agents/lessons/architecture-reviewer.md` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)

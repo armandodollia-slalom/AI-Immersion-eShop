@@ -6,6 +6,7 @@ import path from 'node:path';
 import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { escalate, metricsFile } from '../../pipeline/lib/state.mjs';
 import { appendJsonl, extractResult, log, nowIso, sha, writeJson } from '../../pipeline/lib/util.mjs';
+import { git } from '../../pipeline/lib/git.mjs';
 import { commitFixes, prDiff } from './context.mjs';
 
 export const LENSES = {
@@ -240,9 +241,9 @@ async function fixRound(config, ctx, files, round, upheld) {
   return { fixed: result?.fixed ?? [], notFixed: result?.notFixed ?? [], summary: result?.summary ?? '', commit };
 }
 
-function roundFiles(ctx, round) {
+function roundFiles(ctx, round, { clean = true } = {}) {
   const roundAbs = path.join(ctx.runDir, `round-${round}`);
-  fs.rmSync(roundAbs, { recursive: true, force: true });
+  if (clean) fs.rmSync(roundAbs, { recursive: true, force: true });
   fs.mkdirSync(roundAbs, { recursive: true });
   return {
     roundAbs,
@@ -333,15 +334,48 @@ export function lessonFields(result, previousUpheld = []) {
 }
 
 // Runs rounds until 10/10, the round limit, or a stall (the fixer changes nothing, or the same finding
-// survives three rounds in a row). Without fixing, one round is the whole check.
-export async function runPrCheck(config, ctx, { fix }) {
+// survives three rounds in a row). Without fixing, one round is the whole check. `onProgress` gets the
+// loop state after each critique and each fix; passing it back as `resume` continues an interrupted
+// check from there (a fix that was cut short runs again, unless it was already committed).
+export async function runPrCheck(config, ctx, { fix, resume = null, onProgress = () => {} }) {
   const { maxRounds } = config.prCheck;
-  const history = [];
-  let previousUpheld = [];
-  const streak = new Map();
+  const history = resume?.history ?? [];
+  let previousUpheld = resume?.previousUpheld ?? [];
+  const streak = new Map(resume?.streak ?? []);
   let verdict = 'FAIL';
   let reason = '';
-  for (let round = 1; round <= maxRounds; round++) {
+  const head = () => git(ctx.workRoot, ['rev-parse', '--short', 'HEAD']).stdout.trim();
+  const save = (round, phase) => onProgress({ round, phase, history, previousUpheld, streak: [...streak], head: head() });
+
+  // Fixes the round's upheld findings; returns why the loop must stop, if it must.
+  const applyFix = async (entry, files, round) => {
+    entry.fix = await fixRound(config, ctx, files, round, entry.upheld);
+    log(`round ${round}: fixer ${entry.fix.commit ? `committed ${entry.fix.commit}` : 'changed nothing'}`);
+    if (entry.fix.commit) return null;
+    const humanNeeded = entry.fix.notFixed.length >= entry.upheld.length;
+    const previousNoop = history.length > 1 && history[history.length - 2].fix && !history[history.length - 2].fix.commit;
+    if (humanNeeded) return 'the fixer could not fix the upheld findings without a human decision';
+    return previousNoop ? 'the fixer changed nothing two rounds in a row' : null;
+  };
+
+  let start = 1;
+  if (resume) {
+    start = resume.round + 1;
+    log(`resuming at round ${resume.phase === 'fix' ? `${resume.round} (fix)` : start}`);
+    if (resume.phase === 'fix') {
+      const entry = history[history.length - 1];
+      const now = head();
+      if (now !== resume.head) entry.fix = { fixed: [], notFixed: [], summary: 'committed before the check was interrupted', commit: now };
+      else {
+        ctx.diff = prDiff(config, ctx);
+        reason = (await applyFix(entry, roundFiles(ctx, resume.round, { clean: false }), resume.round)) ?? '';
+      }
+      if (reason) verdict = 'ESCALATED';
+      previousUpheld = entry.upheld;
+      save(resume.round, 'done');
+    }
+  }
+  for (let round = start; round <= maxRounds && !reason; round++) {
     const result = await runRound(config, ctx, round, previousUpheld);
     const entry = { round, score: result.score, lensScores: result.lensScores, raised: result.findings.length, upheld: result.upheld, failedLenses: result.failedLenses, summary: result.summary };
     history.push(entry);
@@ -377,19 +411,12 @@ export async function runPrCheck(config, ctx, { fix }) {
       break;
     }
     if (result.upheld.length) {
-      entry.fix = await fixRound(config, ctx, result.files, round, result.upheld);
-      log(`round ${round}: fixer ${entry.fix.commit ? `committed ${entry.fix.commit}` : 'changed nothing'}`);
-      if (!entry.fix.commit) {
-        const humanNeeded = entry.fix.notFixed.length >= result.upheld.length;
-        const previousNoop = history.length > 1 && history[history.length - 2].fix && !history[history.length - 2].fix.commit;
-        if (humanNeeded || previousNoop) {
-          verdict = 'ESCALATED';
-          reason = humanNeeded ? 'the fixer could not fix the upheld findings without a human decision' : 'the fixer changed nothing two rounds in a row';
-          break;
-        }
-      }
+      save(round, 'fix');
+      reason = (await applyFix(entry, result.files, round)) ?? '';
+      if (reason) verdict = 'ESCALATED';
     }
     previousUpheld = result.upheld;
+    if (!reason) save(round, 'done');
   }
   if (verdict === 'ESCALATED') {
     const last = history[history.length - 1];

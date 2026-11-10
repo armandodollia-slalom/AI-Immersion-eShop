@@ -42,4 +42,4 @@ Score 10 only when no frame shows an error, the videos demonstrate every user-vi
 
 ## Lessons
 
-If `.github/agents/lessons/pr-check-video.md` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)
+If `.github/agents/lessons/pr-check-video.md` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)

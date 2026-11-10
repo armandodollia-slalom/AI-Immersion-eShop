@@ -59,7 +59,7 @@ function renderClaude(name, source, overrides) {
     '',
     '## Lessons',
     '',
-    `If \`.github/agents/lessons/${name}.md\` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)`,
+    `If \`.github/agents/lessons/${name}.md\` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)`,
     '',
   ];
   return front.join('\n') + '\n' + body.trim() + '\n' + lessons.join('\n');

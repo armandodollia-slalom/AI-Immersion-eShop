@@ -9,12 +9,13 @@ import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { lockFile, metricsFile } from '../pipeline/lib/state.mjs';
 import { activeStory } from '../pipeline/lib/stories.mjs';
-import { acquireLock, log, lockHolder, nowIso, readJson, readJsonl, releaseLock, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
+import { acquireLock, log, lockHolder, nowIso, readJson, readJsonl, releaseLock, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { isClean, removeCheckout, resolveTarget } from './lib/context.mjs';
 import { commentOnPullRequest } from './lib/github.mjs';
-import { hookRun, hookStop, resetPrCheck, sessionContext } from './lib/hooks.mjs';
+import { hookRun, hookStop, recoverHookRuns, resetPrCheck, sessionContext } from './lib/hooks.mjs';
 import { CHECKS_FILE, runPrCheck } from './lib/loop.mjs';
 import { renderReport } from './lib/report.mjs';
+import { interruptedRuns, readProgress, resumeRuns, writeProgress } from './lib/runs.mjs';
 import { extractVideoFrames, videoSources } from './lib/video.mjs';
 
 setLogTag('pr-check');
@@ -25,6 +26,9 @@ const USAGE = `Usage: node scripts/pr-check/pr-check.mjs <command> [options]
       [--no-fix] [--max-rounds <n>] [--debate-turns <n>] [--comment] [--push] [--json]
         Review the PR (or the current branch) against its story until it scores 10/10.
         Without --pr it checks the current branch. --no-fix runs one report-only round.
+        --resume continues an interrupted run of the same check from its last saved round.
+  resume [KEY|pr-<n>] [--force] restart interrupted checks in the background (manual runs from their
+                                last round, Stop-hook runs from the start), at most recovery.maxAttempts times
   status [pr-<n>|KEY]           last result of each check (or one)
   metrics [--json] [--since <iso-date>]
 
@@ -55,11 +59,22 @@ async function executeCheck(config, flags) {
   const ctx = await resolveTarget(config, { pr: flags.pr ? positiveInt(flags.pr, 'pr') : null, story: flags.story, base: flags.base, fix });
   const lock = lockFile(config, ctx.id, 'pr-check');
   if (!acquireLock(lock)) throw new Error(`a PR check of ${ctx.id} is already running (pid ${lockHolder(lock)})`);
+  // Manual runs record their progress so an interrupted one can resume; Stop-hook runs recover through prCheck state.
+  const manual = !flags.hook;
+  const saved = flags.resume ? readProgress(config, ctx.id) : null;
+  const resume = fix && saved?.branch === ctx.branch ? saved.loop ?? null : null;
   try {
+    if (flags.resume && !saved) throw new Error(`there is no interrupted PR check of ${ctx.id} to resume`);
+    if (resume) log(`resuming ${ctx.id} at round ${resume.round} (${resume.phase})`);
     // The fixer's changes are committed with `git add -A`; refuse to sweep someone's uncommitted work in.
-    if (fix && !isClean(config, ctx)) throw new Error('the working tree has uncommitted changes; commit or stash them, or pass --no-fix');
+    // A fix cut short leaves its changes behind; the resumed fix picks them up.
+    if (fix && resume?.phase !== 'fix' && !isClean(config, ctx)) throw new Error('the working tree has uncommitted changes; commit or stash them, or pass --no-fix');
     ctx.runDir = path.join(ctx.workRoot, config.stateDir, 'pr-check', ctx.id);
-    fs.rmSync(ctx.runDir, { recursive: true, force: true });
+    if (!resume) fs.rmSync(ctx.runDir, { recursive: true, force: true });
+    if (manual) {
+      const keep = { recoveries: saved?.recoveries ?? 0, retryAt: saved?.retryAt ?? null, loop: resume };
+      writeProgress(config, ctx.id, { story: ctx.story.key, branch: ctx.branch, flags: { ...flags, resume: undefined }, ...keep, ...selfProcess(), startedAt: nowIso(), finishedAt: null, error: null });
+    }
     const contextDir = path.join(ctx.runDir, 'context');
     fs.mkdirSync(contextDir, { recursive: true });
     fs.writeFileSync(path.join(contextDir, 'pr.md'), ctx.pr ? `# #${ctx.pr.number} ${ctx.pr.title}\n\n${ctx.pr.url}\n\n${ctx.pr.body || '(no description)'}\n` : `No pull request: checking branch ${ctx.branch}.\n`);
@@ -70,7 +85,8 @@ async function executeCheck(config, flags) {
 
     log(`checking ${ctx.id} against ${ctx.story.key} (base ${ctx.baseRef}, ${fix ? `fixing, up to ${config.prCheck.maxRounds} rounds` : 'report only'})`);
     const started = Date.now();
-    const result = await runPrCheck(config, ctx, { fix });
+    const onProgress = manual ? (loop) => writeProgress(config, ctx.id, { loop }) : undefined;
+    const result = await runPrCheck(config, ctx, { fix, resume, onProgress });
     const last = result.history[result.history.length - 1];
     const report = renderReport(ctx, result);
 
@@ -104,8 +120,13 @@ async function executeCheck(config, flags) {
       finishedAt: nowIso(),
     };
     writeJson(path.join(out, 'result.json'), summary);
+    if (manual) writeProgress(config, ctx.id, { pid: null, boot: null, recoveries: 0, retryAt: null, finishedAt: summary.finishedAt });
     if (ctx.workRoot !== config.root) fs.cpSync(ctx.runDir, path.join(out, 'run'), { recursive: true });
     return { ...summary, text: report };
+  } catch (error) {
+    // A run that fails (rather than dies) is not resumed.
+    if (manual && (flags.resume || readProgress(config, ctx.id)?.pid === process.pid)) writeProgress(config, ctx.id, { pid: null, boot: null, finishedAt: nowIso(), error: error.message });
+    throw error;
   } finally {
     releaseLock(lock);
     removeCheckout(config, ctx);
@@ -177,6 +198,13 @@ async function main() {
       return 0;
     }
 
+    case 'resume': {
+      const force = Boolean(flags.force);
+      const lines = [...recoverHookRuns(config, { key: positional[0], force }), ...resumeRuns(config, { id: positional[0], force })];
+      console.log(lines.join('\n') || 'No interrupted PR checks.');
+      return 0;
+    }
+
     case 'metrics': {
       const m = metrics(config, typeof flags.since === 'string' ? flags.since : null);
       if (flags.json) console.log(JSON.stringify(m, null, 2));
@@ -203,7 +231,7 @@ async function main() {
         return 0;
       }
       if (event === 'session-start') {
-        process.stdout.write(sessionContext(config, story));
+        process.stdout.write([sessionContext(config, story), ...interruptedRuns(config)].filter(Boolean).join('\n'));
         return 0;
       }
       console.error(`Unknown hook event "${event}".`);

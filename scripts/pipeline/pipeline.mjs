@@ -18,10 +18,16 @@ Implementation agent
   start <story>                 set the story you are working on (resets its review)
   done [story]                  mark the line of work complete; the stages run when your turn ends
   status [story]                state of every stage for a story
+  resume [story] [--force]      continue every stage's runs that died (crash, kill, reboot): implement
+                                batches, review rounds, QE plan/automation, PR checks. Each restarts in
+                                the background from its last saved round; --force also restarts runs
+                                escalated after crashing repeatedly
 
 Pipeline
   implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
                                 implement every story given, each on its own worktree and branch
+  implement resume [--parallel N] [--pr]
+                                continue the last implement run that did not finish
   implement status [story]      progress of the latest implement run
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
@@ -44,7 +50,7 @@ async function main() {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
       const args = process.argv.slice(3);
-      if (args[0] && !['run', 'story', 'status', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      if (args[0] && !['run', 'resume', 'story', 'status', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
       return runStage(config, stage, args, { inherit: true }).status;
     }
 
@@ -74,6 +80,13 @@ async function main() {
       }
       const escalations = listEscalations(config);
       if (escalations.length) console.log(`\nEscalations: ${escalations.join(', ')}`);
+      return 0;
+    }
+
+    case 'resume': {
+      // Each stage restarts its interrupted runs in the background, so this returns right away.
+      const args = [...(positional[0] ? [requireStory(config, positional[0]).key] : []), ...(flags.force ? ['--force'] : []), '--background'];
+      for (const { stage, stdout } of dispatchText(config, stages, 'commands', 'resume', args)) console.log(`[${stage}]\n${stdout.trimEnd()}`);
       return 0;
     }
 

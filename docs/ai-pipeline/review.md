@@ -24,20 +24,27 @@ flowchart LR
 - On approval it records the approved implementation hash in `review.approvedHash` in the story state. The `qe` stage starts automation only for that exact hash, so code changed after an approval is reviewed again first.
 - `pipeline start <KEY>` resets the review rounds.
 
-Every round is appended to `.agent-metrics/arch-reviews.jsonl` (story, round, verdict, and each finding's severity, category, file, line and issue). Rounds blocked by the policy pack carry `reviewer: arch-review-agent`, the `review_id` and each finding's `rule`.
+## Interrupted reviews
+
+A round records itself in `review.inProgress` (code hash, round, pid and boot) and holds `.agent-state/locks/<KEY>-review.lock` while it runs. If the round dies (crash, kill, reboot, or the hook timing out), the next session start says so and the next Stop runs the round again. After `recovery.maxAttempts` (3) dead rounds for the same code the review escalates with verdict `CRASHED` instead; `node scripts/review/review.mjs resume <KEY> --force` (or `pipeline resume <KEY> --force`) clears it so the next Stop retries. A second Stop while a round is running gets a notice instead of a second reviewer.
+
+Every round is appended to `.agent-metrics/arch-reviews.jsonl` (story, round, verdict, and each finding's severity, category, file, line and issue). Rounds blocked by the policy pack carry `reviewer: arch-review-agent`, the `review_id` and each finding's `rule`. Every round of both reviewers, approvals included, is also written to the [decision log](qe.md#decision-log) (`stage: review`) with the reviewer's summary and each finding's issue and fix, which the weekly factory retro reads.
 
 ## How the implementer improves
 
 Review denials feed back into the code agents at two speeds:
 
-- **Across stories (shared, reviewed):** `node scripts/qe/qe.mjs lessons` (weekly in `qe-lessons.yml`) treats every blocking finding in `arch-reviews.jsonl` as an `implementer` denial, grouped by category and, for policy-pack findings, by rule id. A mistake that recurs in 3 or more stories becomes a rule in `.github/agents/lessons/implementer.md`, proposed in a pull request; rules are strengthened, retired or reverted with the same measurements as the QE agents ([qe](qe.md#auto-improvement)). The `implementer` agent reads that file before it starts, and the session-start hook adds it to the main session's context while a story is active. Findings the [PR check](pr-check.md#how-agents-improve) upholds in its first round feed the same file.
-- **Within a story (local):** when the policy pack flags a finding as a repeat mistake (the requester was denied for that rule before), the block message also includes `get_lessons` guidance from the agent's local failure history (`review.policy.lessonsCommand`; set it to `null` to turn it off).
+- **Across stories (shared, reviewed):** `node scripts/qe/qe.mjs lessons` (weekly in `qe-lessons.yml`) treats every blocking finding in `arch-reviews.jsonl` as an `implementer` denial, grouped by category and, for policy-pack findings, by rule id. A mistake that recurs in 3 or more stories becomes a rule in `.github/agents/lessons/implementer.md`, proposed in a pull request; rules are strengthened, retired or reverted with the same measurements as the QE agents ([qe](qe.md#auto-improvement)). The `implementer` agent reads that file before it starts, and the session-start hook adds it to the main session's context while a story is active. Findings the [PR check](pr-check.md#how-agents-improve) upholds in its first round, and implementation bugs the integration tests find (`product-bug`), feed the same file.
+- **Within a story (team-wide):** when the policy pack flags a finding as a repeat mistake (the requester was denied for that rule before), the block message also includes `get_lessons` guidance from the agent's failure history (`review.policy.lessonsCommand`; set it to `null` to turn it off). Each policy-pack run and review is also written to `.agent-metrics/arch-history/` (one JSON file per event, committed with the story), and every local history store imports those files first, so these lessons include teammates' denials once their work is merged.
+
+`.gitattributes` merges `.agent-metrics/*.jsonl` with `merge=union`, so teammates appending to the same log keep both sides instead of conflicting.
 
 ## Commands
 
 ```bash
 node scripts/review/review.mjs run [PROMO-3]       # one review round now, printed
 node scripts/review/review.mjs status [PROMO-3]
+node scripts/review/review.mjs resume [PROMO-3] [--force]   # report interrupted rounds; --force retries a CRASHED review
 node scripts/review/review.mjs metrics [--json] [--since 2026-01-01]
 ```
 
