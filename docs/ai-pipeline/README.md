@@ -121,7 +121,6 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
   | qe | plan and automation round and feedback | session start, Stop, `pipeline resume` ([qe](qe.md#crash-recovery)) |
   | pr-check | Stop-hook waiter in the story state; manual runs in `progress.json` after each critique and fix | session start, Stop, `pipeline resume` ([pr-check](pr-check.md#interrupted-checks)) |
 
-
 - **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files.
 
 ## Adding a stage
