@@ -9,6 +9,11 @@ Agents take a user story from implementation to reviewed code with verified test
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 | `pr-check` | `scripts/pr-check/` | Adversarial critics, defender and judge score the work against its story (acceptance criteria, flow, UI design, style, video evidence). From the Stop hook, once QE has verified the tests, it reports and the agent fixes; on demand, a fixer loops it to 10/10 | [pr-check.md](pr-check.md) |
 
+Pull requests also get a generated section in their description, written in CI by `.github/workflows/pr-demo-video.yml` (`scripts/pr-video/`, [pr-demo-video.md](pr-demo-video.md)):
+
+- **Demo video**, for PRs that change the frontend: the videos of the e2e specs the PR adds or changes, recorded on the test stack.
+- **API changes**, for PRs that change only the backend: one entry per HTTP endpoint the PR adds, changes or removes. Each entry gives the method and route (from the route-mapping diff), the request parameters and body, the responses (from the stack's OpenAPI documents) and example calls recorded from the PR's specs (`E2E_API_LOG=1`), with secrets redacted.
+
 Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
 
 | Guide | For |
@@ -95,6 +100,7 @@ sequenceDiagram
   Run->>Git: commit test plan, tests and metrics
   opt --pr
     Run->>Git: push + gh pr create (stacked on blocker)
+    Note over Git: pr-demo-video.yml records the changed specs<br/>and adds the videos (and API summary) to the PR description
   end
   Run-->>Dev: outcome table
 ```
@@ -142,6 +148,7 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
+| Pull request opened or pushed | `.github/workflows/pr-demo-video.yml` | `pr-video.mjs specs`, test stack + changed specs, `pr-video.mjs publish`, `pr-video.mjs api` ([demo videos](pr-demo-video.md)) | none | none |
 | Weekly | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
 No agent starts on its own when stories or epics are added or changed: agent work starts only from a command (`implement run`, `pipeline start`, `qe plan`, `qe automate`) or from `pipeline done` in a session you started. `scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan true`) are listed in each stage's docs.
@@ -243,5 +250,6 @@ node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]|pre-tool
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
 node scripts/pr-check/pr-check.mjs run --pr 42 [--no-fix]   # adversarial PR check until 10/10
+node scripts/pr-video/pr-video.mjs specs|backend|publish|api|cleanup  # PR demo videos and API summary (pr-demo-video.yml)
 npm run test:pipeline                     # dispatcher and stage tests (fake agent, no LLM)
 ```

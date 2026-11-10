@@ -1,4 +1,4 @@
-import { test as base, expect, Browser, BrowserContext, BrowserContextOptions, Page, TestInfo, TestType, Video } from '@playwright/test';
+import { test as base, expect, APIRequestContext, APIResponse, Browser, BrowserContext, BrowserContextOptions, Page, TestInfo, TestType, Video } from '@playwright/test';
 
 /**
  * `test` for every e2e spec. Playwright only records video for the built-in `page`/`context` fixtures;
@@ -70,7 +70,94 @@ function videoSettings(testInfo: TestInfo): VideoOption | undefined {
   return settings;
 }
 
+/**
+ * With E2E_API_LOG=1 every call a test makes through the `request` fixture is attached as `api-exchanges`
+ * (method, URL, request body, status, response body; secrets redacted, bodies truncated). The video reporter
+ * copies them into manifest.json, and scripts/pr-video turns them into the PR's "API changes" section.
+ */
+const API_LOG = /^(1|true|yes)$/i.test(process.env.E2E_API_LOG ?? '');
+const API_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'fetch']);
+const API_BODY_LIMIT = 4000;
+const SECRET_HEADER = /^(authorization|cookie|set-cookie|x-api-key)$/i;
+const SECRET_KEY = /pass(word)?|secret|token|api[-_]?key/i;
+
+export interface ApiExchange {
+  method: string;
+  url: string;
+  requestHeaders?: Record<string, string>;
+  requestBody?: string;
+  status: number;
+  responseContentType?: string;
+  responseBody?: string;
+}
+
+function redact(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redact);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, SECRET_KEY.test(k) ? '***' : redact(v)]));
+  }
+  return value;
+}
+
+function bodyText(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  let text: string;
+  if (Buffer.isBuffer(value)) {
+    text = `<${value.length} bytes>`;
+  } else if (typeof value === 'string') {
+    try {
+      text = JSON.stringify(redact(JSON.parse(value)), null, 2);
+    } catch {
+      text = value;
+    }
+  } else {
+    text = JSON.stringify(redact(value), null, 2);
+  }
+  return text.length > API_BODY_LIMIT ? `${text.slice(0, API_BODY_LIMIT)}\n… (${text.length - API_BODY_LIMIT} more characters)` : text;
+}
+
+async function toExchange(name: string, target: any, options: any, response: APIResponse): Promise<ApiExchange> {
+  const isRequest = target && typeof target === 'object' && typeof target.url === 'function';
+  const method = (name === 'fetch' ? options?.method ?? (isRequest ? target.method() : 'GET') : name).toUpperCase();
+  const headers = Object.entries((options?.headers ?? {}) as Record<string, string>)
+    .map(([k, v]) => [k, SECRET_HEADER.test(k) ? '***' : String(v)]);
+  const form = options?.form ?? (options?.multipart ? Object.fromEntries(Object.keys(options.multipart).map(k => [k, '<part>'])) : undefined);
+  const contentType = response.headers()['content-type'];
+  const raw = await response.body().catch(() => undefined);
+  return {
+    method,
+    url: response.url(),
+    ...(headers.length ? { requestHeaders: Object.fromEntries(headers) } : {}),
+    ...(options?.data !== undefined || form ? { requestBody: bodyText(options?.data ?? form) } : {}),
+    status: response.status(),
+    ...(contentType ? { responseContentType: contentType } : {}),
+    ...(raw?.length ? { responseBody: /json|text|xml|problem/i.test(contentType ?? '') ? bodyText(raw.toString('utf8')) : `<${raw.length} bytes>` } : {}),
+  };
+}
+
+function recordApiCalls(context: APIRequestContext, log: ApiExchange[]): APIRequestContext {
+  return new Proxy(context, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function') return value;
+      if (typeof prop !== 'string' || !API_METHODS.has(prop)) return value.bind(target);
+      return async (urlOrRequest: any, options?: any) => {
+        const response: APIResponse = await value.call(target, urlOrRequest, options);
+        log.push(await toExchange(prop, urlOrRequest, options, response).catch(() => ({ method: prop.toUpperCase(), url: response.url(), status: response.status() })));
+        return response;
+      };
+    },
+  });
+}
+
 export const test = withStepKeyframes(base.extend<{ _recordManualContexts: void }, { browser: Browser }>({
+  request: async ({ request }, use, testInfo) => {
+    if (!API_LOG) return use(request);
+    const log: ApiExchange[] = [];
+    await use(recordApiCalls(request, log));
+    if (log.length) await testInfo.attach('api-exchanges', { body: JSON.stringify(log), contentType: 'application/json' });
+  },
+
   page: async ({ page }, use, testInfo) => {
     current?.pages.push(page);
     await use(page);
