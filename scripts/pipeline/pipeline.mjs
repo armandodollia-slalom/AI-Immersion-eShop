@@ -3,7 +3,7 @@
 // stages listed in stages.json. See docs/ai-pipeline/README.md.
 import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/cli.mjs';
 import { isDisabled, loadConfig } from './lib/config.mjs';
-import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, sessionStartOutput } from './lib/dispatch.mjs';
+import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, runStage, sessionStartOutput } from './lib/dispatch.mjs';
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
@@ -19,6 +19,9 @@ Implementation agent
   status [story]                state of every stage for a story
 
 Pipeline
+  implement run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+                                implement every story given, each on its own worktree and branch
+  implement status [story]      progress of the latest implement run
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
 
@@ -37,6 +40,11 @@ async function main() {
   const stages = loadStages();
 
   switch (command) {
+    case 'implement': {
+      const stage = stages.find((s) => s.name === 'implement');
+      return runStage(config, stage, process.argv.slice(3), { inherit: true }).status;
+    }
+
     case 'start': {
       const story = requireStory(config, positional[0]);
       setActiveStory(config, story.key);
