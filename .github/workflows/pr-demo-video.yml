@@ -1,0 +1,118 @@
+name: PR demo video
+
+# Records the e2e specs a pull request adds or changes (e2e/teststack/*.spec.ts) on the test stack and
+# adds the videos to a "Demo video" section of the PR description, with an animated preview. Videos are
+# stored on the `pr-videos` branch (one squashed commit); a closed, unmerged PR's videos are removed.
+# The PR check's video critic reads the same links. Backend PRs also get an "API changes" section: the HTTP
+# endpoints the PR adds, changes or removes, documented from the stack's OpenAPI with example calls the specs
+# made. See docs/ai-pipeline/pr-demo-video.md.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-demo-video-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+
+jobs:
+  record:
+    # Fork and Dependabot PRs get a read-only token, so they can't publish.
+    if: >-
+      github.event.action != 'closed' && !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+    - name: Find the e2e specs and backend code this PR changes
+      id: specs
+      run: |
+        list=$(node scripts/pr-video/pr-video.mjs specs --base "$BASE_REF" | paste -sd, -)
+        backend=$(node scripts/pr-video/pr-video.mjs backend --base "$BASE_REF")
+        echo "Specs: ${list:-none}; backend API changes: $backend"
+        echo "list=$list" >> "$GITHUB_OUTPUT"
+        if [ -n "$list" ] || [ "$backend" = true ]; then echo "stack=true" >> "$GITHUB_OUTPUT"; fi
+    - name: No spec changed
+      if: steps.specs.outputs.list == ''
+      run: >-
+        node scripts/pr-video/pr-video.mjs publish --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
+        --note "No \`e2e/teststack/*.spec.ts\` changed in this PR, so there is no demo video. User-facing changes need one: see \`.github/skills/feature-demo-video/SKILL.md\`."
+
+    # Backend PRs start the stack even without a changed spec, so their API summary gets OpenAPI details.
+    - name: Setup .NET (global.json)
+      if: steps.specs.outputs.stack == 'true'
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+    - name: Install Aspire CLI, ffmpeg, Playwright
+      if: steps.specs.outputs.stack == 'true'
+      run: |
+        curl -fsSL https://aspire.dev/install.sh | bash
+        echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
+        sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        npm ci
+        npx playwright install --with-deps chromium
+    - name: Start the test stack
+      if: steps.specs.outputs.stack == 'true'
+      run: testing/teststack up
+    - name: Record the changed specs
+      id: record
+      if: steps.specs.outputs.list != ''
+      env:
+        E2E_KEEP_VIDEOS: 1
+        E2E_API_LOG: 1
+        SPECS: ${{ steps.specs.outputs.list }}
+      run: npx playwright test -c playwright.teststack.config.ts --project scenarios --no-deps ${SPECS//,/ } || echo "failed=true" >> "$GITHUB_OUTPUT"
+    - name: Add the videos to the PR
+      if: steps.specs.outputs.list != ''
+      env:
+        SPECS: ${{ steps.specs.outputs.list }}
+      run: node scripts/pr-video/pr-video.mjs publish --pr "$PR_NUMBER" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
+    - name: Add the API summary to the PR
+      if: always() && steps.specs.outcome == 'success'
+      env:
+        SPECS: ${{ steps.specs.outputs.list }}
+      run: node scripts/pr-video/pr-video.mjs api --pr "$PR_NUMBER" --base "$BASE_REF" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
+    - name: Upload the videos
+      if: always() && steps.specs.outputs.list != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: pr-demo-video-${{ env.PR_NUMBER }}
+        path: artifacts/e2e-videos/
+        retention-days: 14
+        if-no-files-found: ignore
+    - name: Fail when a recorded spec failed
+      if: steps.record.outputs.failed == 'true'
+      run: |
+        echo "::error::A changed e2e spec failed; its video is marked failed in the PR description."
+        exit 1
+
+  cleanup:
+    if: >-
+      github.event.action == 'closed' && !github.event.pull_request.merged &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+    - name: Remove the PR's videos
+      run: node scripts/pr-video/pr-video.mjs cleanup --pr "$PR_NUMBER"

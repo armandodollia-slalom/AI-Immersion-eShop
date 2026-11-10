@@ -53,7 +53,15 @@ export function videoLinks(text, extensions) {
   return [...new Set(text.match(pattern) ?? [])];
 }
 
-export async function download(url, file) {
+// github.com/<owner>/<repo>/(blob|raw)/<ref>/<path> links (the PR demo video section uses them) point at
+// a web page or a redirect; raw.githubusercontent.com serves the file and accepts the token.
+export function rawGitHubUrl(url) {
+  const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(?:blob|raw)\/([^?#]+)/.exec(url);
+  return match ? `https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}` : url;
+}
+
+export async function download(link, file) {
+  const url = rawGitHubUrl(link);
   const host = new URL(url).hostname;
   const headers = token() && /(^|\.)github(usercontent)?\.com$/.test(host) ? { Authorization: `Bearer ${token()}` } : {};
   const response = await fetch(url, { headers, redirect: 'follow' });

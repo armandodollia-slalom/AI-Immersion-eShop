@@ -162,6 +162,15 @@ When you no longer need the deployment, run [`aspire destroy`](https://aspire.de
 
 For more information on contributing to this repo, read [the contribution documentation](./CONTRIBUTING.md) and [the Code of Conduct](CODE-OF-CONDUCT.md).
 
+### Pull request demo videos and API summaries
+
+When you open or push to a pull request, the [PR demo video workflow](.github/workflows/pr-demo-video.yml) starts the test stack and adds generated sections to the PR description:
+
+- **Demo video**: videos of the `e2e/teststack/*.spec.ts` specs the PR adds or changes, each with an animated preview. User-facing changes need such a spec.
+- **API changes** (backend PRs that change `src/<Service>.API/**/*.cs`): every HTTP endpoint the PR adds, changes or removes, with its method, route, request (parameters, body type and fields), responses (status codes and types, from OpenAPI) and example request/response pairs recorded from the PR's specs, with secrets redacted.
+
+The workflow updates both sections on every push and overwrites any edits made inside them. To preview the API summary locally, run `node scripts/pr-video/pr-video.mjs api --base origin/main --dry-run`. See [docs/ai-pipeline/pr-demo-video.md](docs/ai-pipeline/pr-demo-video.md).
+
 ### Sample data
 
 The sample catalog data is defined in [catalog.json](https://github.com/dotnet/eShop/blob/main/src/Catalog.API/Setup/catalog.json). Those product names, descriptions, and brand names are fictional and were generated using [GPT-35-Turbo](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/chatgpt), and the corresponding [product images](https://github.com/dotnet/eShop/tree/main/src/Catalog.API/Pics) were generated using [DALL·E 3](https://openai.com/dall-e-3).

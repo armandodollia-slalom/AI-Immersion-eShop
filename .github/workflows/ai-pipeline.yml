@@ -16,6 +16,8 @@ on:
       - 'scripts/implement/**'
       - 'scripts/review/**'
       - 'scripts/qe/**'
+      - 'scripts/pr-video/**'
+      - 'scripts/pr-check/**'
       - 'scripts/hooks/**'
       - '.github/agents/**'
       - '.claude/agents/**'

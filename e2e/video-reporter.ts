@@ -1,4 +1,4 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 import path from 'path';
 import type { FullConfig, Reporter, Suite, TestCase, TestResult } from '@playwright/test/reporter';
 
@@ -40,6 +40,8 @@ interface ManifestTest {
   errors: string[];
   videos: string[];
   keyframes: { label: string; path: string }[];
+  /** HTTP calls made through the `request` fixture (E2E_API_LOG=1, e2e/fixtures.ts). */
+  api?: unknown[];
 }
 
 export default class VideoReporter implements Reporter {
@@ -82,6 +84,14 @@ export default class VideoReporter implements Reporter {
       videos: [],
       keyframes: [],
     };
+    const api = result.attachments.find(a => a.name === 'api-exchanges' && a.body);
+    if (api) {
+      try {
+        entry.api = JSON.parse(api.body!.toString('utf8'));
+      } catch {
+        // A malformed log is not worth failing the report over.
+      }
+    }
     this.tests.push(entry);
     if (videos.length === 0 && keyframes.length === 0) return;
 
@@ -111,7 +121,7 @@ export default class VideoReporter implements Reporter {
   }
 
   onEnd() {
-    if (this.tests.some(t => t.videos.length || t.keyframes.length)) {
+    if (this.tests.some(t => t.videos.length || t.keyframes.length || t.api?.length)) {
       fs.mkdirSync(OUT_DIR, { recursive: true });
       fs.writeFileSync(MANIFEST, JSON.stringify({ startedAt: this.startedAt, finishedAt: new Date().toISOString(), tests: this.tests }, null, 2));
     }

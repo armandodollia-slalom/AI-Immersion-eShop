@@ -14,7 +14,7 @@ artifacts/e2e-videos/<project>/<spec>--<test>.failed.webm   # failed: use it to 
 
 The folder is moved to `artifacts/e2e-videos-previous/` at the start of each run (so the last run stays available for comparison) and is git-ignored. Videos are also attached to the HTML report, and CI uploads them as the `e2e-videos` artifact.
 
-### Keyframes for agents
+## Keyframes for agents
 
 Agents can't watch a video, so each recorded test also captures **keyframes**: labeled screenshots at the end of every `test.step` (`step failed: …` if it threw), at each `demo.highlight` and chapter end, and of every open page when the test ends (`final`, or `failure`). They are copied next to the video as `<spec>--<test>[.failed].keyframes/NN-<label>.png`, and `artifacts/e2e-videos/manifest.json` lists every test with its status, error, video and keyframes in order. The QE pipeline feeds them to the automation agent when a test fails and to the automation verifier, which checks that the screen matches each case. When you debug a failing test yourself, read the manifest and open the `failure` and `step failed` frames before changing code. Use `captureKeyframe(label)` from `e2e/fixtures.ts` for a moment that isn't a step.
 
@@ -52,7 +52,7 @@ Whenever your change affects anything a shopper or admin can see or do in a brow
 5. **Report it.** In your final summary to the user:
    - Embed each relevant video with Markdown using its absolute path, for example `![Add to cart](C:\path\to\repo\artifacts\e2e-videos\scenarios\add-to-cart--alice-adds-a-product-to-her-shopping-bag.webm)`.
    - Say what each video demonstrates and the scenario or data used.
-   - In a PR description, include the same list and the command to reproduce the videos. Commit the tests, never the videos.
+   - In a PR description, include the same list and the command to reproduce the videos. Commit the tests, never the videos. CI (`.github/workflows/pr-demo-video.yml`) also records every `e2e/teststack/*.spec.ts` the PR changes and adds the videos to a **Demo video** section of the description, so a UI spec in the PR is what puts a demo on it.
 
 ## Demo API (`e2e/demo.ts`)
 
