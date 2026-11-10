@@ -11,6 +11,13 @@ Agents take a user story from implementation to reviewed code with verified test
 
 Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
 
+| Guide | For |
+| --- | --- |
+| [setup.md](setup.md) | prerequisites and first-time setup, locally or on a CI runner |
+| [writing-stories.md](writing-stories.md) | story authors: the file format and sections the agents rely on |
+| [agents.md](agents.md) | every agent: what starts it, what it sees, its access, model and lessons |
+| [escalations.md](escalations.md) | what to do when a story fails or a loop escalates to a human |
+
 ```mermaid
 flowchart LR
   C[You run a command<br/>implement run, pipeline start, qe plan] -->|worktree + headless agent| I
@@ -32,6 +39,84 @@ node scripts/pipeline/pipeline.mjs implement status
 ```
 
 Each story gets its own worktree and branch, the implementer agent, the architecture review loop and verified tests. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
+
+### One story, end to end
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Dev as Developer / CI job
+  participant Run as implement runner
+  participant Git as Git worktree
+  participant Impl as implementer agent
+  participant Disp as dispatcher
+  participant Rev as review stage
+  participant QE as qe stage (background)
+  participant PRC as pr-check stage (background)
+
+  Dev->>Run: implement run stories/ [--parallel N] [--pr]
+  Run->>Run: parse stories and "Blocked by", order them
+  Run->>Git: worktree + feat/KEY-title (stacked on blocker)
+  Run->>Disp: pipeline start KEY
+  Disp->>Rev: story-start (reset rounds)
+  Disp->>PRC: story-start (reset runs)
+
+  loop until approved (review.maxRounds)
+    Run->>Impl: story (+ findings from the last round)
+    Impl->>Git: production code commits
+    Run->>Disp: pipeline done + hook stop
+    Disp->>Rev: hook stop
+    Rev->>Rev: arch-review policy pack (no LLM)
+    alt policy BLOCK
+      Rev-->>Disp: block with rule findings
+    else PASS / WARN
+      Rev->>Rev: fresh architecture-reviewer on story + diff
+      Rev-->>Disp: APPROVED or CHANGES_REQUESTED
+    end
+    Disp-->>Run: block reason = next implementer task
+  end
+
+  Rev->>Rev: record review.approvedHash
+  Disp->>QE: hook stop (approved hash matches)
+  QE->>QE: plan loop, then automation loop (each to 10/10)
+  alt tests reveal a product bug
+    QE-->>Run: product-bug escalation
+    Run->>Impl: bug-fix task (maxBugFixCycles)
+    Note over Impl,Rev: code changed, so the review runs again
+  else verified
+    QE-->>Run: tests verified
+  end
+
+  Disp->>PRC: hook stop
+  PRC->>PRC: wait for QE on the same hash, then one report-only round
+  PRC-->>Impl: findings block the next stop (or a pass notice)
+
+  Run->>Git: commit test plan, tests and metrics
+  opt --pr
+    Run->>Git: push + gh pr create (stacked on blocker)
+  end
+  Run-->>Dev: outcome table
+```
+
+How a story reaches its [outcome](implement.md#outcomes):
+
+```mermaid
+stateDiagram-v2
+  [*] --> planned
+  planned --> skipped: already implemented / blocker failed
+  planned --> implementing
+  implementing --> blocked: unimplementable / branch conflict
+  implementing --> no_changes: no implementation files changed
+  implementing --> reviewing
+  reviewing --> implementing: changes requested
+  reviewing --> review_escalated: round limit
+  reviewing --> unresolved: maxImplementerRuns
+  reviewing --> testing: approved
+  testing --> implementing: product bug (bug-fix cycles left)
+  testing --> qe_failed: escalated / timed-out / crashed
+  testing --> done: tests verified
+  done --> [*]
+```
 
 ## Using it as an implementation agent
 
@@ -59,6 +144,20 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | Weekly | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
 No agent starts on its own when stories or epics are added or changed: agent work starts only from a command (`implement run`, `pipeline start`, `qe plan`, `qe automate`) or from `pipeline done` in a session you started. `scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan true`) are listed in each stage's docs.
+
+## Safety rails
+
+| Rail | What it prevents |
+| --- | --- |
+| Fresh, read-only reviewers and verifiers | an agent grading its own work or seeing the producer's reasoning |
+| Round limits and escalations (`.agent-state/escalations/`) | endless loops; hard decisions go to a human |
+| Approved-hash gating | testing or PR-checking code that changed after the review |
+| Script-computed PR check scores | an agent arguing its way to 10/10 |
+| [Story guard](#story-guard) | agents reading stories, epics and mockups they were not given |
+| `PIPELINE_CHILD=1` | spawned agents re-triggering hooks recursively |
+| `pre-push` hook and CI | unverified plans or tests reaching the remote |
+| Lessons via pull request | unreviewed changes to agent behavior |
+| `PIPELINE_DISABLE=1`, `QE_SKIP=1`, `PR_CHECK_SKIP=1` | escape hatches for humans |
 
 ## Story guard
 
