@@ -97,7 +97,7 @@ Don't run functional tests, `teststack up/load` or Playwright. If a check fails,
 Then:
 - `graphify update .` (code changed).
 - Don't run `scripts/graphify-build.sh --extract` from a worktree: the cache folder is keyed by checkout path, so it duplicates the shared cache and re-extracts unrelated docs at API cost. List changed `.md` files in the report; the main checkout extracts after merge. Never commit anything in `graphify-out/`.
-- Run markdownlint on changed markdown (`npx markdownlint-cli <files>`), since CI lints every `**/*.md`.
+- Run `npm run lint` (ESLint, `dotnet format --verify-no-changes`, markdownlint) and fix what it reports (`npm run lint:fix` auto-fixes most), since CI runs the same checks.
 
 ## 6. Close out the story
 

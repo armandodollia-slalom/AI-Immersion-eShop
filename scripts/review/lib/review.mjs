@@ -74,7 +74,7 @@ function runPolicy(config, template, input) {
   const agent = config.abs(p.agent);
   let [cmd, ...args] = template.map((a) => a.replaceAll('{agent}', agent));
   let result = run(cmd, args, { cwd: config.root, input, timeoutSec: p.timeoutSec });
-  if (result.status === 127 && cmd === 'python') result = run((cmd = 'python3'), args, { cwd: config.root, input, timeoutSec: p.timeoutSec });
+  if (result.status === 127 && cmd === 'python') result = run('python3', args, { cwd: config.root, input, timeoutSec: p.timeoutSec });
   return result;
 }
 

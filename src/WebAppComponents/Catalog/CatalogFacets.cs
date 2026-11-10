@@ -1,4 +1,4 @@
-namespace eShop.WebAppComponents.Catalog;
+﻿namespace eShop.WebAppComponents.Catalog;
 
 public record CatalogFacetCount(int Id, int Count);
 

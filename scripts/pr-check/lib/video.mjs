@@ -1,6 +1,7 @@
 // Video evidence for the PR check: find the videos, download linked ones, and turn each into a set of
 // frame images the video critic can look at. Frames come from ffmpeg when it is installed, otherwise
 // from Playwright's Chromium, which plays the file and screenshots it at each timestamp.
+/* global document -- used inside page.evaluate callbacks, which run in the browser */
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -29,7 +30,10 @@ export function videoSources(config, { values = [], prBody = '' } = {}) {
     if (fs.statSync(abs).isDirectory()) for (const f of filesUnder(abs, extensions)) sources.push({ source: path.relative(config.root, f).replace(/\\/g, '/'), file: f });
     else sources.push({ source: p, file: abs });
   };
-  for (const value of values) (isUrl(value) ? sources.push({ source: value, url: value }) : addPath(value));
+  for (const value of values) {
+    if (isUrl(value)) sources.push({ source: value, url: value });
+    else addPath(value);
+  }
   for (const url of videoLinks(prBody, extensions)) sources.push({ source: url, url });
   if (values.length === 0 && sources.length === 0) {
     for (const dir of defaultDirs) if (fs.existsSync(path.join(config.root, dir))) addPath(dir);

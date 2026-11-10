@@ -1,10 +1,11 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace eShop.Catalog.API.Model;
 
 public class CatalogBrand
 {
-    public CatalogBrand(string brand) {
+    public CatalogBrand(string brand)
+    {
         Brand = brand;
     }
 

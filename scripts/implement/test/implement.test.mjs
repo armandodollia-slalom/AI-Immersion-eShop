@@ -91,7 +91,7 @@ test('implement run: each story gets a worktree and branch, loops with the revie
 
   const dry = pipeline(['implement', 'run', incoming, '--dry-run']);
   assert.equal(dry.status, 0, dry.stderr);
-  assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon  \(blocked by DEMO-1\)/);
+  assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon {2}\(blocked by DEMO-1\)/);
   assert.ok(!fs.existsSync(`${scriptFile}.calls.json`), 'a dry run starts no agents');
 
   const result = pipeline(['implement', 'run', incoming]);
@@ -150,7 +150,7 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   for (const suffix of ['.calls.json', '.prompts.log']) fs.rmSync(scriptFile + suffix, { force: true });
   const resumed = pipeline(['implement', 'resume']);
   assert.equal(resumed.status, 0, resumed.stdout + resumed.stderr);
-  assert.match(resumed.stdout, /DEMO-1 +skip: done in a previous run[\s\S]*DEMO-3 +feat\/demo-3-loyalty <- main  \(resume\)[\s\S]*DEMO-4 +feat\/demo-4-loyalty-tiers <- feat\/demo-3-loyalty/);
+  assert.match(resumed.stdout, /DEMO-1 +skip: done in a previous run[\s\S]*DEMO-3 +feat\/demo-3-loyalty <- main {2}\(resume\)[\s\S]*DEMO-4 +feat\/demo-4-loyalty-tiers <- feat\/demo-3-loyalty/);
   assert.match(resumed.stdout, /DEMO-3 +done[\s\S]*DEMO-4 +done/);
   assert.equal(calls().implementer, 2, 'only the unfinished stories run again');
   assert.match(prompts(), /=== implementer #1[\s\S]*previous run of this story was interrupted/);

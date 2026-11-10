@@ -33,6 +33,18 @@ When considering contributions, we're guided by several principles that align wi
 
 - **Performance Enhancements**: If you're looking to speed up eShop, we're all for it! Please include benchmark comparisons to demonstrate the improvements. Performance improvements that make the code less readable or canonical may have more scrutiny applied.
 
+## Linting
+
+CI (`.github/workflows/lint.yml`) runs these checks on every pull request. Run them locally before pushing:
+
+```bash
+npm ci            # once
+npm run lint      # ESLint (JS/TS), dotnet format (C#), markdownlint
+npm run lint:fix  # auto-fix what can be fixed
+```
+
+The pre-commit hook in `.githooks/` lints staged files when `core.hooksPath` is set to `.githooks` (done by `scripts/setup.sh`); set `SKIP_LINT=1` to bypass it.
+
 ## Code of Conduct
 
 To ensure a welcoming and positive environment for everyone, please adhere to our Code of Conduct. Respectful collaboration is key to a successful project.

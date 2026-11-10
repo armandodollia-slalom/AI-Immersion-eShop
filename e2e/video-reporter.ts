@@ -23,6 +23,7 @@ function slug(value: string) {
 }
 
 const rel = (file: string) => path.relative(OUT_DIR, file).split(path.sep).join('/');
+// eslint-disable-next-line no-control-regex -- matches ANSI escape codes
 const stripAnsi = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, '');
 
 interface ManifestTest {

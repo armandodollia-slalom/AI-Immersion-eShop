@@ -256,7 +256,7 @@ export async function implementStory(config, opts) {
     if (opts.resume) feedback = 'A previous run of this story was interrupted. Its work so far is on this branch (committed, or still uncommitted in the worktree). Review it and continue the implementation rather than starting over.';
   }
 
-  let qe = null;
+  let qe;
   for (;;) {
     // Implementation and review loop: the review's stop hook blocks with findings until it approves.
     let approved = skipImplementer;
@@ -282,7 +282,7 @@ export async function implementStory(config, opts) {
       const done = pipeline(worktree, base, ['done', key]);
       if (/\(0 implementation file/.test(done.stdout)) return finish('no-changes', reported?.reason ?? 'the implementer changed no implementation files');
       const stop = pipeline(worktree, base, ['hook', 'stop'], '{}');
-      let output = null;
+      let output;
       try {
         output = stop.stdout.trim() ? JSON.parse(stop.stdout) : null;
       } catch {

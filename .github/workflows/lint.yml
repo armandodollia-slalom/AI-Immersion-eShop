@@ -1,0 +1,62 @@
+name: Lint
+
+permissions:
+  contents: read
+
+# Runs on every PR (no path filters) so the jobs can be made required checks.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  javascript:
+    name: ESLint (JS/TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - run: npx eslint . --format stylish
+
+  markdown:
+    name: Markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - name: Run markdownlint
+        run: |
+          echo "::add-matcher::.github/workflows/markdownlint-problem-matcher.json"
+          npm run lint:md
+
+  dotnet:
+    name: dotnet format (C#)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET (global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore eShop.Web.slnf
+      - name: Verify formatting and code style
+        run: dotnet format eShop.Web.slnf --no-restore --verify-no-changes --report artifacts/format-report
+      - name: Upload format report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-format-report
+          path: artifacts/format-report
