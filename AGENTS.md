@@ -27,7 +27,9 @@ Skip this only for backend-only, docs-only or no-behavior-change work, and say s
 
 ## AI development pipeline
 
-Stories go through the agent pipeline described in `docs/ai-pipeline/README.md` (architecture review, then QE test plans and automated tests).
+Stories go through the agent pipeline described in `docs/ai-pipeline/README.md` (implementation, architecture review, then QE test plans and automated tests).
+
+- To run a story through the whole pipeline, run `node scripts/pipeline/pipeline.mjs implement <KEY>` (add `--background` to run several at once). It starts the `implementer` agent in the story's own worktree under `.claude/worktrees/`; you don't need the steps below.
 
 - When you start implementing a story, run `node scripts/pipeline/pipeline.mjs start <KEY>` (for example `PROMO-3`).
 - When your line of work for that story is complete, run `node scripts/pipeline/pipeline.mjs done` before you finish. The Stop hook then runs an architecture review. If it blocks with findings, fix them and finish again; tests are written automatically after approval.

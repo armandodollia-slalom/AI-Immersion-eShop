@@ -15,6 +15,7 @@
     "pr-check": "node scripts/pr-check/pr-check.mjs",
     "qe": "node scripts/qe/qe.mjs",
     "test:pipeline": "node --test scripts/*/test/*.test.mjs",
+    "implement": "node scripts/pipeline/pipeline.mjs implement",
     "agents:sync": "node scripts/sync-agents.mjs",
     "agents:check": "node scripts/sync-agents.mjs --check"
   },

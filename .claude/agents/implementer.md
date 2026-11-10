@@ -18,6 +18,8 @@ The caller gives you a story ID (`PROMO-3`) or a path. Resolve it to `product-re
 
 ## 1. Worktree, branch and setup
 
+If the pipeline started you (`node scripts/pipeline/pipeline.mjs implement <KEY>`), your task says so: the worktree, branch and `pipeline start` are already done, so skip steps 1 and 7 below.
+
 1. `git fetch origin` and create `feat/{id-lowercase}-{short-kebab-title}` (e.g. `feat/promo-3-cart-pricing-evaluation`) from `origin/main`. If you are already on a fresh worktree branch, rename it with `git branch -m` and reset it onto `origin/main`. Never commit to `main`.
 2. If a blocking story is merged, it is on `origin/main`. If it is only on its own `feat/` branch, stop and report it as blocked rather than merging that branch in, unless the caller told you to build on it.
 3. A new worktree has no graph (`graphify-out/` is gitignored): run `scripts/graphify-build.sh` before the first `graphify query`.
@@ -123,6 +125,12 @@ Return, in this order:
 4. Commands run and their results, including any existing tests you updated and why.
 5. **For `qe-automation`:** what to test per acceptance criterion — entry points (endpoints, methods, pages), edge cases and error paths you handled, events published or consumed, and scenario data the flow needs (users, catalog items, promotions).
 6. Story mismatches, decisions made, out-of-scope bugs noticed, and follow-ups.
+
+End the message with one line the pipeline parses:
+
+```text
+AGENT_RESULT: {"status": "done" | "blocked" | "needs-input", "summary": "<one line>", "reason": "<why, when not done>"}
+```
 
 ## Lessons
 
