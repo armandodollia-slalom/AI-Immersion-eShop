@@ -3,8 +3,12 @@
 Every caller (Git pre-commit, Arch_review_Agent, Test Agent, CI) records through `architecture.validate`, so history
 is captured once, in one place, with one schema. Sinks:
 
-* sqlite (default, local system of record) - stdlib only, WAL mode, retention-pruned, gitignored.
+* sqlite (default, local query store) - stdlib only, WAL mode, retention-pruned, gitignored.
   Path: policy.yaml history.path, overridable with $ARCH_HISTORY_DB (e.g. a shared CI cache volume).
+* ledger (team-wide, in git) - every agent run and review is also written as one small JSON file under
+  history.ledger.path (.agent-metrics/arch-history/), committed with the work. One file per event, so teammates'
+  ledgers merge without conflicts. Before any query the sqlite store imports ledger files it has not seen, so
+  everyone's lessons cover the whole team's denials. Turn off with $ARCH_HISTORY_LEDGER=off or point it elsewhere.
 * OTLP/HTTP JSON logs (opt-in, team-wide) - set $ARCH_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_ENDPOINT) to an
   OpenTelemetry Collector; best effort with a short timeout, never affects the decision.
 
@@ -23,6 +27,12 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 DEFAULT_PATH = "evidence/history/architecture-history.sqlite"
 DEFAULT_RECORD_OUTCOMES = ("BLOCK", "WARN", "WAIVED")
+LEDGER_SCHEMA = "arch-history-ledger/v1"
+DEFAULT_LEDGER_PATH = ".agent-metrics/arch-history"
+# Lessons are about agents; per-commit, CI and test runs would only churn the shared ledger.
+DEFAULT_LEDGER_EXCLUDE = ("git-pre-commit", "ci", "selfcheck", "unspecified", "unittest")
+LEDGER_MESSAGE_MAX = 500
+_OFF = ("0", "off", "false", "no")
 
 DDL = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -83,6 +93,7 @@ CREATE TABLE IF NOT EXISTS agent_reviews (
     introduced        INTEGER
 );
 CREATE INDEX IF NOT EXISTS ix_reviews_task ON agent_reviews(task_id, ts);
+CREATE TABLE IF NOT EXISTS ledger_imports (name TEXT PRIMARY KEY);
 """
 
 
@@ -93,6 +104,11 @@ def config(pack) -> dict:
     cfg.setdefault("retention_days", 365)
     cfg.setdefault("record_outcomes", list(DEFAULT_RECORD_OUTCOMES))
     cfg.setdefault("otlp", {})
+    ledger = dict(cfg.get("ledger") or {})
+    ledger.setdefault("enabled", True)
+    ledger.setdefault("path", DEFAULT_LEDGER_PATH)
+    ledger.setdefault("exclude_callers", list(DEFAULT_LEDGER_EXCLUDE))
+    cfg["ledger"] = ledger
     return cfg
 
 
@@ -119,7 +135,7 @@ def connect(path: Path) -> sqlite3.Connection:
 def _enabled(pack, context: dict) -> bool:
     if context.get("record_history") is False:
         return False
-    if os.environ.get("ARCH_HISTORY", "").lower() in ("0", "off", "false", "no"):
+    if os.environ.get("ARCH_HISTORY", "").lower() in _OFF:
         return False
     return bool(config(pack)["enabled"])
 
@@ -136,7 +152,10 @@ def record(pack, result: dict, context: dict | None = None) -> dict:
         with closing(connect(path)) as conn, conn:
             _insert_run(conn, result, set(cfg["record_outcomes"]))
             _prune(conn, cfg["retention_days"])
+            shared = _write_ledger_run(pack, conn, result, cfg, context.get("history_db"))
         status["recorded"] = True
+        if shared:
+            status["ledger"] = shared
     except Exception as exc:  # history must never break validation
         status["error"] = f"{type(exc).__name__}: {exc}"
     otlp = export_otlp(pack, result)
@@ -152,14 +171,11 @@ def record_review(pack, review: dict, context: dict | None = None) -> bool:
         return False
     try:
         with closing(connect(db_path(pack, context.get("history_db")))) as conn, conn:
-            delta = review.get("delta") or {}
-            req = review.get("requester") or {}
-            conn.execute(
-                "INSERT OR REPLACE INTO agent_reviews VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (review["review_id"], review.get("run_id"), review["timestamp"], review.get("agent", "arch-review-agent"),
-                 req.get("agent"), req.get("task_id"), req.get("iteration"), review.get("previous_review_id"),
-                 review["status"], review["decision"], len(delta.get("resolved", [])),
-                 len(delta.get("persisting", [])), len(delta.get("introduced", []))))
+            row = _review_row(review)
+            _insert_row(conn, "agent_reviews", row, "REPLACE")
+            ledger = ledger_dir(pack, context.get("history_db"))
+            if ledger and row["requester"]:
+                _write_ledger(conn, ledger, row["ts"], "review", row["review_id"], {"review": row})
         return True
     except Exception:
         return False
@@ -167,7 +183,7 @@ def record_review(pack, review: dict, context: dict | None = None) -> bool:
 
 def run_for_review(pack, review_id: str, history_db: str | None = None) -> str | None:
     try:
-        with closing(connect(db_path(pack, history_db))) as conn:
+        with closing(connect(_store(pack, history_db))) as conn:
             row = conn.execute("SELECT run_id FROM agent_reviews WHERE review_id = ?", (review_id,)).fetchone()
             return row["run_id"] if row else None
     except Exception:
@@ -176,32 +192,145 @@ def run_for_review(pack, review_id: str, history_db: str | None = None) -> str |
 
 def findings_of_run(pack, run_id: str, history_db: str | None = None) -> list[dict]:
     try:
-        with closing(connect(db_path(pack, history_db))) as conn:
+        with closing(connect(_store(pack, history_db))) as conn:
             return [dict(r) for r in conn.execute("SELECT * FROM findings WHERE run_id = ?", (run_id,))]
     except Exception:
         return []
 
 
-def _insert_run(conn, result: dict, outcomes: set[str]):
+def _run_rows(result: dict, outcomes: set[str]) -> tuple[dict, list[dict]]:
     findings = result.get("findings", [])
     by = lambda o: sum(1 for f in findings if f["outcome"] == o)
     repo = result.get("repository") or {}
     pol = result.get("policy") or {}
-    conn.execute(
-        "INSERT OR REPLACE INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (result["run_id"], result["timestamp"], result["checkpoint"], result.get("caller") or "unspecified",
-         result["decision"], result.get("exit_code", 0), repo.get("branch"), repo.get("head"), pol.get("version"),
-         pol.get("content_sha256"), (result.get("summary") or {}).get("rules_evaluated"),
-         len((result.get("inputs") or {}).get("changed_files") or {}), by("BLOCK"), by("WARN"), by("WAIVED"),
-         len(result.get("review_requests") or []), result.get("duration_ms"),
-         (result.get("evidence") or {}).get("bundle_path")))
-    conn.executemany(
-        "INSERT OR REPLACE INTO findings VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [(result["run_id"], f["finding_id"], f["rule_id"], f.get("category"), f.get("severity"), f["outcome"],
-          f["status"], f.get("validator"), f.get("validation_mode"), f.get("file"),
-          int(f["line"]) if str(f.get("line") or "").isdigit() else None, (f.get("message") or "")[:2000],
-          (f.get("exception") or {}).get("id"))
-         for f in findings if f["outcome"] in outcomes])
+    run = {"run_id": result["run_id"], "ts": result["timestamp"], "checkpoint": result["checkpoint"],
+           "caller": result.get("caller") or "unspecified", "decision": result["decision"],
+           "exit_code": result.get("exit_code", 0), "branch": repo.get("branch"), "head": repo.get("head"),
+           "policy_version": pol.get("version"), "policy_sha256": pol.get("content_sha256"),
+           "rules_evaluated": (result.get("summary") or {}).get("rules_evaluated"),
+           "changed_files": len((result.get("inputs") or {}).get("changed_files") or {}),
+           "findings_block": by("BLOCK"), "findings_warn": by("WARN"), "findings_waived": by("WAIVED"),
+           "review_requests": len(result.get("review_requests") or []), "duration_ms": result.get("duration_ms"),
+           "bundle_path": (result.get("evidence") or {}).get("bundle_path")}
+    rows = [{"run_id": result["run_id"], "finding_id": f["finding_id"], "rule_id": f["rule_id"],
+             "category": f.get("category"), "severity": f.get("severity"), "outcome": f["outcome"],
+             "status": f["status"], "validator": f.get("validator"), "validation_mode": f.get("validation_mode"),
+             "file": f.get("file"), "line": int(f["line"]) if str(f.get("line") or "").isdigit() else None,
+             "message": (f.get("message") or "")[:2000], "exception_id": (f.get("exception") or {}).get("id")}
+            for f in findings if f["outcome"] in outcomes]
+    return run, rows
+
+
+def _review_row(review: dict) -> dict:
+    delta = review.get("delta") or {}
+    req = review.get("requester") or {}
+    return {"review_id": review["review_id"], "run_id": review.get("run_id"), "ts": review["timestamp"],
+            "agent": review.get("agent", "arch-review-agent"), "requester": req.get("agent"),
+            "task_id": req.get("task_id"), "iteration": req.get("iteration"),
+            "previous_review_id": review.get("previous_review_id"), "status": review["status"],
+            "decision": review["decision"], "resolved": len(delta.get("resolved", [])),
+            "persisting": len(delta.get("persisting", [])), "introduced": len(delta.get("introduced", []))}
+
+
+def _insert_row(conn, table: str, row: dict, conflict: str = "IGNORE"):
+    """Insert by column name; keys this schema does not know (newer ledger writers) are ignored."""
+    cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
+    keys = [c for c in cols if c in row]
+    conn.execute(f"INSERT OR {conflict} INTO {table} ({','.join(keys)}) VALUES ({','.join('?' * len(keys))})",
+                 [row[k] for k in keys])
+
+
+def _insert_run(conn, result: dict, outcomes: set[str]):
+    run, rows = _run_rows(result, outcomes)
+    _insert_row(conn, "runs", run, "REPLACE")
+    for row in rows:
+        _insert_row(conn, "findings", row, "REPLACE")
+
+
+# ---------------------------------------------------------------------------------------------- shared ledger
+
+def ledger_dir(pack, history_db: str | None = None) -> Path | None:
+    """Directory of the git-tracked ledger, or None when off. A per-call history_db is an isolated store."""
+    env = os.environ.get("ARCH_HISTORY_LEDGER", "")
+    if env.lower() in _OFF:
+        return None
+    if history_db and not env:
+        return None
+    cfg = config(pack)["ledger"]
+    if not env and not cfg["enabled"]:
+        return None
+    p = Path(env or cfg["path"])
+    return p if p.is_absolute() else (pack.repo_root / p)
+
+
+def _write_ledger(conn, ledger: Path, ts: str, kind: str, event_id: str, body: dict) -> str:
+    name = f"{ts[:7]}/{kind}-{event_id}.json"
+    target = ledger / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"schema": LEDGER_SCHEMA, "kind": kind, **body}, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, target)
+    conn.execute("INSERT OR IGNORE INTO ledger_imports(name) VALUES (?)", (name,))
+    return name
+
+
+def _write_ledger_run(pack, conn, result: dict, cfg: dict, history_db: str | None) -> str | None:
+    ledger = ledger_dir(pack, history_db)
+    caller = result.get("caller") or "unspecified"
+    if not ledger or caller in cfg["ledger"]["exclude_callers"]:
+        return None
+    run, rows = _run_rows(result, set(cfg["record_outcomes"]))
+    run["bundle_path"] = None  # local evidence bundles are not shared
+    for row in rows:
+        row["message"] = (row["message"] or "")[:LEDGER_MESSAGE_MAX]
+    return _write_ledger(conn, ledger, run["ts"], "run", run["run_id"], {"run": run, "findings": rows})
+
+
+def sync_ledger(pack, history_db: str | None = None) -> dict:
+    """Import ledger files the local sqlite store has not seen yet. Idempotent; never raises."""
+    ledger = ledger_dir(pack, history_db)
+    status = {"imported": 0, "ledger": None}
+    if not ledger or not ledger.is_dir():
+        return status
+    status["ledger"] = _display(pack, ledger)
+    try:
+        names = sorted(p.relative_to(ledger).as_posix() for p in ledger.glob("*/*.json"))
+        if not names:
+            return status
+        cfg = config(pack)
+        with closing(connect(db_path(pack, history_db))) as conn, conn:
+            seen = {r["name"] for r in conn.execute("SELECT name FROM ledger_imports")}
+            fresh = [n for n in names if n not in seen]
+            # Runs before reviews: reviews reference their run.
+            fresh.sort(key=lambda n: (n.split("/", 1)[1].startswith("review-"), n))
+            cutoff = ((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=cfg["retention_days"])).isoformat()
+                      if cfg["retention_days"] else "")
+            for name in fresh:
+                try:
+                    doc = json.loads((ledger / name).read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue  # unreadable or half-merged file: retry next time
+                if doc.get("kind") == "run" and doc.get("run", {}).get("ts", "") >= cutoff:
+                    _insert_row(conn, "runs", doc["run"])
+                    for row in doc.get("findings") or []:
+                        _insert_row(conn, "findings", row)
+                elif doc.get("kind") == "review" and doc.get("review"):
+                    row = dict(doc["review"])
+                    if row.get("run_id") and not conn.execute(
+                            "SELECT 1 FROM runs WHERE run_id = ?", (row["run_id"],)).fetchone():
+                        row["run_id"] = None
+                    _insert_row(conn, "agent_reviews", row)
+                conn.execute("INSERT OR IGNORE INTO ledger_imports(name) VALUES (?)", (name,))
+                status["imported"] += 1
+    except Exception as exc:  # a bad ledger must never break validation or review
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status
+
+
+def _store(pack, history_db: str | None = None) -> Path:
+    """The sqlite store for queries, after importing teammates' ledger entries."""
+    sync_ledger(pack, history_db)
+    return db_path(pack, history_db)
 
 
 def _prune(conn, retention_days: int):
@@ -227,7 +356,7 @@ def query(pack, q: dict | None = None) -> dict:
     include_pending_review (false: semantic rules merely awaiting judgment are not counted as failures).
     """
     q = dict(q or {})
-    path = db_path(pack, q.get("history_db"))
+    path = _store(pack, q.get("history_db"))
     since_days = int(q.get("since_days", 30))
     since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=since_days)).isoformat()
     limit = int(q.get("limit", 10))
@@ -303,7 +432,7 @@ def query(pack, q: dict | None = None) -> dict:
 
 def finding_history(pack, finding_ids: list[str], history_db: str | None = None) -> dict[str, dict]:
     """{finding_id: {occurrences, first_seen, last_seen, callers}} for findings seen before."""
-    path = db_path(pack, history_db)
+    path = _store(pack, history_db)
     if not finding_ids or not path.exists():
         return {}
     out = {}
@@ -324,7 +453,7 @@ def finding_history(pack, finding_ids: list[str], history_db: str | None = None)
 
 def hotspots(pack, files: list[str], since_days: int = 90, limit: int = 10, history_db: str | None = None) -> list[dict]:
     """Rules that historically failed on the given files (or their directories)."""
-    path = db_path(pack, history_db)
+    path = _store(pack, history_db)
     if not files or not path.exists():
         return []
     dirs = sorted({f.replace("\\", "/").rsplit("/", 1)[0] + "/" for f in files if "/" in f})
@@ -351,7 +480,7 @@ def _agent_clause(agent: str) -> tuple[str, list]:
 def agent_rule_denials(pack, agent: str, since_days: int = 90, exclude_run_id: str | None = None,
                        history_db: str | None = None) -> dict[str, dict]:
     """{rule_id: {denials, warnings, runs, last_seen}} of past verifier failures for one agent."""
-    path = db_path(pack, history_db)
+    path = _store(pack, history_db)
     if not agent or not path.exists():
         return {}
     clause, args = _agent_clause(agent)
@@ -381,7 +510,7 @@ def lessons(pack, q: dict | None = None) -> dict:
     if not agent:
         raise ValueError("agent is required (the caller whose denials to learn from, e.g. 'test-agent')")
     since_days, limit, min_occ = int(q.get("since_days", 90)), int(q.get("limit", 10)), int(q.get("min_occurrences", 2))
-    path = db_path(pack, q.get("history_db"))
+    path = _store(pack, q.get("history_db"))
     since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=since_days)).isoformat()
     clause, cargs = _agent_clause(agent)
     where, args = [clause, "r.ts >= ?"], cargs + [since]

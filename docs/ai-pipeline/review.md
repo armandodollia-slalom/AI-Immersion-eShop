@@ -35,7 +35,9 @@ Every round is appended to `.agent-metrics/arch-reviews.jsonl` (story, round, ve
 Review denials feed back into the code agents at two speeds:
 
 - **Across stories (shared, reviewed):** `node scripts/qe/qe.mjs lessons` (weekly in `qe-lessons.yml`) treats every blocking finding in `arch-reviews.jsonl` as an `implementer` denial, grouped by category and, for policy-pack findings, by rule id. A mistake that recurs in 3 or more stories becomes a rule in `.github/agents/lessons/implementer.md`, proposed in a pull request; rules are strengthened, retired or reverted with the same measurements as the QE agents ([qe](qe.md#auto-improvement)). The `implementer` agent reads that file before it starts, and the session-start hook adds it to the main session's context while a story is active. Findings the [PR check](pr-check.md#how-agents-improve) upholds in its first round, and implementation bugs the integration tests find (`product-bug`), feed the same file.
-- **Within a story (local):** when the policy pack flags a finding as a repeat mistake (the requester was denied for that rule before), the block message also includes `get_lessons` guidance from the agent's local failure history (`review.policy.lessonsCommand`; set it to `null` to turn it off).
+- **Within a story (team-wide):** when the policy pack flags a finding as a repeat mistake (the requester was denied for that rule before), the block message also includes `get_lessons` guidance from the agent's failure history (`review.policy.lessonsCommand`; set it to `null` to turn it off). Each policy-pack run and review is also written to `.agent-metrics/arch-history/` (one JSON file per event, committed with the story), and every local history store imports those files first, so these lessons include teammates' denials once their work is merged.
+
+`.gitattributes` merges `.agent-metrics/*.jsonl` with `merge=union`, so teammates appending to the same log keep both sides instead of conflicting.
 
 ## Commands
 

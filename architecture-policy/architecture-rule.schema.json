@@ -425,6 +425,15 @@
             "path": { "type": "string" },
             "retention_days": { "type": "integer", "minimum": 0 },
             "record_outcomes": { "type": "array", "items": { "enum": ["BLOCK", "WARN", "WAIVED", "INFO"] }, "uniqueItems": true },
+            "ledger": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "path": { "type": "string" },
+                "exclude_callers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+              }
+            },
             "otlp": {
               "type": "object",
               "additionalProperties": false,
