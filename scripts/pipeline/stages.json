@@ -2,63 +2,35 @@
   "stages": [
     {
       "name": "implement",
-      "description": "Implementation agent for a story in its own worktree, looping on review findings until approved",
+      "description": "Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages",
       "cli": "scripts/implement/implement.mjs",
       "hooks": [],
       "gitHooks": [],
-      "commands": [
-        "status",
-        "metrics"
-      ]
+      "commands": ["status", "metrics"]
     },
     {
       "name": "review",
       "description": "Architecture review of the implementation, looping with the implementation agent until approved",
       "cli": "scripts/review/review.mjs",
-      "hooks": [
-        "story-start",
-        "stop",
-        "session-start"
-      ],
+      "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": [],
-      "commands": [
-        "status",
-        "metrics"
-      ]
+      "commands": ["status", "metrics"]
     },
     {
       "name": "qe",
       "description": "Verified test plans from stories and verified automated tests once the review approves",
       "cli": "scripts/qe/qe.mjs",
-      "hooks": [
-        "story-start",
-        "stop",
-        "session-start"
-      ],
-      "gitHooks": [
-        "post-commit",
-        "post-merge",
-        "pre-push"
-      ],
-      "commands": [
-        "status",
-        "metrics"
-      ]
+      "hooks": ["story-start", "stop", "session-start"],
+      "gitHooks": ["post-commit", "post-merge", "pre-push"],
+      "commands": ["status", "metrics"]
     },
     {
       "name": "pr-check",
       "description": "Adversarial PR check against the story (acceptance criteria, flow, UI design, style, video): from the Stop hook once QE has verified the tests (findings go back to the agent), or on demand with a fix loop to 10/10",
       "cli": "scripts/pr-check/pr-check.mjs",
-      "hooks": [
-        "story-start",
-        "stop",
-        "session-start"
-      ],
+      "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": [],
-      "commands": [
-        "status",
-        "metrics"
-      ]
+      "commands": ["status", "metrics"]
     }
   ]
 }

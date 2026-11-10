@@ -69,7 +69,7 @@ const happySad = [{ title: 'Valid coupon applies', type: 'happy' }, { title: 'Ex
 before(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qe-e2e-'));
   scriptFile = path.join(repo, '..', `${path.basename(repo)}-agent.json`);
-  for (const dir of ['scripts/pipeline', 'scripts/implement', 'scripts/review', 'scripts/qe', 'scripts/pr-check']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -283,4 +283,69 @@ test('pipeline start resets the review rounds even when hooks are disabled', () 
   const r = pipeline(['start', 'DEMO-1'], { env: { PIPELINE_DISABLE: '1' } });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual([stateOf('DEMO-1').review.rounds, stateOf('DEMO-1').review.lastVerdict], [0, null]);
+});
+
+test('adding a story starts no agent unless qe.autoPlan is on, and a story with no plan yet can be pushed', async () => {
+  const branch = gitc('branch', '--show-current').stdout.trim();
+  gitc('add', '-A');
+  gitc('commit', '-qm', 'wip', '--allow-empty');
+  gitc('checkout', '-qb', 'feature/DEMO-9');
+  try {
+    agentScript({ 'qe-plan': [{ writePlan: happySad }], 'qe-plan-verifier': [{ result: { score: 10, gaps: [] } }] });
+    write('product-research/stories/DEMO-9-gift-cards.md', '# DEMO-9 Gift cards\n\nRule: a gift card pays for the basket.\n');
+    gitc('add', '-A');
+    gitc('commit', '-qm', 'add story');
+
+    assert.equal(pipeline(['git-hook', 'post-commit']).status, 0);
+    assert.equal(pipeline(['git-hook', 'post-merge']).status, 0);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.deepEqual(calls(), {}, 'no agent runs on commit or merge by default');
+
+    const head = gitc('rev-parse', 'HEAD').stdout.trim();
+    const prePush = pipeline(['git-hook', 'pre-push'], { input: `refs/heads/feature/DEMO-9 ${head} refs/heads/feature/DEMO-9 ${'0'.repeat(40)}\n` });
+    assert.equal(prePush.status, 0, prePush.stdout + prePush.stderr);
+    assert.equal(qe(['check', '--changed-from', 'main']).status, 0);
+
+    gitc('config', 'qe.autoPlan', 'true');
+    assert.equal(pipeline(['git-hook', 'post-commit']).status, 0);
+    await waitFor(() => calls()['qe-plan-verifier'] === 1);
+  } finally {
+    gitc('config', '--unset', 'qe.autoPlan');
+    gitc('checkout', '-qf', branch);
+  }
+});
+
+test('story guard: agents see only the stories handed to the pipeline', () => {
+  write('product-research/epic-coupons.md', '# Coupons epic\n');
+  write('product-research/stories/DEMO-2-gift-wrap.md', '# DEMO-2 Gift wrap\n');
+  const guard = (tool_name, tool_input, env = {}) => {
+    const r = pipeline(['hook', 'pre-tool'], { input: JSON.stringify({ tool_name, tool_input, cwd: repo }), env: { PIPELINE_CHILD: '1', ...env } });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  const other = 'product-research/stories/DEMO-2-gift-wrap.md';
+  try {
+    fs.rmSync(path.join(repo, '.agent-state/active-story'), { force: true });
+    assert.equal(guard('Read', { file_path: STORY }), 'deny', 'nothing handed over yet');
+
+    assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
+    assert.equal(guard('Read', { file_path: path.join(repo, STORY) }), 'allow', 'the active story');
+    assert.equal(guard('Edit', { file_path: STORY }), 'allow');
+    assert.equal(guard('Read', { file_path: other }), 'deny');
+    assert.equal(guard('Read', { file_path: 'product-research/epic-coupons.md' }), 'deny');
+    assert.equal(guard('Glob', { pattern: 'product-research/**/*.md' }), 'deny');
+    assert.equal(guard('Grep', { pattern: 'coupon', path: 'product-research' }), 'deny');
+    assert.equal(guard('Grep', { pattern: 'product-research', path: 'src' }), 'allow', 'a grep regex is not a path');
+    assert.equal(guard('Bash', { command: `cat ${STORY}` }), 'allow');
+    assert.equal(guard('Bash', { command: `cat ${STORY} ./product-research/epic-coupons.md | head` }), 'deny');
+    assert.equal(guard('Bash', { command: 'ls src' }), 'allow');
+    assert.equal(guard('read_many_files', { paths: ['src/Basket/Coupons.cs', other] }), 'deny');
+
+    const sources = { PIPELINE_STORY_SOURCES: path.join(repo, 'product-research/stories') };
+    assert.equal(guard('Read', { file_path: other }, sources), 'allow', 'inside the folder given to implement run');
+    assert.equal(guard('Read', { file_path: 'product-research/epic-coupons.md' }, sources), 'deny');
+    assert.equal(guard('Read', { file_path: other }, { PIPELINE_DISABLE: '1' }), 'allow');
+  } finally {
+    fs.rmSync(path.join(repo, '.agent-state/active-story'), { force: true });
+  }
 });

@@ -1,0 +1,6 @@
+---
+description: Story and epic folders are off limits except the story handed to the pipeline
+alwaysApply: true
+---
+
+Ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. The `pipeline hook pre-tool` hook enforces this.

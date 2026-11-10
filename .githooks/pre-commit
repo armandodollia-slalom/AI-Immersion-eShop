@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# graphify commands (`graphify update .`, extract, cluster-only) delete committed
+# semantic cache entries that other branches still need. Keep such deletions out
+# of commits; set GRAPHIFY_ALLOW_CACHE_PRUNE=1 to prune the shared cache on purpose.
+[ "${GRAPHIFY_ALLOW_CACHE_PRUNE:-}" = "1" ] && exit 0
+deleted="$(git diff --cached --name-only --diff-filter=D -- graphify-out/cache/semantic)"
+[ -z "$deleted" ] && exit 0
+printf '%s\n' "$deleted" | git -c core.hooksPath=/dev/null checkout -q HEAD --pathspec-from-file=- || exit 1
+echo "[graphify] kept $(printf '%s\n' "$deleted" | wc -l | tr -d ' ') shared semantic cache file(s) out of this commit's deletions (GRAPHIFY_ALLOW_CACHE_PRUNE=1 to override)." >&2

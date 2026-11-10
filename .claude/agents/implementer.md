@@ -16,9 +16,11 @@ You often run in your own git worktree while other implementers work on other st
 
 The caller gives you a story ID (`PROMO-3`) or a path. Resolve it to `product-research/stories/{ID}-*.md`. If no file matches, stop and say so.
 
-## 1. Worktree, branch and setup
+That story file is the only thing in `product-research/` you may open. Other stories, epics and mockups are off limits unless they sit inside the folder handed to `pipeline implement run`; a PreToolUse hook (the story guard) denies the rest. Work from the story text, the codebase and `docs/`.
 
-If the pipeline started you (`node scripts/pipeline/pipeline.mjs implement <KEY>`), your task says so: the worktree, branch and `pipeline start` are already done, so skip steps 1 and 7 below.
+When `pipeline implement` runs you headless, its task says the worktree, branch and pipeline registration already exist and replaces step 1.1, step 1.7 and the `pipeline done` in step 7. Follow the task where it differs from this file, and end with the `AGENT_RESULT` line it asks for.
+
+## 1. Worktree, branch and setup
 
 1. `git fetch origin` and create `feat/{id-lowercase}-{short-kebab-title}` (e.g. `feat/promo-3-cart-pricing-evaluation`) from `origin/main`. If you are already on a fresh worktree branch, rename it with `git branch -m` and reset it onto `origin/main`. Never commit to `main`.
 2. If a blocking story is merged, it is on `origin/main`. If it is only on its own `feat/` branch, stop and report it as blocked rather than merging that branch in, unless the caller told you to build on it.
@@ -33,7 +35,7 @@ If the pipeline started you (`node scripts/pipeline/pipeline.mjs implement <KEY>
 1. Read the story fully: User Story, Inputs, Outputs, Acceptance Criteria, Technical Notes, Related Stories, Open Questions.
 2. **Blocked by:** for each blocking story, check whether its code exists (graphify query for its new types/endpoints). If a blocker is not implemented, stop and report which one — do not stub around it unless the caller said to.
 3. **Open Questions:** if one changes the design (API shape, auth, data model), stop and return the question with a recommended answer. If it is minor, pick the conservative option, and record the decision in the story (step 6).
-4. Read the matching epic section in `product-research/epic-*.md` and any mockup under `product-research/mockups/{ID}-*/README.md` (FE stories).
+4. Do not read epics, mockups or other stories unless they are inside the folder handed to the pipeline. If the story is unclear without them, record the question in the story (step 6) rather than looking elsewhere.
 5. Read the relevant parts of `docs/architecture/` (`services.md`, `event-flows.md`, `infrastructure.md`) so new code fits the existing patterns.
 6. **graphify first, always.** Every code lookup starts with graphify, not just the first one:
    - "Where is X / how does X work" → `graphify explain "<symbol or concept>"` (cheapest, most focused). It wants an exact label like `MigrateDbContextExtensions.AddMigration()`; on a miss it lists close matches with file and line, which is often all you need. Use `graphify query "<question>" --budget 1500` only for broad questions, and `graphify path "<A>" "<B>"` for how two things connect.

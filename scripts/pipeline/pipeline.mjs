@@ -2,22 +2,17 @@
 // AI development pipeline: one entry point for agent and git lifecycle hooks, dispatched to the
 // stages listed in stages.json. See docs/ai-pipeline/README.md.
 import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/cli.mjs';
-import { spawnSync } from 'node:child_process';
-import path from 'node:path';
 import { isDisabled, loadConfig } from './lib/config.mjs';
-import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, sessionStartOutput } from './lib/dispatch.mjs';
+import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, runStage, sessionStartOutput } from './lib/dispatch.mjs';
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { nowIso } from './lib/util.mjs';
 
 const CMD = 'node scripts/pipeline/pipeline.mjs';
 
 const USAGE = `Usage: ${CMD} <command> [options]
-
-Run a story through the whole pipeline
-  implement <story> [--background] [--max-runs <n>]
-                                implementation agent in the story's own worktree, then review and QE
 
 Implementation agent
   start <story>                 set the story you are working on (resets its review)
@@ -25,16 +20,19 @@ Implementation agent
   status [story]                state of every stage for a story
 
 Pipeline
+  implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+                                implement every story given, each on its own worktree and branch
+  implement status [story]      progress of the latest implement run
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
 
 Hooks (called by agent tool configs and .githooks)
-  hook stop | hook session-start [--nested]
+  hook stop | hook session-start [--nested] | hook pre-tool
   git-hook post-commit | post-merge | pre-push`;
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since', 'max-runs']));
+  const { positional, flags } = parseArgs(rest, new Set(['since']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -45,8 +43,9 @@ async function main() {
   switch (command) {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
-      const result = spawnSync(process.execPath, [path.join(config.root, stage.cli), 'run', ...rest], { cwd: config.root, stdio: 'inherit' });
-      return result.status ?? 1;
+      const args = process.argv.slice(3);
+      if (args[0] && !['run', 'story', 'status', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      return runStage(config, stage, args, { inherit: true }).status;
     }
 
     case 'start': {
@@ -92,8 +91,15 @@ async function main() {
     }
 
     case 'hook': {
-      if (isDisabled()) return 0;
       const event = positional[0];
+      // The story guard also binds the agents the pipeline starts (PIPELINE_CHILD); only PIPELINE_DISABLE lifts it.
+      if (event === 'pre-tool') {
+        if (process.env.PIPELINE_DISABLE === '1') return 0;
+        const reason = storyGuard(config, readPayload());
+        if (reason) process.stdout.write(JSON.stringify(denyOutput(reason)));
+        return 0;
+      }
+      if (isDisabled()) return 0;
       const payload = readPayload();
       if (event === 'stop') {
         const output = dispatchStop(config, stages, payload);

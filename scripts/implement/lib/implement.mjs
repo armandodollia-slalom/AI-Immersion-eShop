@@ -1,188 +1,276 @@
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
-import { spawnBackground } from '../../pipeline/lib/background.mjs';
-import { loadConfig } from '../../pipeline/lib/config.mjs';
-import { escalate, clearEscalation, loadState, lockFile, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
-import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, readJsonl, releaseLock, run, tail } from '../../pipeline/lib/util.mjs';
+import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
+import { git, revExists } from '../../pipeline/lib/git.mjs';
+import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { appendJsonl, extractResult, isPidAlive, log, nowIso, readJson, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
+import { branchFor, collectStories, orderStories, worktreeFor } from './batch.mjs';
 
-const RUNS_FILE = 'implement-runs.jsonl';
-const AGENT = 'implementer';
+const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
+const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan']);
 
-const git = (cwd, args) => run('git', args, { cwd });
+export const runsDir = (config) => path.join(config.root, config.stateDir, 'implement');
+const runFile = (config, key) => path.join(runsDir(config), `${key}.json`);
+export const loadRun = (config, key) => readJson(runFile(config, key), null);
+const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(loadRun(config, key) ?? {}), key, ...patch, updatedAt: nowIso() });
 
-// Environment for processes that must run the pipeline's own hooks: a run started from inside a
-// pipeline agent would otherwise inherit PIPELINE_CHILD=1 and silence the review.
-function hookEnv() {
-  const env = { ...process.env };
-  delete env.PIPELINE_CHILD;
-  return env;
-}
+// ---------------------------------------------------------------------------------------------
+// Batch: order the stories, then run one worker process per story, at most `parallel` at a time
+// ---------------------------------------------------------------------------------------------
 
-const pipelineCli = (dir) => path.join(dir, 'scripts', 'pipeline', 'pipeline.mjs');
-
-function pipeline(dir, args, input = '') {
-  return spawnSync(process.execPath, [pipelineCli(dir), ...args], { cwd: dir, input, encoding: 'utf8', env: hookEnv(), maxBuffer: 64 * 1024 * 1024 });
-}
-
-export const branchFor = (story) => `feat/${story.slug.toLowerCase()}`;
-export const worktreeFor = (config, story) => path.join(config.root, config.implement.worktreeDir, story.key.toLowerCase());
-
-// One worktree and branch per story, created from the base ref, so several stories can be
-// implemented at once and each agent's hooks run against its own checkout.
-export function prepareWorktree(config, story) {
-  const dir = worktreeFor(config, story);
-  const branch = branchFor(story);
-  const [remote, ...rest] = config.baseRef.split('/');
-  if (rest.length && git(config.root, ['remote']).stdout.split('\n').includes(remote)) {
-    git(config.root, ['fetch', '--quiet', remote, rest.join('/')]);
+export function plan(config, inputs, { base = config.baseRef, force = false } = {}) {
+  const stories = orderStories(collectStories(inputs));
+  const byKey = new Map(stories.map((s) => [s.key, s]));
+  for (const s of stories) s.skip = s.implemented && !force ? 'already implemented (has "## Implementation Notes"; --force to redo)' : null;
+  // Blockers already implemented are on the base branch, so only the ones built in this run count.
+  const ancestors = new Map();
+  for (const s of stories) {
+    s.deps = s.deps.filter((k) => !byKey.get(k).skip);
+    ancestors.set(s.key, new Set(s.deps.flatMap((k) => [k, ...ancestors.get(k)])));
   }
-  if (fs.existsSync(path.join(dir, '.git'))) return { dir, branch, created: false };
-  if (git(config.root, ['cat-file', '-e', `${config.baseRef}:${story.file}`]).status !== 0) {
-    throw new Error(`${story.file} is not on ${config.baseRef}; merge the story before implementing it.`);
+  for (const s of stories) {
+    s.branch = branchFor(config, s);
+    s.worktree = worktreeFor(config, s);
+    // A story stacks on the branch of the in-batch blocker that already contains the most of its other
+    // blockers, and merges in whatever that branch lacks, so it builds on all the code it needs.
+    const deps = s.deps.filter((k) => !s.deps.some((o) => o !== k && ancestors.get(o).has(k)));
+    deps.sort((a, b) => ancestors.get(b).size - ancestors.get(a).size);
+    s.base = deps.length ? byKey.get(deps[0]).branch : base;
+    s.merge = deps.slice(1).map((k) => byKey.get(k).branch);
   }
-  const exists = git(config.root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).status === 0;
-  const args = exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, config.baseRef];
-  const result = git(config.root, args);
-  if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr.trim()}`);
-  return { dir, branch, created: true };
+  return stories;
 }
 
-function initialTask(story, wt) {
-  return [
-    `Story: ${story.key}`,
-    `Story file: ${story.file}`,
-    '',
-    `Implement ${story.key}. The AI pipeline started you, so section 1 of your instructions is partly done already:`,
-    `- You are in the story's own worktree (${wt.dir}) on branch \`${wt.branch}\`, created from the base ref. Do not create, rename or reset branches.`,
-    `- \`node scripts/pipeline/pipeline.mjs start ${story.key}\` has already run.`,
-    '- Do everything else: graph setup, reading the story, implementing, the fast checks, closing out the story and committing.',
-    `- Finish with \`node scripts/pipeline/pipeline.mjs done\`. The architecture review runs when you stop; if it requests changes, fix them and finish again.`,
-    '',
-    'End your final message with one line: `AGENT_RESULT: {"status": "done" | "blocked" | "needs-input", "summary": "...", "reason": "..."}`. Use "blocked" when a blocking story is not merged, and "needs-input" for an open question that changes the design.',
-  ].join('\n');
+export function describePlan(stories) {
+  return stories
+    .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)
+    .join('\n');
 }
 
-function fixTask(story, reason) {
-  return [
-    `Story: ${story.key}`,
-    `Story file: ${story.file}`,
-    '',
-    `You already implemented ${story.key} in this worktree and committed it. The architecture review requested changes:`,
-    '',
-    reason,
-    '',
-    'Fix every finding in the existing code (read the current diff first; do not start over), run the fast checks again, commit, and run `node scripts/pipeline/pipeline.mjs done`.',
-    'End your final message with `AGENT_RESULT: {"status": "done" | "blocked" | "needs-input", "summary": "...", "reason": "..."}`.',
-  ].join('\n');
-}
+export async function runBatch(config, stories, { parallel = 1, pr = false, script }) {
+  fs.mkdirSync(runsDir(config), { recursive: true });
+  const outcome = new Map(stories.filter((s) => s.skip).map((s) => [s.key, { outcome: 'skipped', reason: s.skip }]));
+  for (const s of stories) saveRun(config, s.key, s.skip ? { outcome: 'skipped', reason: s.skip, status: 'finished' } : { status: 'queued', outcome: null, reason: null, branch: s.branch, worktree: s.worktree, base: s.base });
 
-// After the agent exits, run the same Stop dispatch its hooks run. If its CLI already ran the hooks
-// (Claude Code, Copilot, Codex), this is a no-op; if not (custom commands, untrusted hooks), it makes
-// the review and QE stages run anyway.
-function dispatchStop(wtDir) {
-  const result = pipeline(wtDir, ['hook', 'stop'], JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }));
-  if (result.stderr.trim()) process.stderr.write(result.stderr.endsWith('\n') ? result.stderr : `${result.stderr}\n`);
-  try {
-    return result.stdout.trim() ? JSON.parse(result.stdout) : {};
-  } catch {
-    return { systemMessage: tail(result.stdout, 1000) };
-  }
-}
+  const pending = stories.filter((s) => !s.skip);
+  const running = new Map();
+  const blockerFailed = (s) => s.deps.find((k) => outcome.has(k) && !['done', 'skipped'].includes(outcome.get(k).outcome));
+  const ready = (s) => s.deps.every((k) => ['done', 'skipped'].includes(outcome.get(k)?.outcome));
 
-export function implementStory(config, story, { maxRuns = config.implement.maxRuns } = {}) {
-  const lock = lockFile(config, story.key, 'implement');
-  if (!acquireLock(lock)) throw new Error(`${story.key} is already being implemented (pid ${lockHolder(lock)}).`);
-  const record = (patch) => updateState(config, story.key, (s) => Object.assign(s.implement, patch));
-  try {
-    const wt = prepareWorktree(config, story);
-    // Forward slashes on every OS: the path is stored in state and printed.
-    const wtRel = path.relative(config.root, wt.dir).replace(/\\/g, '/');
-    log(`${story.key}: ${wt.created ? 'created' : 'reusing'} worktree ${wtRel} on ${wt.branch}`);
-    record({ status: 'running', worktree: wtRel, branch: wt.branch, pid: process.pid, startedAt: nowIso(), lastResult: null });
-    clearEscalation(config, story, 'implement');
-
-    const wtConfig = loadConfig('implement', wt.dir);
-    const start = pipeline(wt.dir, ['start', story.key]);
-    if (start.status !== 0) throw new Error(`pipeline start failed in ${wtRel}: ${start.stderr.trim()}`);
-
-    let task = initialTask(story, wt);
-    for (let runNo = 1; runNo <= maxRuns; runNo++) {
-      log(`${story.key}: implementer run ${runNo}/${maxRuns}`);
-      const agent = runAgent(wtConfig, {
-        name: AGENT,
-        mode: 'implement',
-        cwd: wt.dir,
-        model: config.agent.models.implementer ?? null,
-        timeoutSec: config.implement.timeoutSec,
-        extraEnv: { PIPELINE_CHILD: '' },
-        task,
-      });
-      const result = extractResult(agent.output);
-      appendJsonl(metricsFile(wtConfig, RUNS_FILE), {
-        ts: nowIso(), story: story.key, run: runNo, ok: agent.ok, timedOut: agent.timedOut, seconds: agent.seconds,
-        status: result?.status ?? null, prompt_version: agent.version, cli: config.agent.cmd ? 'custom' : config.agent.cli,
-      });
-
-      if (result?.status === 'blocked' || result?.status === 'needs-input') {
-        const reason = result.reason || result.summary || 'no reason given';
-        escalate(config, story, 'implement', result.status === 'blocked' ? 'implementation blocked' : 'implementation needs a decision', reason);
-        return record({ status: result.status, runs: runNo, pid: null, finishedAt: nowIso(), lastResult: reason });
+  while (pending.length || running.size) {
+    for (let i = 0; i < pending.length; i++) {
+      const s = pending[i];
+      const failed = blockerFailed(s);
+      if (failed) {
+        pending.splice(i--, 1);
+        const result = { outcome: 'skipped', reason: `blocker ${failed} ended ${outcome.get(failed).outcome}` };
+        outcome.set(s.key, result);
+        saveRun(config, s.key, { ...result, status: 'finished' });
+        log(`${s.key}: ${result.reason}; skipped.`);
+      } else if (running.size < parallel && ready(s)) {
+        pending.splice(i--, 1);
+        running.set(s.key, startWorker(config, s, { pr, script }).then((r) => [s, r]));
       }
-      if (!agent.ok && !result) {
-        task = fixTask(story, `The previous run ${agent.timedOut ? 'timed out' : `failed (exit ${agent.status})`} before finishing. Check the worktree state and finish the story.`);
-        continue;
-      }
-
-      if (!loadState(wtConfig, story.key).done) pipeline(wt.dir, ['done', story.key]);
-      const stop = dispatchStop(wt.dir);
-      if (stop.decision === 'block') {
-        task = fixTask(story, stop.reason);
-        continue;
-      }
-      const { review } = loadState(wtConfig, story.key);
-      const status = review.lastVerdict === 'APPROVED' ? 'approved' : review.lastVerdict === 'ESCALATED' ? 'escalated' : 'stopped';
-      return record({ status, runs: runNo, pid: null, finishedAt: nowIso(), lastResult: stop.systemMessage ?? result?.summary ?? null });
     }
-    escalate(config, story, 'implement', `not approved after ${maxRuns} implementer runs`, 'See the review findings in the worktree: `node scripts/review/review.mjs status ' + story.key + '`.');
-    return record({ status: 'escalated', runs: maxRuns, pid: null, finishedAt: nowIso() });
-  } catch (error) {
-    record({ status: 'failed', pid: null, finishedAt: nowIso(), lastResult: error.message });
-    throw error;
-  } finally {
-    releaseLock(lock);
+    if (!running.size) continue;
+    const [s, result] = await Promise.race(running.values());
+    running.delete(s.key);
+    outcome.set(s.key, result);
+    log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}`);
+  }
+  return stories.map((s) => ({ ...s, ...outcome.get(s.key) }));
+}
+
+function startWorker(config, story, { pr, script }) {
+  const resultFile = path.join(runsDir(config), `${story.key}.result.json`);
+  const logPath = path.join(config.root, config.stateDir, 'logs', `implement-${story.key}-${nowIso().replace(/[:.]/g, '-')}.log`);
+  fs.rmSync(resultFile, { force: true });
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  const args = ['story', story.key, '--file', story.file, '--base', story.base, '--branch', story.branch, '--worktree', story.worktree, '--result', resultFile];
+  if (story.merge.length) args.push('--merge', story.merge.join(','));
+  if (pr) args.push('--pr');
+  saveRun(config, story.key, { status: 'running', startedAt: nowIso(), log: path.relative(config.root, logPath) });
+  log(`${story.key}: started on ${story.branch} (log: ${path.relative(config.root, logPath)})`);
+  const fd = fs.openSync(logPath, 'a');
+  const env = { ...process.env };
+  delete env.PIPELINE_ROOT;
+  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, stdio: ['ignore', fd, fd], env });
+  fs.closeSync(fd);
+  return new Promise((resolve) => {
+    child.on('exit', (code) => {
+      const result = readJson(resultFile, null) ?? { outcome: 'error', reason: `worker exited ${code} without a result; see ${path.relative(config.root, logPath)}` };
+      saveRun(config, story.key, { ...result, status: 'finished', finishedAt: nowIso() });
+      resolve(result);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Worker: one story, start to finish, in its own worktree
+// ---------------------------------------------------------------------------------------------
+
+const commitEnv = { ...process.env, PIPELINE_DISABLE: '1' };
+const mustGit = (cwd, args) => git(cwd, args, { allowFail: false, env: commitEnv });
+
+function commitAll(cwd, message, specs = ['.', ':!graphify-out']) {
+  git(cwd, ['add', '-A', '--', ...specs], { env: commitEnv });
+  if (git(cwd, ['diff', '--cached', '--quiet']).status === 0) return false;
+  mustGit(cwd, ['commit', '-q', '-m', message]);
+  return true;
+}
+
+export function prepareWorktree(config, { key, file, base, branch, worktree, merge = [] }) {
+  if (!fs.existsSync(worktree)) {
+    if (!revExists(config.root, base)) throw new Error(`base ${base} does not exist`);
+    fs.mkdirSync(path.dirname(worktree), { recursive: true });
+    const exists = revExists(config.root, `refs/heads/${branch}`);
+    mustGit(config.root, ['worktree', 'add', '-q', ...(exists ? [worktree, branch] : ['-b', branch, worktree, base])]);
+    log(`${key}: worktree ${worktree} on ${branch}${exists ? ' (existing branch)' : ` from ${base}`}`);
+  } else {
+    log(`${key}: reusing worktree ${worktree}`);
+  }
+  for (const other of merge) {
+    const r = git(worktree, ['merge', '--no-edit', '-q', other], { env: commitEnv });
+    if (r.status !== 0) {
+      git(worktree, ['merge', '--abort']);
+      return { error: `merging ${other} conflicts; resolve it by hand in ${worktree}` };
+    }
+  }
+  // The story lives on the feature branch, so the review and QE stages (and the PR) see the same text.
+  const wtConfig = loadConfig('implement', worktree);
+  const storiesDir = wtConfig.abs(wtConfig.storiesDir);
+  const target = path.join(storiesDir, path.basename(file));
+  const text = fs.readFileSync(file, 'utf8');
+  if (path.resolve(file) !== target && (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== text)) {
+    fs.mkdirSync(storiesDir, { recursive: true });
+    for (const f of fs.readdirSync(storiesDir)) if (f.startsWith(`${key}-`) && f !== path.basename(file)) fs.rmSync(path.join(storiesDir, f));
+    fs.writeFileSync(target, text);
+    commitAll(worktree, `${key}: Add story`, [path.relative(worktree, storiesDir)]);
+  }
+  return { config: wtConfig, story: target };
+}
+
+function pipeline(worktree, base, args, input = '') {
+  const env = { ...process.env, PIPELINE_ROOT: worktree, PIPELINE_BASE_REF: base };
+  delete env.PIPELINE_CHILD;
+  delete env.PIPELINE_DISABLE;
+  return run(process.execPath, [PIPELINE_CLI, ...args], { cwd: worktree, input, env });
+}
+
+function implementerTask({ key, storyFile, branch, worktree, base, feedback }) {
+  const lines = [
+    `Implement story ${key}: ${path.relative(worktree, storyFile)}`,
+    '',
+    'You are running headless under `pipeline implement`. These instructions override steps 1 and 7 of your workflow:',
+    `- The worktree (${worktree}) and branch (${branch}, based on ${base}) already exist and are your working directory. Do not create worktrees, switch branches, push, or open a PR.`,
+    '- The pipeline has already been started for this story. Do not run `pipeline start` or `pipeline done`; the runner does that.',
+    '- Commit your work with clear messages when you finish. Anything left uncommitted is committed for you.',
+    '- Nobody can answer questions. If an Open Question or missing blocker makes the story unimplementable, stop and report `blocked`. Otherwise make a reasonable, documented choice and continue.',
+    '',
+    'End your reply with exactly one line:',
+    'AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>"}',
+  ];
+  if (feedback) lines.push('', 'Address this feedback, then finish again:', '', feedback);
+  return lines.join('\n');
+}
+
+async function waitForQe(config, key, timeoutSec, pollSec) {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutSec * 1000;
+  for (;;) {
+    const a = loadState(config, key).automation;
+    if (QE_TERMINAL.has(a.status) && !a.requestedHash) return a;
+    if (a.status === 'running' && a.pid && !isPidAlive(a.pid)) return { ...a, status: 'crashed' };
+    if (a.status === 'idle' && Date.now() - startedAt > 30_000) return { ...a, status: 'not-started' };
+    if (Date.now() > deadline) return { ...a, status: 'timed-out' };
+    await sleep(pollSec * 1000);
   }
 }
 
-export function startInBackground(config, story) {
-  const lock = lockFile(config, story.key, 'implement');
-  if (lockHolder(lock)) throw new Error(`${story.key} is already being implemented (pid ${lockHolder(lock)}).`);
-  const bg = spawnBackground(config, { script: path.join(config.root, 'scripts', 'implement', 'implement.mjs'), key: story.key, stage: 'implement', args: ['run', story.key] });
-  updateState(config, story.key, (s) => Object.assign(s.implement, { status: 'starting', pid: bg.pid, log: bg.log }));
-  return bg;
-}
+export async function implementStory(config, opts) {
+  const { key, base, branch, worktree, pr } = opts;
+  const settings = config.implement;
+  const started = Date.now();
+  const metrics = { implementerRuns: 0, reviewBlocks: 0, bugFixCycles: 0, promptVersion: null };
+  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extra });
 
-// Review and QE state live in the story's worktree, so status reads them from there.
-export function statusLine(config, story) {
-  const { implement } = loadState(config, story.key);
-  let line = `${story.key.padEnd(10)} implement=${implement.status}${implement.runs ? ` (runs ${implement.runs})` : ''}`;
-  if (implement.worktree && fs.existsSync(path.join(config.root, implement.worktree))) {
-    const wt = loadState(loadConfig('implement', path.join(config.root, implement.worktree)), story.key);
-    line += ` worktree=${implement.worktree} review=${wt.review.lastVerdict ?? '-'} automation=${wt.automation.status}`;
+  const prep = prepareWorktree(config, opts);
+  if (prep.error) return finish('blocked', prep.error);
+  const wt = prep.config;
+  const start = pipeline(worktree, base, ['start', key]);
+  if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
+
+  let feedback = null;
+  let qe = null;
+  for (;;) {
+    // Implementation and review loop: the review's stop hook blocks with findings until it approves.
+    let approved = false;
+    while (!approved) {
+      if (metrics.implementerRuns >= settings.maxImplementerRuns) return finish('unresolved', `still not approved after ${metrics.implementerRuns} implementer runs`);
+      metrics.implementerRuns++;
+      const res = runAgent(wt, {
+        name: 'implementer',
+        task: implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback }),
+        mode: 'implement',
+        model: wt.agent.models.implementer,
+        timeoutSec: settings.implementerTimeoutSec,
+      });
+      metrics.promptVersion = res.version;
+      const reported = extractResult(res.output);
+      commitAll(worktree, `${key}: Implementation`);
+      if (reported?.status === 'blocked') return finish('blocked', reported.reason ?? 'the implementer reported the story blocked');
+      if (!res.ok && !reported) {
+        feedback = `The previous run ${res.timedOut ? 'timed out' : `failed (exit ${res.status})`} before finishing. Continue the implementation.`;
+        continue;
+      }
+      const done = pipeline(worktree, base, ['done', key]);
+      if (/\(0 implementation file/.test(done.stdout)) return finish('no-changes', reported?.reason ?? 'the implementer changed no implementation files');
+      const stop = pipeline(worktree, base, ['hook', 'stop'], '{}');
+      let output = null;
+      try {
+        output = stop.stdout.trim() ? JSON.parse(stop.stdout) : null;
+      } catch {
+        output = null;
+      }
+      if (output?.decision === 'block') {
+        metrics.reviewBlocks++;
+        feedback = output.reason;
+        continue;
+      }
+      const review = loadState(wt, key).review;
+      if (review.lastVerdict === 'ESCALATED') return finish('review-escalated', review.lastReason ?? 'the review did not converge');
+      if (review.lastVerdict !== 'APPROVED') return finish('unresolved', output?.systemMessage ?? `review verdict ${review.lastVerdict ?? 'none'}`);
+      approved = true;
+    }
+
+    // QE writes and verifies the tests in the background; wait for its verdict.
+    qe = await waitForQe(wt, key, settings.qeTimeoutSec, settings.qePollSec);
+    if (qe.status !== 'product-bug') break;
+    if (metrics.bugFixCycles >= settings.maxBugFixCycles) break;
+    metrics.bugFixCycles++;
+    feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${(qe.bugs ?? []).map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n')}`;
   }
-  return line;
+
+  const outcome = qe.status === 'verified' ? 'done' : `qe-${qe.status}`;
+  const result = finish(outcome, outcome === 'done' ? null : `QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}`);
+  appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: result.minutes, prompt_version: metrics.promptVersion }]);
+  commitAll(worktree, `${key}: Add verified test plan and automated tests`);
+
+  if (pr && outcome === 'done') {
+    const push = git(worktree, ['push', '-u', 'origin', branch]);
+    if (push.status !== 0) return { ...result, reason: `push failed: ${tail(push.stderr, 300)}` };
+    const baseBranch = base.replace(/^origin\//, '');
+    const title = `${key}: ${fs.readFileSync(prep.story, 'utf8').match(/^#\s+(.+)$/m)?.[1]?.replace(new RegExp(`^${key}[:\\s-]*`), '') ?? key}`;
+    const body = `Implements ${path.relative(worktree, prep.story)} (generated by \`pipeline implement\`).\n\n- Architecture review: approved\n- Test plan and automated tests: verified\n- Implementer runs: ${metrics.implementerRuns}, review rounds blocked: ${metrics.reviewBlocks}, QE bug-fix cycles: ${metrics.bugFixCycles}`;
+    const created = run('gh', ['pr', 'create', '--base', baseBranch, '--head', branch, '--title', title, '--body', body], { cwd: worktree });
+    return { ...result, pr: created.status === 0 ? created.stdout.trim() : null, ...(created.status !== 0 ? { reason: `gh pr create failed: ${tail(created.stderr, 300)}` } : {}) };
+  }
+  return result;
 }
 
-export function implementMetrics(config, { since } = {}) {
-  const runs = readJsonl(metricsFile(config, RUNS_FILE)).filter((r) => !since || r.ts >= since);
-  const stories = new Set(runs.map((r) => r.story));
-  const firstTry = [...stories].filter((key) => runs.filter((r) => r.story === key).length === 1).length;
-  return {
-    runs: runs.length,
-    stories: stories.size,
-    blocked: runs.filter((r) => r.status === 'blocked' || r.status === 'needs-input').length,
-    failed: runs.filter((r) => !r.ok).length,
-    singleRunRate: stories.size ? Math.round((firstTry / stories.size) * 100) / 100 : 0,
-  };
+export function formatSummary(results) {
+  const rows = results.map((r) => `${r.key.padEnd(10)} ${String(r.outcome ?? '-').padEnd(18)} ${r.branch ?? ''}${r.pr ? `  ${r.pr}` : ''}${r.reason ? `\n${' '.repeat(11)}${r.reason}` : ''}`);
+  return `${'Story'.padEnd(10)} ${'Outcome'.padEnd(18)} Branch\n${rows.join('\n')}`;
 }
