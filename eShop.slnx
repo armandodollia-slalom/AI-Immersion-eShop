@@ -1,5 +1,8 @@
 ﻿<Solution>
   <Folder Name="/src/">
+    <Project Path="src/AgentOps.API/AgentOps.API.csproj" />
+    <Project Path="src/AgentOps.Cli/AgentOps.Cli.csproj" />
+    <Project Path="src/AgentOps.Data/AgentOps.Data.csproj" />
     <Project Path="src/eShop.AppHost/eShop.AppHost.csproj" />
     <Project Path="src/Basket.API/Basket.API.csproj" />
     <Project Path="src/Catalog.API/Catalog.API.csproj" />
@@ -21,6 +24,7 @@
     <Project Path="src/ClientApp/ClientApp.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/AgentOps.UnitTests/AgentOps.UnitTests.csproj" />
     <Project Path="tests/Basket.UnitTests/Basket.UnitTests.csproj" />
     <Project Path="tests/Basket.FunctionalTests/Basket.FunctionalTests.csproj" />
     <Project Path="tests/Application.UnitTests/Application.UnitTests.csproj" />

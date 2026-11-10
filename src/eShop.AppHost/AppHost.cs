@@ -89,6 +89,13 @@ var webApp = builder.AddDotnetProject("webapp", "../WebApp", o => o.LaunchProfil
     .WaitFor(identityApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);
 
+// AgentOps (pipeline-agent review telemetry) shares the Postgres server but is not part of the shop,
+// so the scenario-driven TestStack leaves it out.
+if (!isTestStack)
+{
+    builder.AddAgentOps(postgres);
+}
+
 // Set UseFoundry=true to provision Microsoft Foundry for chat and embeddings.
 bool useFoundry = Extensions.IsFoundryEnabled(builder.Configuration);
 if (useFoundry)

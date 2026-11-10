@@ -1,0 +1,50 @@
+name: AgentOps Rollup
+
+# Weekly report of pipeline-agent mistakes across PRs (first-pass rate, rounds to approval, repeat
+# mistakes, hotspots), written to the job summary. Needs the AGENTOPS_DB secret.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Window in days
+        default: '7'
+
+permissions:
+  contents: read
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    env:
+      ConnectionStrings__agentopsdb: ${{ secrets.AGENTOPS_DB }}
+      DAYS: ${{ inputs.days || '7' }}
+    steps:
+      - name: Check configuration
+        id: config
+        run: |
+          if [ -z "$ConnectionStrings__agentopsdb" ]; then
+            echo "AGENTOPS_DB secret is not set; nothing to report." >> "$GITHUB_STEP_SUMMARY"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
+            echo "days must be a number" >&2; exit 1
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.enabled == 'true'
+      - name: Setup .NET (global.json)
+        if: steps.config.outputs.enabled == 'true'
+        uses: actions/setup-dotnet@v3
+      - name: Rollup report
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          dotnet run --project src/AgentOps.Cli -c Release -- report rollup --days "$DAYS" --out agentops-rollup.md
+          cat agentops-rollup.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          name: agentops-rollup
+          path: agentops-rollup.md

@@ -45,6 +45,20 @@ internal static class Extensions
     }
 
     /// <summary>
+    /// Adds AgentOps: the agentopsdb database on the shared eShop Postgres server and the internal-only
+    /// AgentOps.API that serves the pipeline-agent mistake dashboard (see docs/ai-pipeline/agentops.md).
+    /// </summary>
+    public static IResourceBuilder<DotnetProjectResource> AddAgentOps(this IDistributedApplicationBuilder builder,
+        IResourceBuilder<PostgresServerResource> postgres)
+    {
+        var agentOpsDb = postgres.AddDatabase("agentopsdb");
+
+        return builder.AddDotnetProject("agentops-api", "../AgentOps.API")
+            .WithReference(agentOpsDb).WaitFor(agentOpsDb)
+            .WithHttpHealthCheck("/health");
+    }
+
+    /// <summary>
     /// Configures eShop projects to use Microsoft Foundry for text embedding and chat.
     /// </summary>
     public static IDistributedApplicationBuilder AddFoundry(this IDistributedApplicationBuilder builder,

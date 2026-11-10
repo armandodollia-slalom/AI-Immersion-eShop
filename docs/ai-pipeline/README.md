@@ -7,6 +7,8 @@ Agents take a user story from implementation to reviewed code with verified test
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 
+[AgentOps](agentops.md) stores the review findings that every stage records for the pipeline agents, along with a final policy review of each PR, in `agentopsdb`. It reports per-PR and weekly mistakes (first-pass rate, repeat mistakes, hotspots) and provides a dashboard.
+
 Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
 
 ```mermaid

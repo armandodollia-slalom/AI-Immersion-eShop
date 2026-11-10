@@ -92,6 +92,27 @@ public class AppHostConfigurationTests
             builder.Resources.Select(resource => resource.Name).ToArray());
     }
 
+    [TestMethod]
+    public void AgentOpsExtensionAddsDatabaseAndInternalApi()
+    {
+        var builder = DistributedApplication.CreateBuilder(new DistributedApplicationOptions
+        {
+            AssemblyName = typeof(AppHostConfigurationTests).Assembly.FullName,
+            DisableDashboard = true,
+            ProjectDirectory = Path.Combine(FindRepositoryRoot(), "src", "eShop.AppHost")
+        });
+        var postgres = builder.AddPostgres("postgres");
+
+        var api = builder.AddAgentOps(postgres);
+
+        CollectionAssert.IsSubsetOf(
+            new[] { "agentopsdb", "agentops-api" },
+            builder.Resources.Select(resource => resource.Name).ToArray());
+        Assert.IsTrue(api.Resource.TryGetAnnotationsOfType<WaitAnnotation>(out var waits));
+        Assert.Contains(wait => wait.Resource.Name == "agentopsdb", waits);
+        Assert.IsFalse(api.Resource.Annotations.OfType<EndpointAnnotation>().Any(endpoint => endpoint.IsExternal));
+    }
+
     private static IDistributedApplicationBuilder CreateBuilder() =>
         DistributedApplication.CreateBuilder(new DistributedApplicationOptions
         {

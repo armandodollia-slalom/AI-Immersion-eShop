@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentOps - pipeline agent mistakes</title>
+  <style>
+    :root { --bg: #0f1115; --card: #181b22; --fg: #e6e8ee; --muted: #9aa3b2; --accent: #5b9dff; --bad: #ff6b6b; --ok: #3ecf8e; --border: #2a2f3a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--fg); }
+    header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+    header h1 { font-size: 18px; margin: 0; flex: 1; }
+    main { padding: 24px; display: grid; gap: 24px; }
+    select, button { background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .card h3 { margin: 0 0 8px; font-size: 15px; }
+    .metric { display: flex; justify-content: space-between; color: var(--muted); }
+    .metric b { color: var(--fg); }
+    .bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 6px 0 10px; }
+    .bar > span { display: block; height: 100%; background: var(--ok); }
+    section h2 { font-size: 16px; margin: 0 0 8px; }
+    table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    td.num, th.num { text-align: right; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: #1f2430; }
+    code { color: var(--accent); }
+    .sev-blocking { color: var(--bad); }
+    .muted { color: var(--muted); }
+    #error { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AgentOps &middot; pipeline agent review telemetry</h1>
+    <label class="muted">Window
+      <select id="days">
+        <option value="7">7 days</option>
+        <option value="30" selected>30 days</option>
+        <option value="90">90 days</option>
+      </select>
+    </label>
+    <label class="muted">Agent
+      <select id="agent"><option value="">All</option></select>
+    </label>
+  </header>
+  <main>
+    <div id="error"></div>
+    <section>
+      <h2>Agents</h2>
+      <div id="agents" class="cards"></div>
+    </section>
+    <section>
+      <h2>Repeat mistakes</h2>
+      <table id="repeats"></table>
+    </section>
+    <section>
+      <h2>Hotspot files</h2>
+      <table id="hotspots"></table>
+    </section>
+    <section>
+      <h2>Pull requests</h2>
+      <table id="prs"></table>
+    </section>
+    <section id="pr-detail" hidden>
+      <h2 id="pr-title"></h2>
+      <table id="pr-mistakes"></table>
+    </section>
+    <section>
+      <h2>Recent mistakes</h2>
+      <table id="mistakes"></table>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const API = '/api/agentops';
+    const $ = (id) => document.getElementById(id);
+
+    async function get(path, params = {}) {
+      const qs = new URLSearchParams({ ...params, 'api-version': '1.0' });
+      const res = await fetch(`${API}${path}?${qs}`);
+      if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function el(tag, text, cls) {
+      const e = document.createElement(tag);
+      if (text !== undefined && text !== null) e.textContent = String(text);
+      if (cls) e.className = cls;
+      return e;
+    }
+
+    function table(target, headers, rows, onClick) {
+      const t = $(target);
+      t.replaceChildren();
+      const head = el('tr');
+      headers.forEach(([label, num]) => head.appendChild(el('th', label, num ? 'num' : '')));
+      t.appendChild(head);
+      if (rows.length === 0) {
+        const tr = el('tr');
+        const td = el('td', 'No data in this window.', 'muted');
+        td.colSpan = headers.length;
+        tr.appendChild(td);
+        t.appendChild(tr);
+        return;
+      }
+      rows.forEach((row, i) => {
+        const tr = el('tr', null, onClick ? 'clickable' : '');
+        row.forEach((cell, c) => {
+          const td = el('td', null, headers[c][1] ? 'num' : '');
+          if (cell instanceof Node) td.appendChild(cell); else td.textContent = cell ?? '';
+          tr.appendChild(td);
+        });
+        if (onClick) tr.addEventListener('click', () => onClick(i));
+        t.appendChild(tr);
+      });
+    }
+
+    const pct = (v) => (v === null || v === undefined ? '-' : `${Math.round(v * 100)}%`);
+    const num = (v) => (v === null || v === undefined ? '-' : String(v));
+    const code = (text) => el('code', text);
+    const day = (iso) => (iso ? iso.slice(0, 10) : '');
+
+    function agentCard(a) {
+      const card = el('div', null, 'card');
+      card.appendChild(el('h3', a.agent));
+      const metric = (label, value) => {
+        const m = el('div', null, 'metric');
+        m.appendChild(el('span', label));
+        m.appendChild(el('b', value));
+        card.appendChild(m);
+      };
+      metric('First-pass approval', pct(a.firstPassRate));
+      const bar = el('div', null, 'bar');
+      const fill = el('span');
+      fill.style.width = `${Math.round((a.firstPassRate ?? 0) * 100)}%`;
+      bar.appendChild(fill);
+      card.appendChild(bar);
+      metric('PRs', a.pullRequests);
+      metric('Review runs', a.reviewRuns);
+      metric('Avg rounds to approval', num(a.averageRoundsToApproval));
+      metric('Mistakes (blocking)', `${a.mistakes} (${a.blockingMistakes})`);
+      metric('Escaped to PR', a.escapedMistakes);
+      if (a.topMistakes.length) {
+        card.appendChild(el('div', 'Top mistakes', 'muted'));
+        a.topMistakes.forEach((g) => {
+          const line = el('div');
+          line.appendChild(code(g.key));
+          line.appendChild(document.createTextNode(` x${g.count}`));
+          card.appendChild(line);
+        });
+      }
+      return card;
+    }
+
+    async function showPr(number) {
+      const report = await get(`/prs/${encodeURIComponent(number)}`);
+      $('pr-detail').hidden = false;
+      $('pr-title').textContent = `PR #${report.number}: ${report.title}`;
+      const rows = report.agents.flatMap((a) => a.mistakeGroups.map((g) => [
+        a.agent, code(g.key), g.count, el('span', g.severity, `sev-${g.severity}`), g.files.join(', '), g.priorPullRequests, g.example,
+      ]));
+      table('pr-mistakes', [['Agent'], ['Mistake'], ['Count', true], ['Severity'], ['Where'], ['Seen in other PRs', true], ['Example']], rows);
+      $('pr-detail').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function load() {
+      $('error').textContent = '';
+      const days = $('days').value;
+      const agent = $('agent').value;
+      try {
+        const [summary, prs, mistakes] = await Promise.all([
+          get('/summary', { days }),
+          get('/prs', { take: 50 }),
+          get('/mistakes', { days, take: 200, ...(agent ? { agent } : {}) }),
+        ]);
+
+        const select = $('agent');
+        const known = new Set([...select.options].map((o) => o.value));
+        summary.agents.forEach((a) => { if (!known.has(a.agent)) select.appendChild(new Option(a.agent, a.agent)); });
+
+        $('agents').replaceChildren(...summary.agents.filter((a) => !agent || a.agent === agent).map(agentCard));
+        if (summary.agents.length === 0) $('agents').replaceChildren(el('div', 'No pipeline-agent activity in this window.', 'muted'));
+
+        table('repeats', [['Agent'], ['Mistake'], ['PRs', true], ['Occurrences', true], ['Last seen']],
+          summary.repeatMistakes.filter((r) => !agent || r.agent === agent)
+            .map((r) => [r.agent, code(r.key), r.pullRequests, r.count, day(r.lastSeen)]));
+
+        table('hotspots', [['File'], ['Mistakes', true], ['PRs', true]],
+          summary.hotspots.map((h) => [code(h.file), h.mistakes, h.pullRequests]));
+
+        table('prs', [['PR', true], ['Title'], ['Author'], ['Review runs', true], ['Mistakes', true], ['Last ingested']],
+          prs.map((p) => [`#${p.number}`, p.title, p.author, p.reviewRuns, p.mistakes, day(p.lastIngestedAt)]),
+          (i) => showPr(prs[i].number).catch(showError));
+
+        table('mistakes', [['When'], ['PR', true], ['Agent'], ['Source'], ['Mistake'], ['Severity'], ['File'], ['Message']],
+          mistakes.map((m) => [day(m.occurredAt), `#${m.prNumber}`, m.agent, m.source, code(m.key),
+            el('span', m.severity, `sev-${m.severity}`), m.file ? `${m.file}${m.line ? `:${m.line}` : ''}` : '', m.message]));
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    function showError(err) { $('error').textContent = `Failed to load: ${err.message}`; }
+
+    $('days').addEventListener('change', load);
+    $('agent').addEventListener('change', load);
+    load();
+  </script>
+</body>
+</html>

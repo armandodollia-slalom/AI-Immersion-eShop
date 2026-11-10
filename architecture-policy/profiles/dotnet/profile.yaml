@@ -32,6 +32,9 @@ projects:
   - { name: Webhooks.API,           path: src/Webhooks.API,           type: api,            service: webhooks,          layer: presentation }
   - { name: WebApp,                 path: src/WebApp,                 type: web,            service: webapp,            layer: presentation }
   - { name: WebhookClient,          path: src/WebhookClient,          type: web,            service: webhooksclient,    layer: presentation }
+  - { name: AgentOps.API,           path: src/AgentOps.API,           type: api,            service: agentops,          layer: application, note: "Internal read-only dashboard over pipeline-agent review telemetry." }
+  - { name: AgentOps.Data,          path: src/AgentOps.Data,          type: infrastructure, service: agentops,          layer: infrastructure }
+  - { name: AgentOps.Cli,           path: src/AgentOps.Cli,           type: client,         service: agentops,          layer: host,        note: "CI command-line tool run by GitHub Actions (collect/ingest/report); never deployed, so hosted-service rules do not apply." }
   # --- shared libraries ----------------------------------------------------
   - { name: eShop.ServiceDefaults,  path: src/eShop.ServiceDefaults,  type: library, layer: shared }
   - { name: EventBus,               path: src/EventBus,               type: library, layer: shared }
@@ -50,6 +53,7 @@ projects:
   - { name: Catalog.FunctionalTests,     path: tests/Catalog.FunctionalTests,     type: test, layer: test }
   - { name: ClientApp.UnitTests,         path: tests/ClientApp.UnitTests,         type: test, layer: test }
   - { name: eShop.AppHost.UnitTests,     path: tests/eShop.AppHost.UnitTests,     type: test, layer: test }
+  - { name: AgentOps.UnitTests,          path: tests/AgentOps.UnitTests,          type: test, layer: test }
   - { name: Ordering.FunctionalTests,    path: tests/Ordering.FunctionalTests,    type: test, layer: test }
   - { name: Ordering.UnitTests,          path: tests/Ordering.UnitTests,          type: test, layer: test }
   - { name: Webhooks.FunctionalTests,    path: tests/Webhooks.FunctionalTests,    type: test, layer: test }
@@ -66,6 +70,7 @@ services:
   - { id: webhooks,          owns_datastores: [webhooksdb],  traits: [owns_database, consumes_events, exposes_http_api] }
   - { id: webapp,            owns_datastores: [],            traits: [consumes_events] }
   - { id: webhooksclient,    owns_datastores: [],            traits: [] }
+  - { id: agentops,          owns_datastores: [agentopsdb],  traits: [owns_database, exposes_http_api] }
 
 # Connection names that are not service-owned databases (AI models, brokers, caches used via abstractions).
 shared_datastore_names: [eventbus, textEmbeddingModel, chatModel, postgres]
@@ -107,3 +112,6 @@ test_mapping:
   - { source: src/eShop.AppHost,         tests: ["tests/eShop.AppHost.UnitTests/**"] }
   - { source: src/ClientApp,             tests: ["tests/ClientApp.UnitTests/**"] }
   - { source: testing/eShop.TestStack,   tests: ["testing/eShop.TestStack.Tests/**"] }
+  - { source: src/AgentOps.Data,         tests: ["tests/AgentOps.UnitTests/**"] }
+  - { source: src/AgentOps.API,          tests: ["tests/AgentOps.UnitTests/**"] }
+  - { source: src/AgentOps.Cli,          tests: ["tests/AgentOps.UnitTests/**"] }

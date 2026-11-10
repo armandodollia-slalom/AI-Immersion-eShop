@@ -1,0 +1,89 @@
+name: AgentOps Ingest
+
+# Stores the batch produced by "AgentOps Collect" in agentopsdb and upserts the per-PR mistake report as a
+# sticky PR comment. workflow_run always executes this file from the default branch, never PR code; the
+# artifact is untrusted input and is validated by the CLI (BatchSanitizer) before it is written.
+# Without the AGENTOPS_DB secret it falls back to an ephemeral database (report covers this PR only).
+
+on:
+  workflow_run:
+    workflows: ["AgentOps Collect"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: agentops-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: agentopsdb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ConnectionStrings__agentopsdb: ${{ secrets.AGENTOPS_DB || 'Host=localhost;Port=5432;Database=agentopsdb;Username=postgres' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET (global.json)
+        uses: actions/setup-dotnet@v3
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentops-batch
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Check batch has pipeline-agent events
+        id: batch
+        run: |
+          events=$(jq '(.reviews // [] | length) + (.mistakes // [] | length)' agentops-batch.json)
+          echo "Batch has $events pipeline-agent event(s)."
+          echo "has_events=$([ "$events" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Ingest batch
+        if: steps.batch.outputs.has_events == 'true'
+        run: dotnet run --project src/AgentOps.Cli -c Release -- ingest --batch agentops-batch.json
+      - name: Build PR report
+        if: steps.batch.outputs.has_events == 'true'
+        id: report
+        run: |
+          number=$(jq -r '.pull_request.number' agentops-batch.json)
+          if ! [[ "$number" =~ ^[0-9]+$ ]]; then echo "invalid PR number" >&2; exit 1; fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          dotnet run --project src/AgentOps.Cli -c Release --no-build -- report pr --number "$number" --out agentops-report.md
+          cat agentops-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upsert sticky PR comment
+        if: steps.batch.outputs.has_events == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.report.outputs.number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const fs = require('fs');
+            const number = Number(process.env.PR_NUMBER);
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            // The artifact names the PR; only comment if that PR really is the one this run built.
+            if (pr.head.sha !== process.env.HEAD_SHA) {
+              core.notice(`PR #${number} head moved on (${pr.head.sha}); skipping comment.`);
+              return;
+            }
+            const marker = '<!-- agentops-report -->';
+            const body = fs.readFileSync('agentops-report.md', 'utf8');
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number });
+            const mine = comments.find(c => c.user?.type === 'Bot' && c.body?.startsWith(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }

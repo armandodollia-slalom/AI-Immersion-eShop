@@ -2,6 +2,9 @@
   "solution": {
     "path": "eShop.slnx",
     "projects": [
+      "src\\AgentOps.API\\AgentOps.API.csproj",
+      "src\\AgentOps.Cli\\AgentOps.Cli.csproj",
+      "src\\AgentOps.Data\\AgentOps.Data.csproj",
       "src\\Basket.API\\Basket.API.csproj",
       "src\\Catalog.API\\Catalog.API.csproj",
       "src\\EventBusRabbitMQ\\EventBusRabbitMQ.csproj",
@@ -19,6 +22,7 @@
       "src\\Webhooks.API\\Webhooks.API.csproj",
       "src\\eShop.AppHost\\eShop.AppHost.csproj",
       "src\\eShop.ServiceDefaults\\eShop.ServiceDefaults.csproj",
+      "tests\\AgentOps.UnitTests\\AgentOps.UnitTests.csproj",
       "tests\\Basket.UnitTests\\Basket.UnitTests.csproj",
       "tests\\Basket.FunctionalTests\\Basket.FunctionalTests.csproj",
       "tests\\Application.UnitTests\\Application.UnitTests.csproj",
