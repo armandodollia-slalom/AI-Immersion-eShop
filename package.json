@@ -17,14 +17,25 @@
     "test:pipeline": "node --test scripts/*/test/*.test.mjs",
     "implement": "node scripts/pipeline/pipeline.mjs implement",
     "agents:sync": "node scripts/sync-agents.mjs",
-    "agents:check": "node scripts/sync-agents.mjs --check"
+    "agents:check": "node scripts/sync-agents.mjs --check",
+    "lint": "npm run lint:js && npm run lint:cs && npm run lint:md",
+    "lint:fix": "eslint . --fix && dotnet format eShop.Web.slnf && npm run lint:md -- --fix",
+    "lint:js": "eslint .",
+    "lint:cs": "dotnet format eShop.Web.slnf --verify-no-changes",
+    "lint:md": "markdownlint \"**/*.md\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.1.2",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "markdownlint-cli": "^0.48.0",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.72.2"
   }
 }

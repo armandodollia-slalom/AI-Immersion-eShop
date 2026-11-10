@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentDefinition, runAgent } from '../../pipeline/lib/agents.mjs';
 import { spawnBackground } from '../../pipeline/lib/background.mjs';
-import { git, implChanges, implDiff } from '../../pipeline/lib/git.mjs';
+import { git, implChanges } from '../../pipeline/lib/git.mjs';
 import { readEvidence, formatEvidence } from './evidence.mjs';
 import {
   INDEX,
