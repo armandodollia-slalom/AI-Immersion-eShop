@@ -9,6 +9,6 @@ tests/plans/PROMO-3-apply-promotions-to-basket/
   TC-PROMO-3-02-<slug>.md
 ```
 
-Each case file has front matter (`id`, `title`, `type: happy|sad`, `sad-path` for sad cases, `layer: functional|e2e`, `covers`) and `Preconditions`, `Steps` and `Expected result` sections. Automated tests carry the case id in their name, which is how coverage is traced.
+Each case file has front matter (`id`, `title`, `type: happy|sad`, `sad-path` for sad cases, `layer: functional|e2e`, `covers`) and `Why`, `Preconditions`, `Steps` and `Expected result` sections. `Why` records the plan agent's reason for the case; it is copied to `.agent-metrics/decisions.jsonl`. Automated tests carry the case id in their name, which is how coverage is traced.
 
 Do not edit plans by hand without re-running `node scripts/qe/qe.mjs plan <KEY> --force`: the verification stamp covers the plan content, and `qe check` (pre-push and CI) fails on an edited, unverified plan.

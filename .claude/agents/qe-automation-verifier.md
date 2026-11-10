@@ -31,10 +31,12 @@ If the case itself is ambiguous, contradictory or untestable, report it with `"r
 
 ## Output
 
+Your `summary` and each gap's `detail` go into the pipeline's decision log, which is used to improve the agents and the pipeline. On a 10, say what convinced you; below 10, say what drove the score down.
+
 Think it through, then end your final message with one line (valid JSON, no code fence):
 
-`AGENT_RESULT: {"score": <0-10>, "summary": "<one sentence>", "gaps": [{"case": "<case id>", "category": "<category>", "subtype": "<optional>", "detail": "<what the test does, what the case requires>", "location": "<file:line>", "root_stage": "plan (only when the case is at fault)"}]}`
+`AGENT_RESULT: {"score": <0-10>, "summary": "<one or two sentences: why this score>", "gaps": [{"case": "<case id>", "category": "<category>", "subtype": "<optional>", "detail": "<what the test does, what the case requires>", "location": "<file:line>", "root_stage": "plan (only when the case is at fault)"}]}`
 
 ## Lessons
 
-If `.github/agents/lessons/qe-automation-verifier.md` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)
+If `.github/agents/lessons/qe-automation-verifier.md` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)

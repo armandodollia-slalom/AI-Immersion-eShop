@@ -19,7 +19,8 @@ flowchart LR
 
 - Output: `tests/plans/<story-file-name>/_index.md` plus one `TC-<KEY>-NN-<slug>.md` per case, covering every happy and sad path (see [tests/plans/README.md](../../tests/plans/README.md)).
 - The runner owns the index front matter. `story-sha` records the story text the plan was written for. When the story changes, the plan becomes stale and the agent gets the story diff and updates the affected cases in place, keeping the ids of the others stable.
-- The verifier sees only the story and the plan. It never sees the planner's reasoning.
+- Every case file starts with a `## Why` section: the requirement or risk it protects and why it sits at its layer. The plan agent's result also lists what it deliberately left out and why. Both go to the [decision log](#decision-log), not to the verifier.
+- The verifier sees only the story and the plan. It never sees the planner's reasoning in its own context; the `## Why` sections are part of the plan it reads.
 
 ## Workflow 2: implementation to automated tests
 
@@ -84,12 +85,26 @@ All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are i
 | `verifier-denials.jsonl` | gap: category, subtype, case, detail, location, `root_stage`, `attributed_agent` |
 | `precheck-failures.jsonl` | failed deterministic check |
 | `calibration.jsonl` | audit of a past 10/10 verdict (`agreed`, or each gap the verifier missed) |
+| `decisions.jsonl` | agent decision and its reasons (see [Decision log](#decision-log)) |
 
 `node scripts/qe/qe.mjs metrics` (or `--json`; `pipeline metrics` combines every stage) reports denial rates, first-round pass rates, rounds to 10/10, denials by category and agent, the trend for each prompt version (a version is the hash of the agent file plus its lessons), cross-stage denials and calibration misses.
 
+### Decision log
+
+`.agent-metrics/decisions.jsonl` records why each agent decided what it did, at the four points where the factory can go wrong. One record per decision: `ts`, `stage`, `story`, `round`, `agent`, `agent_ver`, `subject` (the agent whose work is judged), `decision`, `reason` (the agent's own summary) and `items`, each with its own `reason`. Text is capped at 1,000 characters and stripped of control characters.
+
+| `stage` | `decision` | Why it was decided | `items` |
+| --- | --- | --- | --- |
+| `plan` | `plan-written` | the plan agent's summary of how it split the story; `excluded` lists what it left out and why | each case: id, title, type, layer, `covers` and its `## Why` |
+| `plan-verify`, `automation-verify` | `approved`, `denied` | the verifier's summary and `score` | each gap: case, category, subtype, location, `root_stage`, `subject` (the agent it is attributed to) |
+| `review` | `approved`, `changes-requested` | the reviewer's summary (`architecture-reviewer`, or `arch-review-agent` for the policy pack with `policy_decision`) | each finding: severity, category, `rule`, `repeat`, file, line, `fix` |
+| `automation` | `product-bug` | the automation agent's summary of why the implementation, not the test, is wrong | each bug: case, expected, actual, location |
+
+Plan decisions are logged each round that passes the structural check, so each pairs with that round's verifier decision. Calibration audits are not logged here (they go to `calibration.jsonl`).
+
 ## Auto-improvement
 
-`node scripts/qe/qe.mjs lessons` reads the metrics and, for each of `qe-plan`, `qe-automation`, `qe-plan-verifier`, `qe-automation-verifier`, `implementer` (whose denials are the blocking findings in `arch-reviews.jsonl`, see [review](review.md#how-the-implementer-improves), and the findings the PR check upheld in round 1), and the PR check fixer and critics (from `pr-checks.jsonl`, see [pr-check](pr-check.md#how-agents-improve)):
+`node scripts/qe/qe.mjs lessons` reads the metrics and, for each of `qe-plan`, `qe-automation`, `qe-plan-verifier`, `qe-automation-verifier`, `implementer` (whose denials are the blocking findings in `arch-reviews.jsonl`, see [review](review.md#how-the-implementer-improves), the implementation bugs the integration tests found (`product-bug` in the decision log) and the findings the PR check upheld in round 1), and the PR check fixer and critics (from `pr-checks.jsonl`, see [pr-check](pr-check.md#how-agents-improve)):
 
 - **adds** a rule when a denial category recurs in 3 or more stories and no rule covers it;
 - **strengthens** a rule when its category keeps recurring in 3 or more stories after the rule was added;
@@ -97,6 +112,8 @@ All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are i
 - **reverts** a rule when the denial rate for its category did not drop after it was added.
 
 The `qe-lessons` agent writes the rules into `.github/agents/lessons/<agent>.md` (at most 15 each), and the command opens a pull request, so every change to agent behavior is reviewed like code. Each rule carries a marker with its category and date, which is what makes the retire and revert measurements possible. The lessons file is appended to the agent's prompt on every run, and it is part of the prompt version, so the metrics show whether a change helped.
+
+The same run holds a **factory retro**: it digests the decision log since the last merged lessons PR (or the last `lessons.retro.windowDays`) into the four questions (why the plan has these cases and which of them later failed or caught bugs, why reviews blocked or approved the implementer, why the automation verifier denied the tests, and why the tests failed the implementation) and hands it to the `qe-lessons` agent. QE verifier evidence mainly improves the QE agents; review and product-bug evidence mainly improves the implementer. When the cause is not something a lessons rule can fix, the agent may also edit the paths in `lessons.retro.allowedPaths` (agent definitions, docs, the story template, the policy pack); edits anywhere else are discarded, and each change it makes is listed under "Proposed factory changes" in the PR with its evidence. The retro runs whenever the window holds new decisions, even when no lessons threshold is reached.
 
 Verifiers improve through calibration: `qe calibrate` re-audits recent 10/10 verdicts with a stricter auditor (optionally a different model, `agent.models.audit`), and gaps the verifier missed become lessons for that verifier.
 

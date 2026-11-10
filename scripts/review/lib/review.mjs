@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
+import { logDecision } from '../../pipeline/lib/decisions.mjs';
 import { implChanges, implDiff } from '../../pipeline/lib/git.mjs';
 import { nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { clearEscalation, escalate, loadState, lockFile, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
@@ -20,6 +21,31 @@ const loggedFinding = (f) => ({
   line: f.line ?? null,
   issue: f.issue ? String(f.issue).slice(0, 300) : null,
 });
+
+// Why the reviewer approved or blocked the implementer, with each finding's reason and fix (decision log).
+function logReviewDecision(config, story, round, { agent, agentVer, verdict, summary, findings, ...extra }) {
+  logDecision(config, {
+    stage: 'review',
+    story: story.key,
+    round,
+    agent,
+    agentVer,
+    subject: 'implementer',
+    decision: verdict === 'APPROVED' ? 'approved' : 'changes-requested',
+    reason: summary || null,
+    ...extra,
+    items: findings.map((f) => ({
+      severity: f.severity ?? null,
+      category: f.category ?? null,
+      rule: f.rule ?? null,
+      repeat: f.repeat ?? undefined,
+      file: f.file ?? null,
+      line: f.line ?? null,
+      reason: f.issue ?? null,
+      fix: f.fix ?? null,
+    })),
+  });
+}
 
 function reviewTask(config, story, round) {
   const conventions = ['AGENTS.md', 'CONTRIBUTING.md'].filter((f) => fs.existsSync(path.join(config.root, f)));
@@ -60,6 +86,7 @@ export function architectureReview(config, story, round) {
         reviewer_ver: result.version,
         findings: findings.map(loggedFinding),
       });
+      logReviewDecision(config, story, round, { agent: 'architecture-reviewer', agentVer: result.version, verdict, summary: String(raw.summary ?? ''), findings });
       return { verdict, findings, summary: String(raw.summary ?? '') };
     }
   }
@@ -147,6 +174,15 @@ export function policyReview(config, story, round, { files, base, previousReview
       findings: findings.map(loggedFinding),
     });
   }
+  logReviewDecision(config, story, round, {
+    agent: 'arch-review-agent',
+    agentVer: response.agent_version ?? null,
+    verdict,
+    summary: String(response.summary ?? ''),
+    findings,
+    policy_decision: response.decision,
+    review_id: response.review_id ?? null,
+  });
   // A repeated mistake means the findings alone did not stick; hand the agent its lessons from the history.
   const lessons = verdict === 'CHANGES_REQUESTED' && findings.some((f) => f.repeat) ? policyLessons(config) : '';
   return { verdict, findings, summary: String(response.summary ?? ''), reviewId: response.review_id, decision: response.decision, lessons };

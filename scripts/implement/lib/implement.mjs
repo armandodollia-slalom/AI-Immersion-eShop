@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
+import { formatBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
 import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
@@ -304,7 +305,7 @@ export async function implementStory(config, opts) {
     if (qe.status !== 'product-bug') break;
     if (metrics.bugFixCycles >= settings.maxBugFixCycles) break;
     metrics.bugFixCycles++;
-    feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${(qe.bugs ?? []).map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n')}`;
+    feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${formatBugs(qe.bugs)}`;
   }
 
   const outcome = qe.status === 'verified' ? 'done' : `qe-${qe.status}`;

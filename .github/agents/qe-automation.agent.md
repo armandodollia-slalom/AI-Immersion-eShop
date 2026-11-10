@@ -61,4 +61,6 @@ When the task says `update`, change existing tests in place to match the current
 End your final message with exactly one line:
 
 - All tests written and passing: `AGENT_RESULT: {"status": "done", "tests": <count>}`
-- The implementation contradicts the plan: `AGENT_RESULT: {"status": "product-bug", "bugs": ["<case id>: expected …, got …"]}`
+- The implementation contradicts the plan: `AGENT_RESULT: {"status": "product-bug", "summary": "<one sentence>", "bugs": [{"case": "<case id>", "expected": "<what the case requires>", "actual": "<what the implementation did>", "location": "<src file:line or endpoint>", "why": "<why the implementation is at fault, not the test or the case>"}]}`
+
+The bugs go back to the implementer and into the pipeline's decision log, so say exactly what you observed (status, body, state) and point at the code responsible when you can.

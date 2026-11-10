@@ -5,7 +5,7 @@ import { caseIdsIn, storySha } from '../../pipeline/lib/stories.mjs';
 import { parseFrontMatter, sha, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 
 export const INDEX = '_index.md';
-const SECTIONS = ['Preconditions', 'Steps', 'Expected result'];
+const SECTIONS = ['Why', 'Preconditions', 'Steps', 'Expected result'];
 const LAYERS = ['unit', 'functional', 'e2e'];
 
 export function readPlan(config, story, reader = fsReader(config.root)) {
@@ -27,10 +27,21 @@ export function planContentSha(plan) {
   return sha(parts.join('\n\u0000\n'));
 }
 
-function sectionBody(body, title) {
+export function sectionBody(body, title) {
   const match = new RegExp(`^##\\s+${title}\\s*$([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'mi').exec(body);
   return match ? match[1].trim() : null;
 }
+
+// Why the plan agent wrote each case (decision log items): what it covers and its own "## Why".
+export const caseDecisions = (plan) =>
+  plan.cases.map((c) => ({
+    case: c.data.id ?? c.name,
+    title: c.data.title ?? null,
+    type: c.data.type ?? null,
+    layer: c.data.layer ?? null,
+    covers: Array.isArray(c.data.covers) ? c.data.covers : [c.data.covers].filter(Boolean),
+    reason: sectionBody(c.body ?? '', 'Why')?.replace(/^\s*[-*]\s+/gm, '') ?? null,
+  }));
 
 // Deterministic structural checks that run before any verifier tokens are spent.
 export function precheckPlan(config, story, reader = fsReader(config.root)) {
