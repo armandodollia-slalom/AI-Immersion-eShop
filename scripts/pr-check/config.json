@@ -5,6 +5,14 @@
     "timeoutSec": 1800,
     "fixTimeoutSec": 3600,
     "maxDiffChars": 400000,
+    "hook": {
+      "enabled": true,
+      "requireTests": true,
+      "waitForTestsMin": 180,
+      "pollSec": 20,
+      "maxRuns": 3,
+      "codeAgents": ["implementer"]
+    },
     "exclude": [".agent-state", ".agent-metrics", "graphify-out"],
     "frontendPaths": ["src/WebApp/", "src/WebAppComponents/", ".razor", ".razor.css", ".css"],
     "conventions": ["AGENTS.md", "CONTRIBUTING.md", ".editorconfig", ".markdownlint.json", "docs/architecture/services.md", "docs/architecture/event-flows.md", "docs/architecture/infrastructure.md", ".github/agents/implementer.agent.md"],

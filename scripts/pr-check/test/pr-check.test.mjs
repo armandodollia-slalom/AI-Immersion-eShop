@@ -169,3 +169,111 @@ test('the loop escalates when the fixer cannot fix the upheld findings', () => {
   assert.deepEqual([result.verdict, result.rounds], ['ESCALATED', 1]);
   assert.match(fs.readFileSync(path.join(repo, '.agent-state/escalations/DEMO-1-pr-check.md'), 'utf8'), /ACC-1-1/);
 });
+
+// Stop-hook flow: the check waits in the background for QE, then hands its findings back to the agent.
+const env = () => {
+  const e = { ...process.env, PIPELINE_AGENT_CMD: `"${process.execPath}" "${fakeAgent}"`, PIPELINE_FAKE_SCRIPT: scriptFile, PIPELINE_BASE_REF: 'main' };
+  delete e.PIPELINE_CHILD;
+  delete e.PIPELINE_DISABLE;
+  delete e.PR_CHECK_SKIP;
+  return e;
+};
+const hook = (args, payload = {}) => {
+  const r = spawnSync(process.execPath, ['scripts/pr-check/pr-check.mjs', 'hook', ...args], { cwd: repo, encoding: 'utf8', input: JSON.stringify(payload), env: env() });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout;
+};
+const stop = (payload) => {
+  const out = hook(['stop'], payload);
+  return out ? JSON.parse(out) : null;
+};
+const stateFile = () => path.join(repo, '.agent-state/stories/DEMO-1.json');
+const stateOf = () => JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
+const setState = (patch) => {
+  const s = fs.existsSync(stateFile()) ? stateOf() : { story: 'DEMO-1' };
+  for (const [k, v] of Object.entries(patch)) s[k] = v && typeof v === 'object' && !Array.isArray(v) ? { ...s[k], ...v } : v;
+  fs.writeFileSync(stateFile(), JSON.stringify(s, null, 2));
+};
+const implHash = () => {
+  const code = "import { loadConfig } from './scripts/pipeline/lib/config.mjs'; import { implChanges } from './scripts/pipeline/lib/git.mjs'; console.log(implChanges(loadConfig('pr-check')).hash);";
+  return spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: repo, encoding: 'utf8', env: env() }).stdout.trim();
+};
+const waitFor = async (predicate, timeoutMs = 120_000) => {
+  for (const start = Date.now(); Date.now() - start < timeoutMs; ) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`timed out; state: ${JSON.stringify(stateOf().prCheck)}`);
+};
+// Approve the code now on disk, as the review stage does, with QE in the given state.
+const approve = (automation) => {
+  const hash = implHash();
+  setState({ done: new Date().toISOString(), review: { lastVerdict: 'APPROVED', approvedHash: hash }, automation: automation(hash) });
+  return hash;
+};
+
+test('Stop hook: waits for QE to verify the tests, checks in the background, then blocks the agent with the findings', async () => {
+  const config = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/pr-check/config.json'), 'utf8'));
+  config.prCheck.hook.pollSec = 0.2;
+  write('scripts/pr-check/config.json', JSON.stringify(config, null, 2));
+  write('.agent-state/active-story', 'DEMO-1\n');
+  fs.writeFileSync(scriptFile, JSON.stringify({
+    'pr-check-acceptance': [{ result: { lens: 'acceptance', score: 6, summary: 'AC 2', coverage: [], findings: [expiredCoupon] } }],
+    'pr-check-flow': [clean('flow')],
+    'pr-check-style': [clean('style')],
+    'pr-check-defender': [{ result: { responses: [{ id: 'ACC-1-1', position: 'concede', argument: 'true' }] } }],
+    'pr-check-judge': [upheldRound],
+  }));
+  for (const suffix of ['.calls.json', '.prompts.log']) fs.rmSync(scriptFile + suffix, { force: true });
+  hook(['story-start', 'DEMO-1']);
+  write('src/Basket/Coupons.cs', '// coupons v3, uncommitted\n');
+
+  assert.equal(stop(), null, 'no check until the review approves the code on disk');
+  const hash = approve(() => ({ status: 'running', verifiedHash: null }));
+  assert.equal(stop({ hook_event_name: 'SubagentStop', agent_type: 'Explore' }), null, 'only code agents trigger it');
+  assert.match(stop().systemMessage, /DEMO-1 will be checked against its story in the background once QE has verified the tests/);
+  assert.deepEqual([stateOf().prCheck.status, stateOf().prCheck.hash], ['waiting', hash]);
+  assert.equal(stop(), null, 'one waiter per implementation');
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(fs.existsSync(`${scriptFile}.calls.json`), false, 'no agent runs while QE is still working');
+
+  setState({ automation: { status: 'verified', verifiedHash: hash } });
+  await waitFor(() => stateOf().prCheck.status === 'done');
+  assert.deepEqual(calls()['pr-check-fixer'], undefined, 'report only: the agent is the fixer');
+  const first = stop();
+  assert.equal(first.decision, 'block');
+  assert.match(first.reason, /PR check of DEMO-1 scored 6\/10[\s\S]*1\. \[blocking\] ACC-1-1 \(acceptance\) Expired coupon is accepted[\s\S]*Fix them, then finish your turn/);
+  assert.match(stop().reason, /still open and nothing has changed/);
+  assert.match(stop({ stop_hook_active: true }).systemMessage, /still has 1 open finding/);
+  assert.equal(stop(), null);
+  assert.match(hook(['session-start']), /PR check for DEMO-1: FAIL 6\/10[\s\S]*ACC-1-1/);
+  const record = fs.readFileSync(path.join(repo, '.agent-metrics/pr-checks.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1);
+  assert.deepEqual([record.target, record.round, record.upheld.map((u) => u.id)], ['DEMO-1', 1, ['ACC-1-1']], 'hook runs feed the lessons like any other check');
+
+  // The agent fixes the finding; once review and QE pass the new code, the check runs again and passes.
+  write('src/Basket/Coupons.cs', '// coupons v4, rejects expired coupons\n');
+  fs.writeFileSync(scriptFile, JSON.stringify({
+    'pr-check-acceptance': [clean('acceptance')],
+    'pr-check-flow': [clean('flow')],
+    'pr-check-style': [clean('style')],
+    'pr-check-judge': [{ result: { score: 10, lensScores: {}, summary: 'all met', rulings: [] } }],
+  }));
+  approve((h) => ({ status: 'verified', verifiedHash: h }));
+  assert.match(stop().systemMessage, /checked against its story in the background/);
+  await waitFor(() => stateOf().prCheck.status === 'done');
+  assert.match(stop().systemMessage, /DEMO-1 scored 10\/10 against its story/);
+  assert.equal(stop(), null);
+  assert.equal(stateOf().prCheck.runs, 0, 'a pass resets the run count');
+});
+
+test('Stop hook: escalates instead of checking again once the run limit is reached', () => {
+  write('src/Basket/Coupons.cs', '// coupons v5\n');
+  approve((h) => ({ status: 'verified', verifiedHash: h }));
+  setState({ prCheck: { status: 'done', hash: 'older', verdict: 'FAIL', score: 6, runs: 3, openFindings: [{ id: 'ACC-1-1', lens: 'acceptance', severity: 'blocking', title: 'x' }], report: 'r.md' } });
+  const skipped = spawnSync(process.execPath, ['scripts/pr-check/pr-check.mjs', 'hook', 'stop'], { cwd: repo, encoding: 'utf8', input: '{}', env: { ...env(), PR_CHECK_SKIP: '1' } });
+  assert.equal(skipped.stdout, '', 'PR_CHECK_SKIP=1 turns the hook off');
+  assert.match(stop().systemMessage, /still failed after 3 checks\. A human needs to decide/);
+  assert.match(fs.readFileSync(path.join(repo, '.agent-state/escalations/DEMO-1-pr-check.md'), 'utf8'), /still failing after 3 PR checks/);
+  assert.equal(stateOf().prCheck.status, 'escalated');
+  assert.equal(stop(), null);
+});

@@ -76,6 +76,10 @@ before(() => {
   const config = JSON.parse(read('scripts/qe/config.json'));
   config.precheck.runTests = false;
   write('scripts/qe/config.json', JSON.stringify(config, null, 2));
+  // The PR check's own hook flow is covered in scripts/pr-check/test.
+  const prCheckConfig = JSON.parse(read('scripts/pr-check/config.json'));
+  prCheckConfig.prCheck.hook.enabled = false;
+  write('scripts/pr-check/config.json', JSON.stringify(prCheckConfig, null, 2));
   write('.gitignore', '.agent-state/\n');
   write(STORY, '# DEMO-1 Apply coupon\n\nRule: a valid coupon gives 10% off; an expired coupon is rejected with 400.\n');
   write('src/Basket/Coupons.cs', '// coupons\n');

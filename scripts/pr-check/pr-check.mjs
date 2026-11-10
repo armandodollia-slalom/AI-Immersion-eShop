@@ -4,13 +4,15 @@
 // See docs/ai-pipeline/pr-check.md.
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
-import { loadConfig } from '../pipeline/lib/config.mjs';
+import { parseArgs, readPayload, requireStory, runMain } from '../pipeline/lib/cli.mjs';
+import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { lockFile, metricsFile } from '../pipeline/lib/state.mjs';
+import { activeStory } from '../pipeline/lib/stories.mjs';
 import { acquireLock, log, lockHolder, nowIso, readJson, readJsonl, releaseLock, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { isClean, removeCheckout, resolveTarget } from './lib/context.mjs';
 import { commentOnPullRequest } from './lib/github.mjs';
+import { hookRun, hookStop, resetPrCheck, sessionContext } from './lib/hooks.mjs';
 import { CHECKS_FILE, runPrCheck } from './lib/loop.mjs';
 import { renderReport } from './lib/report.mjs';
 import { extractVideoFrames, videoSources } from './lib/video.mjs';
@@ -26,10 +28,14 @@ const USAGE = `Usage: node scripts/pr-check/pr-check.mjs <command> [options]
   status [pr-<n>|KEY]           last result of each check (or one)
   metrics [--json] [--since <iso-date>]
 
+Hooks (called by scripts/pipeline/pipeline.mjs; PR_CHECK_SKIP=1 turns them off)
+  hook stop | hook session-start | hook story-start <story>
+  hook-run <story> --hash <impl-hash>   background half of the Stop hook: waits for QE, then checks
+
 Models: PR_CHECK_MODEL_<ROLE> (JUDGE, ACCEPTANCE, FLOW, DESIGN, STYLE, VIDEO, DEFENDER, FIXER)
 overrides scripts/pr-check/config.json.`;
 
-const VALUE_FLAGS = new Set(['pr', 'story', 'base', 'videos', 'max-rounds', 'debate-turns', 'since']);
+const VALUE_FLAGS = new Set(['pr', 'story', 'base', 'videos', 'max-rounds', 'debate-turns', 'since', 'hash']);
 
 const resultDir = (config, id) => path.join(config.root, config.stateDir, 'pr-check', id);
 
@@ -39,7 +45,8 @@ function positiveInt(value, name) {
   return n;
 }
 
-async function runCheck(config, flags) {
+// One check; returns the summary saved to .agent-state/pr-check/<id>/result.json.
+async function executeCheck(config, flags) {
   const fix = !flags['no-fix'];
   if (flags['max-rounds']) config.prCheck.maxRounds = positiveInt(flags['max-rounds'], 'max-rounds');
   if (flags['debate-turns']) config.prCheck.debateTurns = Number(flags['debate-turns']);
@@ -98,13 +105,18 @@ async function runCheck(config, flags) {
     };
     writeJson(path.join(out, 'result.json'), summary);
     if (ctx.workRoot !== config.root) fs.cpSync(ctx.runDir, path.join(out, 'run'), { recursive: true });
-    if (flags.json) console.log(JSON.stringify(summary, null, 2));
-    else console.log(`${report}\nReport: ${summary.report}`);
-    return summary.verdict === 'PASS' ? 0 : 1;
+    return { ...summary, text: report };
   } finally {
     releaseLock(lock);
     removeCheckout(config, ctx);
   }
+}
+
+async function runCheck(config, flags) {
+  const { text, ...summary } = await executeCheck(config, flags);
+  if (flags.json) console.log(JSON.stringify(summary, null, 2));
+  else console.log(`${text}\nReport: ${summary.report}`);
+  return summary.verdict === 'PASS' ? 0 : 1;
 }
 
 function metrics(config, since) {
@@ -173,6 +185,34 @@ async function main() {
         console.log(`Findings: ${m.raised} raised, ${m.upheld} upheld (rate ${m.upheldRate}); by lens ${Object.entries(m.upheldByLens).map(([k, v]) => `${k}=${v}`).join(' ') || 'none'}`);
       }
       return 0;
+    }
+
+    case 'hook': {
+      const event = positional[0];
+      // story-start comes from the `pipeline start` command, not an agent hook, so it resets even when hooks are disabled.
+      if (event === 'story-start') {
+        resetPrCheck(config, requireStory(config, positional[1]));
+        return 0;
+      }
+      if (isDisabled()) return 0;
+      const payload = readPayload();
+      const story = activeStory(config);
+      if (event === 'stop') {
+        const output = story ? hookStop(config, story, payload) : null;
+        if (output) process.stdout.write(JSON.stringify(output));
+        return 0;
+      }
+      if (event === 'session-start') {
+        process.stdout.write(sessionContext(config, story));
+        return 0;
+      }
+      console.error(`Unknown hook event "${event}".`);
+      return 2;
+    }
+
+    case 'hook-run': {
+      if (typeof flags.hash !== 'string') throw new Error('hook-run needs --hash <impl-hash>');
+      return hookRun(config, requireStory(config, positional[0]), flags.hash, executeCheck);
     }
 
     default:

@@ -38,6 +38,30 @@ Or ask the `pr-check` agent (Copilot or Claude Code) to check a PR; it runs the 
 
 Exit code 0 means PASS (10/10); anything else is FAIL or ESCALATED. Fix mode needs the PR branch checked out at the PR head with a clean working tree; `--push` is skipped for PRs from forks. report-only mode reviews a PR that isn't checked out in a temporary detached worktree.
 
+## Runs automatically from the Stop hook
+
+The check is the last stage of the agent Stop hook, after `review` and `qe`. When the implementation agent stops after `pipeline done` and the architecture review has approved the code on disk:
+
+1. The hook starts a background waiter and tells the agent so; the agent can finish its turn.
+2. The waiter waits for QE to verify the tests for that exact implementation (`hook.waitForTestsMin`, checking every `hook.pollSec`). If QE ends without verifying them (a product bug, an escalation), or the code changes, it stops without checking.
+3. It runs one report-only round against the story (no PR needed; uncommitted work counts). The agent is the fixer, so nothing is committed over its work.
+4. On the agent's next stop (or in the next session's start-up context) a failing result blocks with the open findings and the report path, once more if nothing changed, and then says so once. A pass is one notice.
+
+Fixing the findings changes the code, so the review runs again, then QE, then the PR check. After `hook.maxRuns` failing checks for a story the hook escalates to a human (`.agent-state/escalations/<KEY>-pr-check.md`) instead of checking again; a pass resets the count, and so does `pipeline start`.
+
+Hook runs are recorded in `.agent-metrics/pr-checks.jsonl` in the working tree, so they are committed with the story and feed the lessons like any other check. All of their findings are round-1 findings, so they teach the implementer.
+
+`PR_CHECK_SKIP=1` (or `"enabled": false` under `prCheck.hook` in `scripts/pr-check/config.json`) turns the hook off; `PIPELINE_DISABLE=1` turns off every stage. The hook's settings:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `requireTests` | true | wait for QE to verify the tests first |
+| `waitForTestsMin`, `pollSec` | 180, 20 | how long and how often the waiter checks on QE |
+| `maxRuns` | 3 | failing checks per story before escalating |
+| `codeAgents` | `implementer` | subagents whose `SubagentStop` triggers the check (main-session stops always do) |
+
+`npm run pr-check -- status <KEY>` shows the last result.
+
 ## The loop
 
 ```mermaid
@@ -106,4 +130,4 @@ A mistake that recurs in 3 or more stories becomes a rule, proposed in a pull re
 
 ## In CI
 
-`.github/workflows/pr-check.yml` runs a report-only check (`--no-fix --comment`) when a PR gets the `ai-pr-check` label, or on demand. It needs the `ANTHROPIC_API_KEY` secret. Fixing stays local, where a person can watch the loop and review its commits. CI cannot commit to the PR, so its `pr-checks.jsonl` records are uploaded with the run artifact; append them to `.agent-metrics/pr-checks.jsonl` if you want them to count toward lessons.
+`.github/workflows/pr-check.yml` runs a report-only check (`--no-fix --comment`) when a PR gets the `ai-pr-check` label, or on demand. It needs the `ANTHROPIC_API_KEY` secret. Fixing stays local, where a person can watch the loop and review its commits. CI cannot commit to the PR, so its `pr-checks.jsonl` records are uploaded with the run artifact and do not count toward lessons; the Stop-hook runs for the same story do.
