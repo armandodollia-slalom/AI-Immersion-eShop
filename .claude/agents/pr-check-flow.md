@@ -41,4 +41,4 @@ Score 10 only when every step and path is `met` and there are no findings.
 
 ## Lessons
 
-If `.github/agents/lessons/pr-check-flow.md` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)
+If `.github/agents/lessons/pr-check-flow.md` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)

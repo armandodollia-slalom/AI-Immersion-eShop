@@ -36,10 +36,12 @@ You are an independent reviewer with no stake in the plan. You see only the stor
 
 ## Output
 
+Your `summary` and each gap's `detail` go into the pipeline's decision log, which is used to improve the agents and the pipeline. On a 10, say what convinced you; below 10, say what drove the score down.
+
 Think it through, then end your final message with one line (valid JSON, no code fence):
 
-`AGENT_RESULT: {"score": <0-10>, "summary": "<one sentence>", "gaps": [{"case": "<case id or null for plan-wide>", "category": "<category>", "subtype": "<optional>", "detail": "<what is wrong and what the plan must contain instead>", "location": "<file or story section>"}]}`
+`AGENT_RESULT: {"score": <0-10>, "summary": "<one or two sentences: why this score>", "gaps": [{"case": "<case id or null for plan-wide>", "category": "<category>", "subtype": "<optional>", "detail": "<what is wrong and what the plan must contain instead>", "location": "<file or story section>"}]}`
 
 ## Lessons
 
-If `.github/agents/lessons/qe-plan-verifier.md` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)
+If `.github/agents/lessons/qe-plan-verifier.md` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)

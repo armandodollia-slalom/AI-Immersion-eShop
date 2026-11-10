@@ -97,7 +97,7 @@ after(() => {
 
 test('workflow 1: plan loops with a fresh verifier until 10/10, logs denials, and goes stale when the story changes', () => {
   agentScript({
-    'qe-plan': [{ writePlan: [happySad[0]] }, { writePlan: happySad }],
+    'qe-plan': [{ writePlan: [happySad[0]] }, { writePlan: happySad.map((c, i) => ({ ...c, why: `protects rule ${i}` })), result: { status: 'done', cases: 2, summary: 'one case per outcome', excluded: [{ item: 'rate limits', why: 'out of scope' }] } }],
     'qe-plan-verifier': [
       { result: { score: 7, summary: 'no auth case', gaps: [{ case: null, category: 'missing-sad-path', subtype: 'auth', detail: 'no unauthenticated case' }] } },
       { result: { score: 10, summary: 'complete', gaps: [] } },
@@ -115,6 +115,13 @@ test('workflow 1: plan loops with a fresh verifier until 10/10, logs denials, an
   assert.deepEqual([denials[0].category, denials[0].subtype, denials[0].attributed_agent, denials[0].round], ['missing-sad-path', 'auth', 'qe-plan', 2]);
   assert.deepEqual(jsonl('verifier-runs.jsonl').map((r) => [r.score, r.passed]), [[7, false], [10, true]]);
   assert.match(prompts(), /Fix every gap:\n1\. \[missing-sad-path\/auth\] \(plan-wide\): no unauthenticated case/);
+  // Decision log: why the plan has these cases (each round past the precheck), and why the verifier ruled as it did.
+  const decisions = jsonl('decisions.jsonl');
+  assert.deepEqual(decisions.map((d) => [d.stage, d.round, d.decision]), [['plan', 2, 'plan-written'], ['plan-verify', 2, 'denied'], ['plan', 3, 'plan-written'], ['plan-verify', 3, 'approved']]);
+  assert.deepEqual([decisions[0].reason, decisions[0].excluded], ['one case per outcome', [{ item: 'rate limits', reason: 'out of scope' }]]);
+  assert.deepEqual(decisions[0].items.map((i) => [i.case, i.type, i.reason]), [['TC-DEMO-1-01', 'happy', 'protects rule 0'], ['TC-DEMO-1-02', 'sad', 'protects rule 1']]);
+  assert.deepEqual([decisions[1].agent, decisions[1].subject, decisions[1].reason, decisions[1].score], ['qe-plan-verifier', 'qe-plan', 'no auth case', 7]);
+  assert.deepEqual(decisions[1].items, [{ case: null, category: 'missing-sad-path', subtype: 'auth', location: null, root_stage: 'plan', reason: 'no unauthenticated case', subject: 'qe-plan' }]);
   // Every agent call is a separate child process flagged so hooks inside it stay quiet.
   assert.doesNotMatch(prompts(), /child=undefined/);
 
@@ -202,6 +209,12 @@ test('workflow 2: the dispatcher runs the review stage first, then automation lo
   ]);
   assert.match(prompts(), /traced these problems to the test cases themselves:\n1\. \[tests-different-path\] TC-DEMO-1-03/);
   assert.deepEqual(jsonl('arch-reviews.jsonl').map((r) => r.verdict), ['CHANGES_REQUESTED', 'APPROVED']);
+  const reviews = jsonl('decisions.jsonl').filter((d) => d.stage === 'review');
+  assert.deepEqual(reviews.map((d) => [d.agent, d.subject, d.decision, d.reason]), [['architecture-reviewer', 'implementer', 'changes-requested', 'bypasses ownership check'], ['architecture-reviewer', 'implementer', 'approved', 'ok']]);
+  assert.deepEqual([reviews[0].items[0].reason, reviews[0].items[0].fix], ['no owner check', 'check buyer id']);
+  const autoVerify = jsonl('decisions.jsonl').filter((d) => d.stage === 'automation-verify');
+  assert.deepEqual(autoVerify.map((d) => d.decision), ['denied', 'approved']);
+  assert.deepEqual(autoVerify[0].items.map((i) => [i.case, i.subject]), [['TC-DEMO-1-02', 'qe-automation'], ['TC-DEMO-1-03', 'qe-plan']]);
 
   assert.match(read(`${PLAN}/_index.md`), /automation-score: 10/);
   assert.match(pipeline(['status', 'DEMO-1']).stdout, /\[review\]\nDEMO-1 +review=APPROVED[\s\S]*\[qe\]\nDEMO-1 +plan=verified .*tests=1 +automation=verified\/verified/);
@@ -265,6 +278,8 @@ test('the Architecture Policy Pack gates each review round for code agents and l
     assert.equal(requests()[1].previous_review_id, 'r1', 'the fix is re-reviewed as an iteration of the first review');
     assert.equal(calls()['architecture-reviewer'], 1);
     assert.deepEqual(jsonl('arch-reviews.jsonl').slice(-2).map((r) => [r.reviewer ?? 'architecture-reviewer', r.verdict]), [['arch-review-agent', 'CHANGES_REQUESTED'], ['architecture-reviewer', 'APPROVED']]);
+    const policyDecisions = jsonl('decisions.jsonl').filter((d) => d.agent === 'arch-review-agent').slice(-2);
+    assert.deepEqual(policyDecisions.map((d) => [d.decision, d.policy_decision, d.items[0].rule, d.items[0].repeat]), [['changes-requested', 'BLOCK', 'SEC-001', true], ['approved', 'WARN', 'OBS-001', false]], 'policy passes are logged too');
     await waitFor(() => !['starting', 'running'].includes(stateOf('DEMO-1').automation.status));
 
     write('.github/agents/lessons/implementer.md', '## L1: Read secrets from configuration\n');
@@ -273,6 +288,35 @@ test('the Architecture Policy Pack gates each review round for code agents and l
     for (const suffix of ['', '.requests.jsonl', '.lessons.jsonl']) fs.rmSync(policyFile + suffix, { force: true });
     fs.rmSync(path.join(repo, '.github/agents/lessons/implementer.md'), { force: true });
   }
+});
+
+test('product bugs found by the integration tests are logged with their reasons and handed to the implementer', () => {
+  agentScript({
+    'qe-automation': [{ result: { status: 'product-bug', summary: 'coupon expiry is not checked', bugs: [{ case: 'TC-DEMO-1-02', expected: '400', actual: '200', location: 'src/Basket/Coupons.cs:1', why: 'no expiry check' }] } }],
+  });
+  const result = qe(['automate', 'DEMO-1', '--skip-tests']);
+  assert.equal(result.status, 1, result.stderr);
+  const bug = jsonl('decisions.jsonl').at(-1);
+  assert.deepEqual([bug.stage, bug.agent, bug.subject, bug.decision, bug.reason], ['automation', 'qe-automation', 'implementer', 'product-bug', 'coupon expiry is not checked']);
+  assert.deepEqual(bug.items, [{ case: 'TC-DEMO-1-02', expected: '400', actual: '200', location: 'src/Basket/Coupons.cs:1', reason: 'no expiry check' }]);
+  assert.match(JSON.parse(pipeline(['hook', 'session-start']).stdout).additionalContext, /QE found implementation bugs:\n- TC-DEMO-1-02: expected 400, got 200 \(no expiry check\) at src\/Basket\/Coupons\.cs:1/);
+});
+
+test('the lessons run holds a factory retro over the decision log and keeps only edits to allowed paths', () => {
+  agentScript({
+    'qe-lessons': [{
+      writeFiles: { 'docs/ai-pipeline/qe.md': '# QE\n\nState the expiry rule.\n', 'src/Basket/Coupons.cs': '// not allowed\n' },
+      result: { status: 'done', proposals: [{ file: 'docs/ai-pipeline/qe.md', why: 'TC-DEMO-1-02 caught a missing expiry check' }] },
+    }],
+  });
+  const result = qe(['lessons', '--no-push']);
+  assert.equal(result.status, 0, result.stderr);
+  const { status, branch } = JSON.parse(result.stdout.slice(result.stdout.indexOf('{')));
+  assert.equal(status, 'committed');
+  assert.match(prompts(), /## Factory retro[\s\S]*"casesThatCaughtBugs": \[\s*\{\s*"story": "DEMO-1",\s*"case": "TC-DEMO-1-02"/);
+  assert.deepEqual(gitc('show', '--name-only', '--format=', branch).stdout.trim().split('\n'), ['docs/ai-pipeline/qe.md']);
+  assert.match(gitc('log', '-1', '--format=%B', branch).stdout, /Proposed factory changes \(needs human review\)[\s\S]*`docs\/ai-pipeline\/qe\.md`: TC-DEMO-1-02 caught a missing expiry check/);
+  gitc('branch', '-D', branch);
 });
 
 test('pipeline start resets the review rounds even when hooks are disabled', () => {

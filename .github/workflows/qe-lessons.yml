@@ -1,7 +1,9 @@
 name: QE lessons
 
-# Turns recurring verifier denials into lessons for the QE agents (and calibration misses into
-# lessons for the verifiers), then opens a pull request with the changes for human review.
+# Turns recurring denials into lessons for the agents (verifier denials and calibration misses for
+# the QE agents and verifiers; architecture review findings, product bugs and PR check findings for
+# the implementer), runs the factory retro over the decision log (.agent-metrics/decisions.jsonl),
+# then opens a pull request with the changes for human review.
 on:
   schedule:
     - cron: '0 6 * * 1'

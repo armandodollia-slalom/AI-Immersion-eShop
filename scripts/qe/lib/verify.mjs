@@ -1,4 +1,5 @@
 import { runAgent } from '../../pipeline/lib/agents.mjs';
+import { logDecision } from '../../pipeline/lib/decisions.mjs';
 import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { appendJsonl, extractResult, log, nowIso } from '../../pipeline/lib/util.mjs';
 
@@ -66,6 +67,19 @@ export function runVerifier(config, { stage, story, round, task, producerVersion
       metricsFile(config, 'verifier-denials.jsonl'),
       verdict.gaps.map((gap) => ({ ...common, score: verdict.score, ...gap, attributed_agent: attributedAgent(stage, gap.root_stage) })),
     );
+    logDecision(config, {
+      stage: `${stage}-verify`,
+      story: story.key,
+      round,
+      agent: name,
+      agentVer: result.version,
+      subject: PRODUCER[stage],
+      subject_ver: producerVersion ?? null,
+      decision: verdict.passed ? 'approved' : 'denied',
+      reason: verdict.summary || null,
+      score: verdict.score,
+      items: verdict.gaps.map(({ detail, ...gap }) => ({ ...gap, reason: detail, subject: attributedAgent(stage, gap.root_stage) })),
+    });
   }
   log(`${name} round ${round}: ${verdict.score}/10, ${verdict.gaps.length} gap(s)`);
   return { ...verdict, verifierVersion: result.version };

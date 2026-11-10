@@ -1,0 +1,1 @@
+{"nodes": [{"id": "github_agents_pr_check_acceptance_agent", "label": "pr-check-acceptance critic", "file_type": "document", "source_file": ".github/agents/pr-check-acceptance.agent.md", "source_location": null, "_origin": "semantic"}], "edges": [], "hyperedges": []}
