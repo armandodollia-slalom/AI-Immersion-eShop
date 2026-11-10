@@ -39,7 +39,7 @@ before(() => {
   repo = path.join(tmp, 'shop');
   incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/board']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });

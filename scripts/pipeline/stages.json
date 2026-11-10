@@ -23,6 +23,14 @@
       "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": ["post-commit", "post-merge", "pre-push"],
       "commands": ["status", "metrics"]
+    },
+    {
+      "name": "board",
+      "description": "Moves the story's card on the GitHub Project board (In Progress, Testing, Pending Review with evidence) and picks up the stories assigned to you",
+      "cli": "scripts/board/board.mjs",
+      "hooks": ["story-start", "stop"],
+      "gitHooks": [],
+      "commands": ["status"]
     }
   ]
 }
