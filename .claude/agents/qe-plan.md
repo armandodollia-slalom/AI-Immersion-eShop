@@ -60,6 +60,9 @@ priority: P1
 - One behavior per case. Split cases instead of chaining many assertions about unrelated behavior.
 - Expected results must be concrete and observable. Never write "works correctly", "handles gracefully" or "appropriate error".
 - Do not invent requirements. If the story is ambiguous, write the case for the most literal reading and record the ambiguity under an `## Open questions` section in `_index.md`.
+- If the story has a **Test scope** section, follow it: put each area at the layer it names, and write no cases for what it marks out of scope.
+- Write sad paths only where the story states or directly implies the expected outcome. Behavior the story leaves undefined (for example concurrency, outages, exact error bodies) goes under `## Open questions`, never into a case's expected result.
+- Prefer fewer, sharper cases: one case per distinct observable behavior, with one exact command or request per step and no alternatives ("X or Y").
 - Use the seeded test-stack users and data where they fit (`testing/scenarios/default`, users alice and bob); describe any extra data the scenario must contain.
 
 ## Updating a plan

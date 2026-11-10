@@ -2,6 +2,8 @@
 // AI development pipeline: one entry point for agent and git lifecycle hooks, dispatched to the
 // stages listed in stages.json. See docs/ai-pipeline/README.md.
 import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/cli.mjs';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { isDisabled, loadConfig } from './lib/config.mjs';
 import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, sessionStartOutput } from './lib/dispatch.mjs';
 import { implChanges } from './lib/git.mjs';
@@ -12,6 +14,10 @@ import { nowIso } from './lib/util.mjs';
 const CMD = 'node scripts/pipeline/pipeline.mjs';
 
 const USAGE = `Usage: ${CMD} <command> [options]
+
+Run a story through the whole pipeline
+  implement <story> [--background] [--max-runs <n>]
+                                implementation agent in the story's own worktree, then review and QE
 
 Implementation agent
   start <story>                 set the story you are working on (resets its review)
@@ -28,7 +34,7 @@ Hooks (called by agent tool configs and .githooks)
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'max-runs']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -37,6 +43,12 @@ async function main() {
   const stages = loadStages();
 
   switch (command) {
+    case 'implement': {
+      const stage = stages.find((s) => s.name === 'implement');
+      const result = spawnSync(process.execPath, [path.join(config.root, stage.cli), 'run', ...rest], { cwd: config.root, stdio: 'inherit' });
+      return result.status ?? 1;
+    }
+
     case 'start': {
       const story = requireStory(config, positional[0]);
       setActiveStory(config, story.key);

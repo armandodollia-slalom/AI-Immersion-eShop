@@ -8,6 +8,7 @@ const emptyState = (key) => ({
   review: { rounds: 0, lastHash: null, lastVerdict: null, lastReason: null, approvedHash: null, unchangedBlocks: 0 },
   automation: { status: 'idle', requestedHash: null, verifiedHash: null, pid: null, log: null, bugs: [] },
   plan: { status: 'idle', pid: null, log: null },
+  implement: { status: 'idle', worktree: null, branch: null, runs: 0, pid: null, log: null, lastResult: null },
 });
 
 export const stateDir = (config) => path.join(config.root, config.stateDir);
@@ -41,7 +42,7 @@ const stateFile = (config, key) => path.join(stateDir(config), 'stories', `${key
 export function loadState(config, key) {
   const state = readJson(stateFile(config, key), null) ?? emptyState(key);
   const base = emptyState(key);
-  return { ...base, ...state, review: { ...base.review, ...state.review }, automation: { ...base.automation, ...state.automation }, plan: { ...base.plan, ...state.plan } };
+  return { ...base, ...state, review: { ...base.review, ...state.review }, automation: { ...base.automation, ...state.automation }, plan: { ...base.plan, ...state.plan }, implement: { ...base.implement, ...state.implement } };
 }
 
 export function saveState(config, state) {

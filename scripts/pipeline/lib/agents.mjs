@@ -22,6 +22,10 @@ export function buildPrompt(definition, task) {
 
 const childEnv = (extra = {}) => ({ ...process.env, PIPELINE_CHILD: '1', ...extra });
 
+// Modes: 'read' (reviewers, verifiers), 'write' (edits files, no git writes) and 'implement' (the
+// implementation agent: edits and commits on its own branch, but never pushes or rewrites history).
+const IMPLEMENT_DENIED_GIT = ['push', 'reset', 'stash', 'checkout', 'switch', 'rebase', 'worktree'];
+
 function cliInvocation(config, { prompt, mode, model }) {
   const cli = config.agent.cli;
   if (config.agent.cmd) {
@@ -30,7 +34,13 @@ function cliInvocation(config, { prompt, mode, model }) {
   if (cli === 'claude') {
     const args = ['-p', '--output-format', 'text'];
     if (model) args.push('--model', model);
-    if (mode === 'write') {
+    if (mode === 'implement') {
+      args.push(
+        '--permission-mode', 'acceptEdits',
+        '--allowedTools', 'Bash,Edit,Write,MultiEdit,Read,Glob,Grep,TodoWrite',
+        '--disallowedTools', IMPLEMENT_DENIED_GIT.map((c) => `Bash(git ${c}:*)`).join(','),
+      );
+    } else if (mode === 'write') {
       args.push(
         '--permission-mode', 'acceptEdits',
         '--allowedTools', 'Bash,Edit,Write,MultiEdit,Read,Glob,Grep,TodoWrite',
@@ -47,7 +57,9 @@ function cliInvocation(config, { prompt, mode, model }) {
   if (cli === 'copilot') {
     const args = ['-p', prompt, '-s', '--no-color'];
     if (model) args.push('--model', model);
-    if (mode === 'write') {
+    if (mode === 'implement') {
+      args.push('--allow-all-tools', ...IMPLEMENT_DENIED_GIT.flatMap((c) => ['--deny-tool', `shell(git ${c})`]));
+    } else if (mode === 'write') {
       args.push('--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git commit)', '--deny-tool', 'shell(git reset)');
     } else {
       args.push('--deny-tool', 'write', '--deny-tool', 'shell');
@@ -56,7 +68,7 @@ function cliInvocation(config, { prompt, mode, model }) {
   }
   if (cli === 'codex') {
     const outFile = path.join(os.tmpdir(), `pipeline-codex-${process.pid}-${Date.now()}.txt`);
-    const args = ['exec', '--skip-git-repo-check', '--sandbox', mode === 'write' ? 'workspace-write' : 'read-only', '--output-last-message', outFile];
+    const args = ['exec', '--skip-git-repo-check', '--sandbox', mode === 'read' ? 'read-only' : 'workspace-write', '--output-last-message', outFile];
     if (model) args.push('-m', model);
     args.push('-');
     return { cmd: 'codex', args, input: prompt, outFile };
