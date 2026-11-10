@@ -1,17 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { INSTALL_ROOT } from './config.mjs';
 import { log, parseFrontMatter, run, sha } from './util.mjs';
 
-// The checkout being worked on wins; the pipeline's own checkout is the fallback for a worktree whose
-// branch predates an agent.
-const firstExisting = (config, rel) => [config.root, INSTALL_ROOT].map((r) => path.join(r, rel)).find((f) => fs.existsSync(f)) ?? path.join(config.root, rel);
-
 export function agentDefinition(config, name) {
-  const file = firstExisting(config, path.join(config.agentsDir, `${name}.agent.md`));
+  const file = path.join(config.root, config.agentsDir, `${name}.agent.md`);
   const text = fs.readFileSync(file, 'utf8');
-  const lessonsFile = firstExisting(config, path.join(config.lessonsDir, `${name}.md`));
+  const lessonsFile = path.join(config.root, config.lessonsDir, `${name}.md`);
   const lessons = fs.existsSync(lessonsFile) ? fs.readFileSync(lessonsFile, 'utf8') : '';
   return { name, body: parseFrontMatter(text).body.trim(), lessons: lessons.trim(), version: sha(`${text}\n${lessons}`, 8) };
 }
@@ -27,6 +22,10 @@ export function buildPrompt(definition, task) {
 
 const childEnv = (extra = {}) => ({ ...process.env, PIPELINE_CHILD: '1', ...extra });
 
+// Modes: 'read' (reviewers, verifiers), 'write' (edits files, no git writes) and 'implement' (the
+// implementation agent: edits and commits on its own branch, but never pushes or rewrites history).
+const IMPLEMENT_DENIED_GIT = ['push', 'reset', 'stash', 'checkout', 'switch', 'rebase', 'worktree'];
+
 function cliInvocation(config, { prompt, mode, model }) {
   const cli = config.agent.cli;
   if (config.agent.cmd) {
@@ -36,11 +35,10 @@ function cliInvocation(config, { prompt, mode, model }) {
     const args = ['-p', '--output-format', 'text'];
     if (model) args.push('--model', model);
     if (mode === 'implement') {
-      // The implementation agent commits its own work on its feature branch; it never pushes or moves branches.
       args.push(
         '--permission-mode', 'acceptEdits',
         '--allowedTools', 'Bash,Edit,Write,MultiEdit,Read,Glob,Grep,TodoWrite',
-        '--disallowedTools', 'Bash(git push:*),Bash(git reset:*),Bash(git checkout:*),Bash(git switch:*),Bash(git rebase:*),Bash(git worktree:*)',
+        '--disallowedTools', IMPLEMENT_DENIED_GIT.map((c) => `Bash(git ${c}:*)`).join(','),
       );
     } else if (mode === 'write') {
       args.push(
@@ -60,7 +58,7 @@ function cliInvocation(config, { prompt, mode, model }) {
     const args = ['-p', prompt, '-s', '--no-color'];
     if (model) args.push('--model', model);
     if (mode === 'implement') {
-      args.push('--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git reset)', '--deny-tool', 'shell(git checkout)', '--deny-tool', 'shell(git worktree)');
+      args.push('--allow-all-tools', ...IMPLEMENT_DENIED_GIT.flatMap((c) => ['--deny-tool', `shell(git ${c})`]));
     } else if (mode === 'write') {
       args.push('--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git commit)', '--deny-tool', 'shell(git reset)');
     } else {

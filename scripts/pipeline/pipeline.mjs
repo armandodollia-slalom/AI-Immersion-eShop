@@ -20,7 +20,7 @@ Implementation agent
   status [story]                state of every stage for a story
 
 Pipeline
-  implement run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+  implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
                                 implement every story given, each on its own worktree and branch
   implement status [story]      progress of the latest implement run
   stages                        list the stages and the events they handle
@@ -43,7 +43,9 @@ async function main() {
   switch (command) {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
-      return runStage(config, stage, process.argv.slice(3), { inherit: true }).status;
+      const args = process.argv.slice(3);
+      if (args[0] && !['run', 'story', 'status', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      return runStage(config, stage, args, { inherit: true }).status;
     }
 
     case 'start': {

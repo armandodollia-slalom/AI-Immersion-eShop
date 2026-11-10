@@ -8,6 +8,7 @@ import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
+import { resolveStory } from '../pipeline/lib/stories.mjs';
 import { log, readJsonl, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
 
@@ -16,7 +17,7 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
-  run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+  run <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
         implement every <KEY>-<title>.md story given: each gets a worktree and branch, the implementer
         agent, the review loop and verified tests. Stories "Blocked by" another story in the batch run
         after it, stacked on its branch.
@@ -40,6 +41,17 @@ async function main() {
       if (!positional.length) {
         console.error(`Give a stories directory or story files.\n\n${USAGE}`);
         return 2;
+      }
+      // A story key (PROMO-3) stands for its file in the stories folder.
+      for (const [i, arg] of positional.entries()) {
+        if (/^[A-Z][A-Z0-9]*-\d+$/.test(arg) && !fs.existsSync(arg)) {
+          const story = resolveStory(config, arg);
+          if (!story) {
+            console.error(`No story file for ${arg} in ${config.storiesDir}.`);
+            return 2;
+          }
+          positional[i] = config.abs(story.file);
+        }
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
       const stories = plan(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force) });

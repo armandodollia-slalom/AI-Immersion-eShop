@@ -124,3 +124,9 @@ Return, in this order:
 4. Commands run and their results, including any existing tests you updated and why.
 5. **For `qe-automation`:** what to test per acceptance criterion — entry points (endpoints, methods, pages), edge cases and error paths you handled, events published or consumed, and scenario data the flow needs (users, catalog items, promotions).
 6. Story mismatches, decisions made, out-of-scope bugs noticed, and follow-ups.
+
+End the message with one line the pipeline parses:
+
+```text
+AGENT_RESULT: {"status": "done" | "blocked" | "needs-input", "summary": "<one line>", "reason": "<why, when not done>"}
+```

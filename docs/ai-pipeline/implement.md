@@ -7,6 +7,7 @@ node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-
 node scripts/pipeline/pipeline.mjs implement run path/to/stories               # one story at a time
 node scripts/pipeline/pipeline.mjs implement run path/to/stories --parallel 3 --pr
 node scripts/pipeline/pipeline.mjs implement run product-research/stories/PROMO-3-cart-pricing-evaluation-api.md
+node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, from storiesDir
 node scripts/pipeline/pipeline.mjs implement status                            # live progress, from another terminal
 node scripts/pipeline/pipeline.mjs implement metrics
 ```

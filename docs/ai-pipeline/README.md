@@ -12,11 +12,11 @@ Stages run in the order listed in `scripts/pipeline/stages.json`. All of them ar
 
 ```mermaid
 flowchart LR
+  C[You run a command<br/>implement run, pipeline start, qe plan] -->|worktree + headless agent| I
   I[Implementation agent<br/>pipeline start KEY ... pipeline done] -->|Stop / SubagentStop| D{{scripts/pipeline<br/>dispatcher}}
   D --> R[review stage]
   R -->|changes requested: block<br/>findings go back to the agent| I
   R -->|approved| Q[qe stage<br/>automation in the background]
-  C[You run a command<br/>implement run, pipeline start, qe plan] --> I
   P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
 ```
 
@@ -31,6 +31,8 @@ node scripts/pipeline/pipeline.mjs implement status
 Each story gets its own worktree and branch, the implementer agent, the architecture review loop and verified tests. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
 
 ## Using it as an implementation agent
+
+When you (or an agent you drive yourself) implement a story by hand instead:
 
 ```bash
 node scripts/pipeline/pipeline.mjs start PROMO-3   # begin a story (or work on a branch named after it)
@@ -119,7 +121,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
-node scripts/pipeline/pipeline.mjs implement run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
