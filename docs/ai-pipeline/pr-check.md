@@ -137,4 +137,4 @@ A mistake that recurs in 3 or more stories becomes a rule, proposed in a pull re
 
 ## In CI
 
-`.github/workflows/pr-check.yml` runs a report-only check (`--no-fix --comment`) when a PR gets the `ai-pr-check` label, or on demand. It needs the `ANTHROPIC_API_KEY` secret. Fixing stays local, where a person can watch the loop and review its commits. CI cannot commit to the PR, so its `pr-checks.jsonl` records are uploaded with the run artifact and do not count toward lessons; the Stop-hook runs for the same story do.
+`.github/workflows/pr-check.yml` runs a report-only check (`--no-fix --comment`) when a PR gets the `ai-pr-check` label, or on demand. It needs the chosen agent provider's credential (`ANTHROPIC_API_KEY` by default; see [CI setup](setup.md#ci) for Copilot, Codex and other CLIs). Fixing stays local, where a person can watch the loop and review its commits. CI cannot commit to the PR, so its `pr-checks.jsonl` records are uploaded with the run artifact and do not count toward lessons; the Stop-hook runs for the same story do.
