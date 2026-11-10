@@ -26,35 +26,38 @@ jobs:
   lessons:
     runs-on: ubuntu-latest
     env:
+      # Agent provider: repository variable PIPELINE_AGENT_CLI (claude, the default, copilot or codex),
+      # or PIPELINE_AGENT_CMD for any other CLI. See docs/ai-pipeline/setup.md#ci.
+      PIPELINE_AGENT_CLI: ${{ vars.PIPELINE_AGENT_CLI }}
+      PIPELINE_AGENT_CMD: ${{ vars.PIPELINE_AGENT_CMD }}
+      PIPELINE_AGENT_INSTALL: ${{ vars.PIPELINE_AGENT_INSTALL }}
+      PIPELINE_AGENT_API_KEY: ${{ secrets.PIPELINE_AGENT_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+      CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GH_TOKEN: ${{ github.token }}
       PIPELINE_BASE_REF: origin/${{ github.event.repository.default_branch }}
     steps:
-    - name: Skip without an agent API key
-      if: env.ANTHROPIC_API_KEY == ''
-      run: echo "::notice::ANTHROPIC_API_KEY is not set; skipping QE lessons." && exit 0
     - uses: actions/checkout@v4
-      if: env.ANTHROPIC_API_KEY != ''
       with:
         fetch-depth: 0
     - uses: actions/setup-node@v4
-      if: env.ANTHROPIC_API_KEY != ''
       with:
         node-version: 20.x
     - name: Install agent CLI
-      if: env.ANTHROPIC_API_KEY != ''
-      run: npm i -g @anthropic-ai/claude-code
+      id: agent
+      uses: ./.github/actions/setup-agent-cli
     - name: Configure git
-      if: env.ANTHROPIC_API_KEY != ''
+      if: steps.agent.outputs.ready == 'true'
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
     - name: Calibrate verifiers
-      if: env.ANTHROPIC_API_KEY != '' && (github.event_name == 'schedule' || inputs.calibrate)
+      if: steps.agent.outputs.ready == 'true' && (github.event_name == 'schedule' || inputs.calibrate)
       run: node scripts/qe/qe.mjs calibrate --sample 3
     - name: Metrics
-      if: env.ANTHROPIC_API_KEY != ''
+      if: steps.agent.outputs.ready == 'true'
       run: node scripts/qe/qe.mjs metrics | tee -a "$GITHUB_STEP_SUMMARY"
     - name: Propose lessons
-      if: env.ANTHROPIC_API_KEY != ''
+      if: steps.agent.outputs.ready == 'true'
       run: node scripts/qe/qe.mjs lessons

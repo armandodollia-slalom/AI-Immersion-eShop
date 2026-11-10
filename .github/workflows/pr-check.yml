@@ -33,34 +33,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
+      # Agent provider: repository variable PIPELINE_AGENT_CLI (claude, the default, copilot or codex),
+      # or PIPELINE_AGENT_CMD for any other CLI. See docs/ai-pipeline/setup.md#ci.
+      PIPELINE_AGENT_CLI: ${{ vars.PIPELINE_AGENT_CLI }}
+      PIPELINE_AGENT_CMD: ${{ vars.PIPELINE_AGENT_CMD }}
+      PIPELINE_AGENT_INSTALL: ${{ vars.PIPELINE_AGENT_INSTALL }}
+      PIPELINE_AGENT_API_KEY: ${{ secrets.PIPELINE_AGENT_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+      CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
       STORY: ${{ inputs.story }}
     steps:
-    - name: Skip without an agent API key
-      if: env.ANTHROPIC_API_KEY == ''
-      run: echo "::notice::ANTHROPIC_API_KEY is not set; skipping the PR check." && exit 0
     - uses: actions/checkout@v4
-      if: env.ANTHROPIC_API_KEY != ''
       with:
         fetch-depth: 0
     - uses: actions/setup-node@v4
-      if: env.ANTHROPIC_API_KEY != ''
       with:
         node-version: 20.x
-    - name: Install agent CLI and ffmpeg
-      if: env.ANTHROPIC_API_KEY != ''
-      run: |
-        npm i -g @anthropic-ai/claude-code
-        sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+    - name: Install agent CLI
+      id: agent
+      uses: ./.github/actions/setup-agent-cli
+    - name: Install ffmpeg
+      if: steps.agent.outputs.ready == 'true'
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
     - name: Note the metrics already on disk
-      if: env.ANTHROPIC_API_KEY != ''
+      if: steps.agent.outputs.ready == 'true'
       run: |
         mkdir -p "$RUNNER_TEMP/metrics-before"
         for f in .agent-metrics/*.jsonl; do [ -f "$f" ] && wc -l < "$f" > "$RUNNER_TEMP/metrics-before/$(basename "$f")"; done; true
     - name: Run the PR check
-      if: env.ANTHROPIC_API_KEY != ''
+      if: steps.agent.outputs.ready == 'true'
       run: |
         args=(run --pr "$PR_NUMBER" --no-fix --comment --json)
         if [ -n "$STORY" ]; then args+=(--story "$STORY"); fi
@@ -70,7 +74,7 @@ jobs:
         cat "$report" >> "$GITHUB_STEP_SUMMARY"
         exit "${status:-0}"
     - name: Commit the run's records to the PR branch
-      if: always() && env.ANTHROPIC_API_KEY != ''
+      if: always() && steps.agent.outputs.ready == 'true'
       run: |
         pr=$(gh pr view "$PR_NUMBER" --json headRefName,isCrossRepository)
         if [ "$(jq -r .isCrossRepository <<<"$pr")" = "true" ]; then echo "Fork PR: records are in the artifact only."; exit 0; fi
@@ -91,7 +95,7 @@ jobs:
         # Pushes made with GITHUB_TOKEN do not trigger workflows, so this does not re-run the check.
         git push --quiet origin "HEAD:$head" || echo "::warning::Could not push the records to $head (the branch moved); they are in the artifact."
     - name: Upload the run
-      if: always() && env.ANTHROPIC_API_KEY != ''
+      if: always() && steps.agent.outputs.ready == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: pr-check-${{ env.PR_NUMBER }}
