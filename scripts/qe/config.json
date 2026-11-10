@@ -3,6 +3,8 @@
   "scenariosDir": "testing/scenarios",
   "agent": {
     "models": {
+      "plan": null,
+      "automation": "sonnet",
       "verifier": null,
       "audit": null
     }
@@ -57,11 +59,20 @@
       "{casePrefix}",
       "{files}"
     ],
+    "dotnetBuild": [
+      "dotnet",
+      "build",
+      "{project}",
+      "--nologo",
+      "-v",
+      "quiet"
+    ],
     "dotnet": [
       "dotnet",
       "test",
       "--project",
       "{project}",
+      "--no-build",
       "--",
       "--filter-trait",
       "Story={story}"

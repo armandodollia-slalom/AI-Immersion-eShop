@@ -78,13 +78,33 @@ function cliInvocation(config, { prompt, mode, model }) {
   throw new Error(`Unknown agent CLI "${cli}". Use claude, copilot, codex or set PIPELINE_AGENT_CMD.`);
 }
 
+// Models are named by alias from agent.allowedModels (opus, sonnet, haiku), so one config works for
+// every CLI; agent.modelIds maps each alias to that CLI's own id. null means the CLI's default model.
+// PIPELINE_MODEL_OVERRIDE forces one alias for every agent (for experiments).
+export function resolveModel(config, alias) {
+  const chosen = process.env.PIPELINE_MODEL_OVERRIDE || alias;
+  if (!chosen) return null;
+  const allowed = config.agent.allowedModels ?? [];
+  if (!allowed.includes(chosen)) {
+    throw new Error(`Model "${chosen}" is not allowed. Allowed models: ${allowed.join(', ') || '(none)'} (agent.allowedModels in scripts/pipeline/config.json).`);
+  }
+  if (config.agent.cmd) return chosen;
+  const ids = config.agent.modelIds?.[config.agent.cli];
+  if (!ids?.[chosen]) {
+    log(`no ${chosen} model id for agent CLI "${config.agent.cli}" (agent.modelIds); using its default model`);
+    return null;
+  }
+  return ids[chosen];
+}
+
 // Every call is a brand-new headless process, so each agent (and each verifier round) starts with a
 // clean context containing only the prompt built here.
 export function runAgent(config, { name, task, mode = 'read', model = null, cwd = config.root, timeoutSec = 900, extraEnv = {} }) {
   const definition = agentDefinition(config, name);
   const prompt = buildPrompt(definition, task);
-  const invocation = cliInvocation(config, { prompt, mode, model: model ?? config.agent.models.default });
-  log(`agent ${name} (${mode}, ${config.agent.cmd ? 'custom' : config.agent.cli}, prompt ${definition.version}) started`);
+  const alias = process.env.PIPELINE_MODEL_OVERRIDE || model || config.agent.models.default || null;
+  const invocation = cliInvocation(config, { prompt, mode, model: resolveModel(config, alias) });
+  log(`agent ${name} (${mode}, ${config.agent.cmd ? 'custom' : config.agent.cli}${alias ? `, ${alias}` : ''}, prompt ${definition.version}) started`);
   const started = Date.now();
   const result = run(invocation.cmd, invocation.args, {
     cwd,

@@ -30,6 +30,16 @@ You turn a verified test plan into a scenario and automated tests. The plan is t
 - Do not mock the system under test. Use the real services on the test stack or the functional test fixtures.
 - Do not change product code under `src/`. If a test fails because the implementation does not do what the case requires, stop and report it (see below) instead of weakening the test.
 
+## Checks the pipeline runs on your work
+
+After you finish, the pipeline checks these before any verifier sees your tests. Each failure costs a whole extra round, so meet them all the first time:
+
+- Every case id in the plan appears in exactly one test name, and no test names an id that isn't in the plan.
+- `testing/scenarios/<scenario>/scenario.yaml` exists and `testing/teststack validate <scenario>` passes.
+- Every `.cs` file with tests for the story has `[Trait("Story", "<KEY>")]`. Put it on the class, or on every test method.
+- `dotnet build <project>` passes, then `dotnet test --project <project> --no-build -- --filter-trait "Story=<KEY>"` passes. A new test project must be in `eShop.slnx` and use package versions from `Directory.Packages.props`.
+- `npx playwright test -c playwright.teststack.config.ts --grep TC-<KEY>- <your specs>` passes.
+
 ## Running
 
 - Bring the stack up with `testing/teststack up` if it is not running, then run your specs with `npx playwright test -c playwright.teststack.config.ts --grep TC-<KEY>-`.
