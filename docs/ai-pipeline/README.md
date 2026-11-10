@@ -4,6 +4,7 @@ Agents take a user story from implementation to reviewed code with verified test
 
 | Stage | Folder | What it does | Docs |
 | --- | --- | --- | --- |
+| `implement` | `scripts/implement/` | Starts the `implementer` agent for a story in its own worktree and loops it on review findings until approved | [implement.md](implement.md) |
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 
@@ -11,6 +12,7 @@ Stages run in the order listed in `scripts/pipeline/stages.json`. All of them ar
 
 ```mermaid
 flowchart LR
+  C[pipeline implement KEY] -->|worktree + headless agent| I
   I[Implementation agent<br/>pipeline start KEY ... pipeline done] -->|Stop / SubagentStop| D{{scripts/pipeline<br/>dispatcher}}
   D --> R[review stage]
   R -->|changes requested: block<br/>findings go back to the agent| I
@@ -19,7 +21,17 @@ flowchart LR
   P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
 ```
 
+## Running a story
+
+```bash
+node scripts/pipeline/pipeline.mjs implement PROMO-3 [--background]   # the whole pipeline for one story
+```
+
+This is the usual entry point: the `implement` stage creates the story's worktree and branch, runs the implementation agent there, and the rest follows from its hooks. See [implement.md](implement.md).
+
 ## Using it as an implementation agent
+
+When you (or an agent you drive yourself) implement a story by hand instead:
 
 ```bash
 node scripts/pipeline/pipeline.mjs start PROMO-3   # begin a story (or work on a branch named after it)
@@ -97,6 +109,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 ## Commands
 
 ```bash
+node scripts/pipeline/pipeline.mjs implement KEY [--background] [--max-runs n]
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
