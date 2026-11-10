@@ -27,6 +27,16 @@
     ],
     "BeforeTool": [
       {
+        "hooks": [
+          {
+            "name": "pipeline-story-guard",
+            "type": "command",
+            "command": "node \"$GEMINI_PROJECT_DIR/scripts/hooks/gemini-adapter.mjs\" PreToolUse -- node scripts/pipeline/pipeline.mjs hook pre-tool",
+            "timeout": 10000
+          }
+        ]
+      },
+      {
         "matcher": "search_file_content|grep_search|glob|run_shell_command",
         "hooks": [
           {

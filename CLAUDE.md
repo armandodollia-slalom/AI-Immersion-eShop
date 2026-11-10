@@ -22,11 +22,15 @@ Every e2e test is recorded on video (`video` in `playwright.config.ts`). By defa
 
 Skip this only for backend-only, docs-only or no-behavior-change work, and say so in your summary.
 
+## Story and epic folders
+
+Agents ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
+
 ## AI development pipeline
 
 Stories go through the agent pipeline described in `docs/ai-pipeline/README.md` (implementation, architecture review, then QE test plans and automated tests).
 
-- To run a story through the whole pipeline, run `node scripts/pipeline/pipeline.mjs implement <KEY>` (add `--background` to run several at once). It starts the `implementer` agent in the story's own worktree under `.claude/worktrees/`; you don't need the steps below.
+- To run stories through the whole pipeline, run `node scripts/pipeline/pipeline.mjs implement run <KEY|dir|story.md>...` (`--parallel N` runs several at once). It starts the `implementer` agent in each story's own worktree and branch; you don't need the steps below.
 
 - When you start implementing a story, run `node scripts/pipeline/pipeline.mjs start <KEY>` (for example `PROMO-3`).
 - When your line of work for that story is complete, run `node scripts/pipeline/pipeline.mjs done` before you finish. The Stop hook then runs an architecture review. If it blocks with findings, fix them and finish again; tests are written automatically after approval.
