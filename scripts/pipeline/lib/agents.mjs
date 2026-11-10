@@ -1,12 +1,17 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { INSTALL_ROOT } from './config.mjs';
 import { log, parseFrontMatter, run, sha } from './util.mjs';
 
+// The checkout being worked on wins; the pipeline's own checkout is the fallback for a worktree whose
+// branch predates an agent.
+const firstExisting = (config, rel) => [config.root, INSTALL_ROOT].map((r) => path.join(r, rel)).find((f) => fs.existsSync(f)) ?? path.join(config.root, rel);
+
 export function agentDefinition(config, name) {
-  const file = path.join(config.root, config.agentsDir, `${name}.agent.md`);
+  const file = firstExisting(config, path.join(config.agentsDir, `${name}.agent.md`));
   const text = fs.readFileSync(file, 'utf8');
-  const lessonsFile = path.join(config.root, config.lessonsDir, `${name}.md`);
+  const lessonsFile = firstExisting(config, path.join(config.lessonsDir, `${name}.md`));
   const lessons = fs.existsSync(lessonsFile) ? fs.readFileSync(lessonsFile, 'utf8') : '';
   return { name, body: parseFrontMatter(text).body.trim(), lessons: lessons.trim(), version: sha(`${text}\n${lessons}`, 8) };
 }
@@ -30,7 +35,14 @@ function cliInvocation(config, { prompt, mode, model }) {
   if (cli === 'claude') {
     const args = ['-p', '--output-format', 'text'];
     if (model) args.push('--model', model);
-    if (mode === 'write') {
+    if (mode === 'implement') {
+      // The implementation agent commits its own work on its feature branch; it never pushes or moves branches.
+      args.push(
+        '--permission-mode', 'acceptEdits',
+        '--allowedTools', 'Bash,Edit,Write,MultiEdit,Read,Glob,Grep,TodoWrite',
+        '--disallowedTools', 'Bash(git push:*),Bash(git reset:*),Bash(git checkout:*),Bash(git switch:*),Bash(git rebase:*),Bash(git worktree:*)',
+      );
+    } else if (mode === 'write') {
       args.push(
         '--permission-mode', 'acceptEdits',
         '--allowedTools', 'Bash,Edit,Write,MultiEdit,Read,Glob,Grep,TodoWrite',
@@ -47,7 +59,9 @@ function cliInvocation(config, { prompt, mode, model }) {
   if (cli === 'copilot') {
     const args = ['-p', prompt, '-s', '--no-color'];
     if (model) args.push('--model', model);
-    if (mode === 'write') {
+    if (mode === 'implement') {
+      args.push('--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git reset)', '--deny-tool', 'shell(git checkout)', '--deny-tool', 'shell(git worktree)');
+    } else if (mode === 'write') {
       args.push('--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git commit)', '--deny-tool', 'shell(git reset)');
     } else {
       args.push('--deny-tool', 'write', '--deny-tool', 'shell');
@@ -56,7 +70,7 @@ function cliInvocation(config, { prompt, mode, model }) {
   }
   if (cli === 'codex') {
     const outFile = path.join(os.tmpdir(), `pipeline-codex-${process.pid}-${Date.now()}.txt`);
-    const args = ['exec', '--skip-git-repo-check', '--sandbox', mode === 'write' ? 'workspace-write' : 'read-only', '--output-last-message', outFile];
+    const args = ['exec', '--skip-git-repo-check', '--sandbox', mode === 'read' ? 'read-only' : 'workspace-write', '--output-last-message', outFile];
     if (model) args.push('-m', model);
     args.push('-');
     return { cmd: 'codex', args, input: prompt, outFile };

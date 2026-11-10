@@ -1,0 +1,75 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+const STORY_FILE = /^([A-Z][A-Z0-9]*-\d+)-.+\.md$/;
+const KEY = /\b([A-Z][A-Z0-9]*-\d+)\b/g;
+
+// The keys on a story's "**Blocked by:**" line, e.g. "* **Blocked by:** [PROMO-1](PROMO-1-....md), [PROMO-2](...)".
+export function blockersOf(text, key) {
+  const line = /^[ \t]*[*-]?[ \t]*\*\*Blocked by:?\*\*:?(.*)$/im.exec(text)?.[1] ?? '';
+  return [...new Set([...line.matchAll(KEY)].map((m) => m[1]).filter((k) => k !== key))];
+}
+
+const keyOrder = (a, b) => {
+  const [pa, na] = a.split(/-(?=\d+$)/);
+  const [pb, nb] = b.split(/-(?=\d+$)/);
+  return pa === pb ? Number(na) - Number(nb) : pa.localeCompare(pb);
+};
+
+// Story files from directories (not recursive) and individual files, named <KEY>-<title>.md.
+export function collectStories(inputs, cwd = process.cwd()) {
+  const files = [];
+  for (const input of inputs) {
+    const abs = path.resolve(cwd, input);
+    if (!fs.existsSync(abs)) throw new Error(`No such file or directory: ${input}`);
+    if (fs.statSync(abs).isDirectory()) {
+      for (const name of fs.readdirSync(abs).sort()) if (STORY_FILE.test(name)) files.push(path.join(abs, name));
+    } else if (STORY_FILE.test(path.basename(abs))) {
+      files.push(abs);
+    } else {
+      throw new Error(`${input} is not a story file (expected <KEY>-<title>.md, for example PROMO-3-cart-pricing.md).`);
+    }
+  }
+  const byKey = new Map();
+  for (const file of files) {
+    const name = path.basename(file);
+    const key = STORY_FILE.exec(name)[1];
+    if (byKey.has(key) && byKey.get(key).file !== file) throw new Error(`Two story files for ${key}: ${byKey.get(key).file} and ${file}.`);
+    const text = fs.readFileSync(file, 'utf8');
+    byKey.set(key, {
+      key,
+      file,
+      slug: name.slice(0, -3),
+      title: /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? key,
+      blockedBy: blockersOf(text, key),
+      implemented: /^##\s+Implementation Notes\b/m.test(text),
+    });
+  }
+  return [...byKey.values()].sort((a, b) => keyOrder(a.key, b.key));
+}
+
+// Orders stories so every story comes after the stories in the same batch that block it. Blockers
+// outside the batch are left to the implementer, which checks that their code exists.
+export function orderStories(stories) {
+  const byKey = new Map(stories.map((s) => [s.key, s]));
+  for (const s of stories) s.deps = s.blockedBy.filter((k) => byKey.has(k));
+  const order = [];
+  const mark = new Map();
+  const visit = (story, trail) => {
+    if (mark.get(story.key) === 'done') return;
+    if (mark.get(story.key) === 'visiting') throw new Error(`Dependency cycle between stories: ${[...trail, story.key].join(' -> ')}.`);
+    mark.set(story.key, 'visiting');
+    for (const dep of story.deps) visit(byKey.get(dep), [...trail, story.key]);
+    mark.set(story.key, 'done');
+    order.push(story);
+  };
+  for (const s of stories) visit(s, []);
+  return order;
+}
+
+export const branchFor = (config, story) => `${config.implement.branchPrefix}${story.slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 60).replace(/-+$/, '')}`;
+
+export function worktreeFor(config, story) {
+  const dir = config.implement.worktreeDir.replace('{repo}', path.basename(config.root));
+  return path.resolve(config.root, dir, story.key.toLowerCase());
+}

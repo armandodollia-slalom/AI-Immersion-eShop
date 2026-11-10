@@ -4,6 +4,7 @@ Agents take a user story from implementation to reviewed code with verified test
 
 | Stage | Folder | What it does | Docs |
 | --- | --- | --- | --- |
+| `implement` | `scripts/implement/` | Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages below | [implement.md](implement.md) |
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 
@@ -18,6 +19,16 @@ flowchart LR
   S[Story committed] -->|post-commit / post-merge| D2{{dispatcher}} --> QP[qe stage<br/>test plan in the background]
   P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
 ```
+
+## Implementing a folder of stories
+
+```bash
+node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-run   # order, branches, bases
+node scripts/pipeline/pipeline.mjs implement run path/to/stories [--parallel 2] [--pr]
+node scripts/pipeline/pipeline.mjs implement status
+```
+
+Each story gets its own worktree and branch, the implementer agent, the architecture review loop and verified tests. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
 
 ## Using it as an implementation agent
 
@@ -98,6 +109,8 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
+node scripts/pipeline/pipeline.mjs implement run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]
