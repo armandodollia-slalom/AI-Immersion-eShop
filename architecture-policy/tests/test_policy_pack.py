@@ -15,6 +15,7 @@ sys.path.insert(0, str(AGENTS))
 # Never write test runs into the developer's real failure history.
 _TMP = tempfile.TemporaryDirectory()
 os.environ["ARCH_HISTORY_DB"] = str(Path(_TMP.name) / "history.sqlite")
+os.environ["ARCH_HISTORY_LEDGER"] = "off"
 os.environ.pop("ARCH_HISTORY", None)
 os.environ.pop("ARCH_REVIEW_LLM_CMD", None)
 
@@ -321,6 +322,60 @@ class LessonsTests(unittest.TestCase):
         self.assertIn("SEC-001", advice["lessons"]["prompt"])
         iters = agent.get_lessons({"agent": "test-agent", "history_db": db})["iterations"]
         self.assertEqual(iters["reviews"], 3)
+
+
+class SharedLedgerTests(unittest.TestCase):
+    """Two teammates (two local sqlite stores) share lessons through the git-tracked ledger."""
+
+    def setUp(self):
+        self.ledger = Path(tempfile.mkdtemp(dir=_TMP.name)) / "arch-history"
+        os.environ["ARCH_HISTORY_LEDGER"] = str(self.ledger)
+
+    def tearDown(self):
+        os.environ["ARCH_HISTORY_LEDGER"] = "off"
+
+    def ledger_files(self):
+        return sorted(p.relative_to(self.ledger).as_posix() for p in self.ledger.glob("*/*.json"))
+
+    def test_teammate_lessons_include_denials_recorded_elsewhere(self):
+        alice, bob = fresh_db(), fresh_db()
+        agent = ArchReviewAgent(pack=PACK)
+        req = {"requester": "test-agent", "files": {SECRET_FILE: SECRET}, "context": {"history_db": alice},
+               "options": {"write_evidence": False}}
+        agent.review(req)
+        agent.review(req)
+        run("pre_commit", {SECRET_FILE: SECRET}, record_history=True, history_db=alice, caller="git-pre-commit")
+        files = self.ledger_files()
+        self.assertEqual([f.split("/")[1].split("-")[0] for f in files].count("run"), 2)
+        self.assertEqual([f.split("/")[1].split("-")[0] for f in files].count("review"), 2)
+        doc = json.loads((self.ledger / files[0]).read_text())
+        self.assertEqual(doc["schema"], "arch-history-ledger/v1")
+        self.assertIsNone(doc.get("run", {}).get("bundle_path"))
+
+        bob_lessons = architecture.get_lessons({"agent": "test-agent", "history_db": bob}, pack=PACK)
+        self.assertEqual(bob_lessons["denial_stats"]["denied_runs"], 2)
+        self.assertIn("SEC-001", bob_lessons["prompt"])
+        self.assertEqual(bob_lessons["iterations"]["reviews"], 2)
+        self.assertEqual(architecture.get_lessons({"agent": "test-agent", "history_db": bob}, pack=PACK)
+                         ["denial_stats"]["runs"], 2, "re-import must be idempotent")
+
+    def test_newer_fields_are_ignored_and_bad_files_skipped(self):
+        db = fresh_db()
+        run("pre_commit", {SECRET_FILE: SECRET}, record_history=True, history_db=fresh_db(), caller="test-agent")
+        (name,) = self.ledger_files()
+        doc = json.loads((self.ledger / name).read_text())
+        doc["run"]["added_by_a_newer_teammate"] = "x"
+        doc["findings"][0]["confidence"] = 0.9
+        (self.ledger / name).write_text(json.dumps(doc))
+        (self.ledger / name).with_name("run-broken.json").write_text("<<<<<<< HEAD")
+        self.assertEqual(architecture.history_mod.sync_ledger(PACK, db)["imported"], 1)
+        self.assertEqual(architecture.get_lessons({"agent": "test-agent", "history_db": db}, pack=PACK)
+                         ["denial_stats"]["denied_runs"], 1)
+
+    def test_per_call_store_is_isolated_unless_a_ledger_is_configured(self):
+        os.environ.pop("ARCH_HISTORY_LEDGER")
+        run("pre_commit", {SECRET_FILE: SECRET}, record_history=True, history_db=fresh_db(), caller="test-agent")
+        self.assertEqual(self.ledger_files(), [])
 
 
 class PackIntegrityTests(unittest.TestCase):

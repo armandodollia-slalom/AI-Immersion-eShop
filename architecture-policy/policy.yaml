@@ -67,10 +67,17 @@ evidence:
 history:
   enabled: true
   store: sqlite
-  # Local system of record (gitignored). Override with $ARCH_HISTORY_DB, e.g. a persistent CI cache volume.
+  # Local query store (gitignored), rebuilt from the ledger below. Override with $ARCH_HISTORY_DB, e.g. a persistent CI cache volume.
   path: evidence/history/architecture-history.sqlite
   retention_days: 365
   record_outcomes: [BLOCK, WARN, WAIVED]
+  # Team-wide store in git: each agent run/review is also written as one JSON file under this repo-relative path and
+  # committed with the work; every local sqlite store imports teammates' files before answering a query, so lessons
+  # learn from the whole team. One file per event, so merges never conflict. $ARCH_HISTORY_LEDGER=off|<path> overrides.
+  ledger:
+    enabled: true
+    path: .agent-metrics/arch-history
+    exclude_callers: [git-pre-commit, ci, selfcheck, unspecified, unittest]
   # Team-wide export: OTLP/HTTP JSON logs to an OpenTelemetry Collector when $ARCH_OTLP_ENDPOINT
   # (or $OTEL_EXPORTER_OTLP_ENDPOINT) is set. Best effort; never changes a decision.
   otlp:
