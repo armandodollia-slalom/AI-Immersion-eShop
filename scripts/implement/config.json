@@ -1,0 +1,12 @@
+{
+  "agent": {
+    "models": {
+      "implementer": null
+    }
+  },
+  "implement": {
+    "worktreeDir": ".claude/worktrees",
+    "maxRuns": 6,
+    "timeoutSec": 5400
+  }
+}
