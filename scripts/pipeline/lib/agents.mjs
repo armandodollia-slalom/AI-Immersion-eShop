@@ -79,18 +79,20 @@ function cliInvocation(config, { prompt, mode, model }) {
 }
 
 // Models are named by alias from agent.allowedModels (opus, sonnet, haiku), so one config works for
-// every CLI; agent.modelIds maps each alias to that CLI's own id. null means the CLI's default model.
+// every CLI; agent.modelIds maps each alias to that CLI's own id. A stage may also pass a CLI id
+// directly, but only one that an allowed alias maps to. null means the CLI's default model.
 // PIPELINE_MODEL_OVERRIDE forces one alias for every agent (for experiments).
-export function resolveModel(config, alias) {
-  const chosen = process.env.PIPELINE_MODEL_OVERRIDE || alias;
+export function resolveModel(config, requested) {
+  const chosen = process.env.PIPELINE_MODEL_OVERRIDE || requested;
   if (!chosen) return null;
   const allowed = config.agent.allowedModels ?? [];
+  const ids = config.agent.modelIds?.[config.agent.cli] ?? {};
   if (!allowed.includes(chosen)) {
+    if (allowed.some((alias) => ids[alias] === chosen)) return chosen;
     throw new Error(`Model "${chosen}" is not allowed. Allowed models: ${allowed.join(', ') || '(none)'} (agent.allowedModels in scripts/pipeline/config.json).`);
   }
   if (config.agent.cmd) return chosen;
-  const ids = config.agent.modelIds?.[config.agent.cli];
-  if (!ids?.[chosen]) {
+  if (!ids[chosen]) {
     log(`no ${chosen} model id for agent CLI "${config.agent.cli}" (agent.modelIds); using its default model`);
     return null;
   }
@@ -139,7 +141,7 @@ export function runAgentAsync(config, { name, task, mode = 'read', model = null,
     fs.writeFileSync(file, prompt);
     prompt = `Read the file ${path.relative(cwd, file).replace(/\\/g, '/')} and follow the instructions in it exactly; it is your complete task.`;
   }
-  const invocation = cliInvocation(config, { prompt, mode, model: model ?? config.agent.models.default });
+  const invocation = cliInvocation(config, { prompt, mode, model: resolveModel(config, model || config.agent.models.default || null) });
   // On Windows, npm-installed CLIs are .cmd shims that only start through a shell.
   const useShell = process.platform === 'win32' && !config.agent.cmd;
   const quote = (a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);

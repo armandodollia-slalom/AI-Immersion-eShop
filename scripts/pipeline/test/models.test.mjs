@@ -26,6 +26,20 @@ test('resolveModel rejects models outside agent.allowedModels', () => {
   assert.throws(() => resolveModel(base(), 'gpt-5'), /Model "gpt-5" is not allowed\. Allowed models: opus, sonnet, haiku/);
 });
 
+test('resolveModel accepts a CLI id only when an allowed alias maps to it', () => {
+  assert.equal(resolveModel(base('copilot'), 'claude-sonnet-5.5'), 'claude-sonnet-5.5');
+  assert.throws(() => resolveModel(base('copilot'), 'claude-fable-5.2'), /not allowed/);
+  assert.throws(() => resolveModel(base('claude'), 'claude-sonnet-5.5'), /not allowed/, 'an id for another CLI is not allowed');
+});
+
+test('every PR-check role model is allowed for its CLI', () => {
+  const config = loadConfig('pr-check');
+  for (const [cli, roles] of Object.entries(config.prCheck.models)) {
+    const forCli = { agent: { ...config.agent, cli, cmd: null } };
+    for (const [role, model] of Object.entries(roles)) assert.doesNotThrow(() => resolveModel(forCli, model), `${cli} ${role}: ${model}`);
+  }
+});
+
 test('resolveModel falls back to the CLI default when the CLI has no id for the alias', () => {
   assert.equal(resolveModel(base('copilot'), 'haiku'), null);
   assert.equal(resolveModel(base('codex'), 'opus'), null);

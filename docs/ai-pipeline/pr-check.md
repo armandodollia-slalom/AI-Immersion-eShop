@@ -99,12 +99,12 @@ The judge and critics run on the largest models. Defaults are in `scripts/pr-che
 
 | Role | Claude Code | Copilot CLI |
 | --- | --- | --- |
-| Judge | `opus` | `claude-fable-5.2` |
+| Judge | `opus` | `claude-opus-5.5` |
 | Acceptance, flow, design, video critics, fixer | `opus` | `claude-opus-5.5` |
-| Defender | `opus` | `claude-opus-5` (a different model from the critics, so the debate isn't one model arguing with itself) |
+| Defender | `opus` | `claude-sonnet-5.5` (a different model from the critics, so the debate isn't one model arguing with itself) |
 | Style critic | `sonnet` | `claude-sonnet-5.5` |
 
-Override one role with `PR_CHECK_MODEL_<ROLE>`, for example `PR_CHECK_MODEL_JUDGE=claude-opus-5.5`.
+Every model must be allowed by `agent.allowedModels` in `scripts/pipeline/config.json` (currently `opus`, `sonnet` and `haiku`, or the CLI id one of them maps to in `agent.modelIds`); see [qe.md](qe.md#models). Override one role with `PR_CHECK_MODEL_<ROLE>`, for example `PR_CHECK_MODEL_JUDGE=sonnet`.
 
 ## Files
 
