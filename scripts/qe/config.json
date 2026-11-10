@@ -67,16 +67,27 @@
       "-v",
       "quiet"
     ],
-    "dotnet": [
-      "dotnet",
-      "test",
-      "--project",
-      "{project}",
-      "--no-build",
-      "--",
-      "--filter-trait",
-      "Story={story}"
-    ]
+    "dotnet": {
+      "xunit": [
+        "dotnet",
+        "test",
+        "--project",
+        "{project}",
+        "--no-build",
+        "--",
+        "--filter-trait",
+        "Story={story}"
+      ],
+      "mstest": [
+        "dotnet",
+        "test",
+        "--project",
+        "{project}",
+        "--no-build",
+        "--filter",
+        "TestCategory={story}"
+      ]
+    }
   },
   "categories": {
     "plan": [
