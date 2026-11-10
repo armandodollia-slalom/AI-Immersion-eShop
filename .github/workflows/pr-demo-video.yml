@@ -1,11 +1,11 @@
 name: PR demo video
 
-# Records the e2e specs a pull request adds or changes (e2e/teststack/*.spec.ts) on the test stack and
-# adds the videos to a "Demo video" section of the PR description, with an animated preview. Videos are
-# stored on the `pr-videos` branch (one squashed commit); a closed, unmerged PR's videos are removed.
-# The PR check's video critic reads the same links. Backend PRs also get an "API changes" section: the HTTP
-# endpoints the PR adds, changes or removes, documented from the stack's OpenAPI with example calls the specs
-# made. See docs/ai-pipeline/pr-demo-video.md.
+# Records the e2e specs a pull request adds or changes (e2e/teststack/*.spec.ts) on the test stack and,
+# when the PR changes the frontend, adds the videos to a "Demo video" section of the PR description, with
+# an animated preview. Videos are stored on the `pr-videos` branch (one squashed commit); a closed, unmerged
+# PR's videos are removed. The PR check's video critic reads the same links. PRs that change only the
+# backend get an "API changes" section instead: the HTTP endpoints the PR adds, changes or removes,
+# documented from the stack's OpenAPI with example calls the specs made. See docs/ai-pipeline/pr-demo-video.md.
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, closed]
@@ -41,21 +41,28 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: 20.x
-    - name: Find the e2e specs and backend code this PR changes
+    - name: Find what this PR changes
       id: specs
       run: |
         list=$(node scripts/pr-video/pr-video.mjs specs --base "$BASE_REF" | paste -sd, -)
-        backend=$(node scripts/pr-video/pr-video.mjs backend --base "$BASE_REF")
-        echo "Specs: ${list:-none}; backend API changes: $backend"
+        scope=$(node scripts/pr-video/pr-video.mjs scope --base "$BASE_REF")
+        eval "$scope"
+        echo "Specs: ${list:-none}; $(echo $scope)"
+        echo "$scope" >> "$GITHUB_OUTPUT"
         echo "list=$list" >> "$GITHUB_OUTPUT"
-        if [ -n "$list" ] || [ "$backend" = true ]; then echo "stack=true" >> "$GITHUB_OUTPUT"; fi
+        # Specs run for PRs that get a video or an API summary (their API calls are the examples), and
+        # backend-only PRs start the stack even without a spec, for the OpenAPI details.
+        if [ -n "$list" ] && { [ "$video" = true ] || [ "$api" = true ]; }; then echo "record=true" >> "$GITHUB_OUTPUT"; fi
+        if { [ -n "$list" ] && [ "$video" = true ]; } || [ "$api" = true ]; then echo "stack=true" >> "$GITHUB_OUTPUT"; fi
+    - name: No frontend change
+      if: steps.specs.outputs.video != 'true'
+      run: node scripts/pr-video/pr-video.mjs publish --pr "$PR_NUMBER" --remove
     - name: No spec changed
-      if: steps.specs.outputs.list == ''
+      if: steps.specs.outputs.video == 'true' && steps.specs.outputs.list == ''
       run: >-
         node scripts/pr-video/pr-video.mjs publish --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
         --note "No \`e2e/teststack/*.spec.ts\` changed in this PR, so there is no demo video. User-facing changes need one: see \`.github/skills/feature-demo-video/SKILL.md\`."
-
-    # Backend PRs start the stack even without a changed spec, so their API summary gets OpenAPI details.
+    # Backend-only PRs start the stack even without a changed spec, so their API summary gets OpenAPI details.
     - name: Setup .NET (global.json)
       if: steps.specs.outputs.stack == 'true'
       uses: actions/setup-dotnet@v4
@@ -74,14 +81,14 @@ jobs:
       run: testing/teststack up
     - name: Record the changed specs
       id: record
-      if: steps.specs.outputs.list != ''
+      if: steps.specs.outputs.record == 'true'
       env:
         E2E_KEEP_VIDEOS: 1
         E2E_API_LOG: 1
         SPECS: ${{ steps.specs.outputs.list }}
       run: npx playwright test -c playwright.teststack.config.ts --project scenarios --no-deps ${SPECS//,/ } || echo "failed=true" >> "$GITHUB_OUTPUT"
     - name: Add the videos to the PR
-      if: steps.specs.outputs.list != ''
+      if: steps.specs.outputs.record == 'true' && steps.specs.outputs.video == 'true'
       env:
         SPECS: ${{ steps.specs.outputs.list }}
       run: node scripts/pr-video/pr-video.mjs publish --pr "$PR_NUMBER" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
@@ -91,7 +98,7 @@ jobs:
         SPECS: ${{ steps.specs.outputs.list }}
       run: node scripts/pr-video/pr-video.mjs api --pr "$PR_NUMBER" --base "$BASE_REF" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
     - name: Upload the videos
-      if: always() && steps.specs.outputs.list != ''
+      if: always() && steps.specs.outputs.record == 'true' && steps.specs.outputs.video == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: pr-demo-video-${{ env.PR_NUMBER }}

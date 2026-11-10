@@ -8,7 +8,7 @@ import { parseArgs } from '../pipeline/lib/cli.mjs';
 import { repoRoot } from '../pipeline/lib/config.mjs';
 import { log, setLogTag } from '../pipeline/lib/util.mjs';
 import { repoSlug } from '../pr-check/lib/github.mjs';
-import { API_MARKERS, DEFAULT_OPENAPI, allEndpoints, buildApiSummary, changedEndpoints, isBackendChange, loadOpenApi, recordedExchanges, renderApiSection } from './lib/api-summary.mjs';
+import { API_MARKERS, DEFAULT_OPENAPI, allEndpoints, buildApiSummary, changeScope, changedEndpoints, loadOpenApi, recordedExchanges, renderApiSection } from './lib/api-summary.mjs';
 import { changedSpecs, prFolder, publishFolder, renderSection, stageVideos, writePrSection } from './lib/pr-video.mjs';
 
 setLogTag('pr-video');
@@ -17,17 +17,20 @@ const USAGE = `Usage: node scripts/pr-video/pr-video.mjs <command> [options]
 
   specs --base <ref>
         Print the e2e/teststack specs changed since the merge base with <ref>, one per line.
-  publish --pr <n> [--specs <a,b>] [--videos-dir artifacts/e2e-videos] [--note <text>]
+  publish --pr <n> [--specs <a,b>] [--videos-dir artifacts/e2e-videos] [--note <text>] [--remove]
           [--branch pr-videos] [--head-sha <sha>] [--run-url <url>]
         Push the recorded videos to the storage branch and update the PR's "Demo video" section.
-        --note writes the note instead of videos (and removes the PR's old videos).
-  backend --base <ref>
-        Print true when the PR changes backend API code (src/<Service>.API/**/*.cs), else false.
+        --note writes the note instead of videos (and removes the PR's old videos). --remove removes
+        the section and the PR's videos (for PRs that don't change the frontend).
+  scope --base <ref>
+        Print what the PR changes as key=value lines (for $GITHUB_OUTPUT): frontend, backend,
+        video (frontend changed) and api (backend changed, frontend not).
   api --base <ref> (--pr <n> | --dry-run) [--manifest artifacts/e2e-videos/manifest.json]
       [--openapi <url,url>] [--specs <a,b>] [--head-sha <sha>] [--run-url <url>]
         Document the HTTP endpoints the PR adds, changes or removes (method, route, parameters, request
         and response types from OpenAPI, and example calls recorded with E2E_API_LOG=1) in the PR's
-        "API changes" section, or print it with --dry-run. Removes the section when there is nothing.
+        "API changes" section, or print it with --dry-run. Only for backend-only PRs; removes the section
+        when the PR also changes the frontend or there is nothing to show.
   cleanup --pr <n> [--branch pr-videos]
         Remove the PR's videos from the storage branch.
 
@@ -47,14 +50,24 @@ async function main() {
     for (const spec of changedSpecs(root, flags.base)) console.log(spec);
     return 0;
   }
-  if (command === 'backend') {
-    if (!flags.base) throw new Error('backend needs --base <ref>');
-    console.log(String(isBackendChange(root, flags.base)));
+  if (command === 'scope') {
+    if (!flags.base) throw new Error('scope needs --base <ref>');
+    for (const [key, value] of Object.entries(changeScope(root, flags.base))) console.log(`${key}=${value}`);
     return 0;
   }
   if (command === 'api') {
     if (!flags.base) throw new Error('api needs --base <ref>');
     if (!(pr > 0) && !flags['dry-run']) throw new Error('api needs --pr <n> or --dry-run');
+    const scope = changeScope(root, flags.base);
+    if (!scope.api) {
+      const reason = scope.frontend ? 'the PR changes the frontend' : 'the PR changes no backend code';
+      if (flags['dry-run']) console.log(`(no API changes section: ${reason})`);
+      else {
+        writePrSection(root, pr, null, API_MARKERS);
+        log(`PR #${pr}: no API changes section (${reason})`);
+      }
+      return 0;
+    }
     const manifestFile = path.resolve(root, flags.manifest ?? 'artifacts/e2e-videos/manifest.json');
     const manifest = fs.existsSync(manifestFile) ? JSON.parse(fs.readFileSync(manifestFile, 'utf8')) : null;
     const urls = flags.openapi ? String(flags.openapi).split(',').filter(Boolean) : DEFAULT_OPENAPI;
@@ -80,6 +93,12 @@ async function main() {
     if (command === 'cleanup') {
       const r = publishFolder(root, { branch, folder, stageDir: null, message: `Remove demo videos of PR #${pr}` });
       log(r.pushed ? `removed ${folder} from ${branch}` : `${branch} has no ${folder}`);
+      return 0;
+    }
+    if (flags.remove) {
+      publishFolder(root, { branch, folder, stageDir: null, message: `Remove demo videos of PR #${pr}` });
+      writePrSection(root, pr, null);
+      log(`PR #${pr}: no frontend changes, demo video section removed`);
       return 0;
     }
     const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-video-stage-'));

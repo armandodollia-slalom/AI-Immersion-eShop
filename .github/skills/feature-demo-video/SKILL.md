@@ -52,7 +52,7 @@ Whenever your change affects anything a shopper or admin can see or do in a brow
 5. **Report it.** In your final summary to the user:
    - Embed each relevant video with Markdown using its absolute path, for example `![Add to cart](C:\path\to\repo\artifacts\e2e-videos\scenarios\add-to-cart--alice-adds-a-product-to-her-shopping-bag.webm)`.
    - Say what each video demonstrates and the scenario or data used.
-   - In a PR description, include the same list and the command to reproduce the videos. Commit the tests, never the videos. CI (`.github/workflows/pr-demo-video.yml`) also records every `e2e/teststack/*.spec.ts` the PR changes and adds the videos to a **Demo video** section of the description, so a UI spec in the PR is what puts a demo on it.
+   - In a PR description, include the same list and the command to reproduce the videos. Commit the tests, never the videos. CI (`.github/workflows/pr-demo-video.yml`) also records every `e2e/teststack/*.spec.ts` a PR that changes the frontend adds or changes, and adds the videos to a **Demo video** section of the description, so a UI spec in the PR is what puts a demo on it. Backend-only PRs get an **API changes** section instead.
 
 ## Demo API (`e2e/demo.ts`)
 

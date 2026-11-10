@@ -14,7 +14,12 @@ export const DEFAULT_OPENAPI = [
   'http://localhost:18084/openapi/v1.json',
   'http://localhost:18085/openapi/v1.json',
 ];
-const BACKEND_PATTERN = /^src\/[^/]+\.API\/.+\.cs$/;
+// Frontend: the web and client UI projects, plus views, pages and static assets anywhere in src/
+// (such as the Identity.API login pages). Backend: the rest of src/, except the AppHost and
+// ServiceDefaults wiring. Files outside src/ (tests, e2e specs, docs, CI) count as neither.
+const FRONTEND_PROJECT = /^src\/(WebApp|WebAppComponents|WebhookClient|HybridApp|ClientApp)\//;
+const FRONTEND_FILE = /^src\/.+(\.(razor|cshtml|css|scss|less|js|ts|html)$|\/(Views|Pages|wwwroot)\/)/;
+const NEUTRAL_PROJECT = /^src\/(eShop\.AppHost|eShop\.ServiceDefaults)\//;
 const SECTION_BUDGET = 40000;
 const EXAMPLES_PER_ENDPOINT = 3;
 const EXAMPLE_BODY_LIMIT = 1500;
@@ -97,9 +102,16 @@ function changedFiles(root, mergeBase) {
     .map(([status, file]) => ({ status: status[0], file }));
 }
 
-// True when the PR changes backend API code (src/<Service>.API/**/*.cs).
-export function isBackendChange(root, base) {
-  return changedFiles(root, mergeBaseOf(root, base)).some(({ file }) => BACKEND_PATTERN.test(file));
+// Whether the changed files touch the frontend, the backend, or both. A PR gets a demo video only
+// when it changes the frontend, and an API summary only when it changes the backend and not the frontend.
+export function classifyFiles(files) {
+  const frontend = files.some((f) => FRONTEND_PROJECT.test(f) || FRONTEND_FILE.test(f));
+  const backend = files.some((f) => f.startsWith('src/') && !FRONTEND_PROJECT.test(f) && !FRONTEND_FILE.test(f) && !NEUTRAL_PROJECT.test(f));
+  return { frontend, backend, video: frontend, api: backend && !frontend };
+}
+
+export function changeScope(root, base) {
+  return classifyFiles(changedFiles(root, mergeBaseOf(root, base)).map(({ file }) => file));
 }
 
 // Endpoints added, modified or removed since the merge base with `base`.
