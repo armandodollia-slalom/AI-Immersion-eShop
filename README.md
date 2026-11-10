@@ -164,10 +164,12 @@ For more information on contributing to this repo, read [the contribution docume
 
 ### Pull request demo videos and API summaries
 
-When you open or push to a pull request, the [PR demo video workflow](.github/workflows/pr-demo-video.yml) starts the test stack and adds generated sections to the PR description:
+When you open or push to a pull request, the [PR demo video workflow](.github/workflows/pr-demo-video.yml) adds one of two generated sections to the PR description, depending on what the PR changes:
 
-- **Demo video**: videos of the `e2e/teststack/*.spec.ts` specs the PR adds or changes, each with an animated preview. User-facing changes need such a spec.
-- **API changes** (backend PRs that change `src/<Service>.API/**/*.cs`): every HTTP endpoint the PR adds, changes or removes, with its method, route, request (parameters, body type and fields), responses (status codes and types, from OpenAPI) and example request/response pairs recorded from the PR's specs, with secrets redacted.
+- **Demo video**, for PRs that change the frontend (`src/WebApp`, `src/WebAppComponents`, `src/WebhookClient`, the client apps, or views, pages and static assets elsewhere in `src/`): videos of the `e2e/teststack/*.spec.ts` specs the PR adds or changes, each with an animated preview. User-facing changes need such a spec.
+- **API changes**, for PRs that change only the backend (the rest of `src/`, with no frontend changes): every HTTP endpoint the PR adds, changes or removes, with its method, route, request (parameters, body type and fields), responses (status codes and types, from OpenAPI) and example request/response pairs recorded from the PR's specs, with secrets redacted.
+
+A PR that changes both gets only the demo video. Tests, docs and CI files don't count either way.
 
 The workflow updates both sections on every push and overwrites any edits made inside them. To preview the API summary locally, run `node scripts/pr-video/pr-video.mjs api --base origin/main --dry-run`. See [docs/ai-pipeline/pr-demo-video.md](docs/ai-pipeline/pr-demo-video.md).
 

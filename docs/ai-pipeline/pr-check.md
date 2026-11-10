@@ -98,7 +98,7 @@ The loop escalates (`.agent-state/escalations/<id>-pr-check.md`) when the round 
 
 ## Videos
 
-Videos come from `--videos`, else video links in the PR description (direct `.webm`/`.mp4`/`.mov`/`.mkv` links, `github.com/.../blob/...` file links, and GitHub `user-attachments`), else Playwright's `test-results/`. The [PR demo video](pr-demo-video.md) workflow adds such links to every PR it records; when the check runs on a push, those videos may still be recording, so re-run it after they appear. Each is turned into up to 48 frames (one per second at most): with `ffmpeg` when installed, otherwise by playing the file in Playwright's Chromium and screenshotting it. Chromium reads WebM, which is what Playwright records. A video that can't be read is listed in the report and handed to the video critic as an evidence gap.
+Videos come from `--videos`, else video links in the PR description (direct `.webm`/`.mp4`/`.mov`/`.mkv` links, `github.com/.../blob/...` file links, and GitHub `user-attachments`), else Playwright's `test-results/`. The [PR demo video](pr-demo-video.md) workflow adds such links to every frontend PR it records; when the check runs on a push, those videos may still be recording, so re-run it after they appear. Each is turned into up to 48 frames (one per second at most): with `ffmpeg` when installed, otherwise by playing the file in Playwright's Chromium and screenshotting it. Chromium reads WebM, which is what Playwright records. A video that can't be read is listed in the report and handed to the video critic as an evidence gap.
 
 ## Models
 

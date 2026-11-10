@@ -9,10 +9,10 @@ Agents take a user story from implementation to reviewed code with verified test
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 | `pr-check` | `scripts/pr-check/` | Adversarial critics, defender and judge score the work against its story (acceptance criteria, flow, UI design, style, video evidence). From the Stop hook, once QE has verified the tests, it reports and the agent fixes; on demand, a fixer loops it to 10/10 | [pr-check.md](pr-check.md) |
 
-Every pull request also gets generated sections in its description, written in CI by `.github/workflows/pr-demo-video.yml` (`scripts/pr-video/`, [pr-demo-video.md](pr-demo-video.md)):
+Pull requests also get a generated section in their description, written in CI by `.github/workflows/pr-demo-video.yml` (`scripts/pr-video/`, [pr-demo-video.md](pr-demo-video.md)):
 
-- **Demo video**: the videos of the e2e specs the PR adds or changes, recorded on the test stack.
-- **API changes**, for backend PRs that change `src/<Service>.API/**/*.cs`: one entry per HTTP endpoint the PR adds, changes or removes. Each entry gives the method and route (from the route-mapping diff), the request parameters and body, the responses (from the stack's OpenAPI documents) and example calls recorded from the PR's specs (`E2E_API_LOG=1`), with secrets redacted.
+- **Demo video**, for PRs that change the frontend: the videos of the e2e specs the PR adds or changes, recorded on the test stack.
+- **API changes**, for PRs that change only the backend: one entry per HTTP endpoint the PR adds, changes or removes. Each entry gives the method and route (from the route-mapping diff), the request parameters and body, the responses (from the stack's OpenAPI documents) and example calls recorded from the PR's specs (`E2E_API_LOG=1`), with secrets redacted.
 
 Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
 

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { API_MARKERS, buildApiSummary, changedEndpoints, isBackendChange, parseEndpoints, renderApiSection } from '../lib/api-summary.mjs';
+import { API_MARKERS, buildApiSummary, changeScope, changedEndpoints, classifyFiles, parseEndpoints, renderApiSection } from '../lib/api-summary.mjs';
 import { removeSection, upsertSection } from '../lib/pr-video.mjs';
 
 const temps = [];
@@ -75,9 +75,19 @@ test('changedEndpoints reports added, modified (handler body) and removed endpoi
     .replace('        api.MapDelete("/{id:int}", DeleteItem);\n', ''));
   sh(repo, 'commit', '-q', '-am', 'change');
 
-  assert.equal(isBackendChange(repo, 'main'), true);
+  assert.deepEqual(changeScope(repo, 'main'), { frontend: false, backend: true, video: false, api: true });
   const changed = changedEndpoints(repo, 'main').map((e) => `${e.change} ${e.method} ${e.route}`).sort();
   assert.deepEqual(changed, ['added POST /api/items', 'modified GET /api/items/{id}', 'removed DELETE /api/items/{id}']);
+});
+
+test('classifyFiles: video only with frontend changes, API summary only with backend-only changes', () => {
+  const scope = (...files) => classifyFiles(files);
+  assert.deepEqual(scope('src/WebApp/Components/Pages/Cart.razor', 'e2e/teststack/cart.spec.ts'), { frontend: true, backend: false, video: true, api: false });
+  assert.deepEqual(scope('src/Ordering.API/Apis/OrdersApi.cs', 'src/Ordering.Domain/Order.cs', 'tests/Ordering.UnitTests/OrderTests.cs', 'docs/x.md'), { frontend: false, backend: true, video: false, api: true });
+  assert.deepEqual(scope('src/Catalog.API/Apis/CatalogApi.cs', 'src/WebAppComponents/Catalog/CatalogListItem.razor'), { frontend: true, backend: true, video: true, api: false });
+  assert.equal(scope('src/Identity.API/Views/Account/Login.cshtml').frontend, true);
+  assert.equal(scope('src/Identity.API/Views/Account/Login.cshtml').backend, false);
+  assert.deepEqual(scope('src/eShop.AppHost/Program.cs', 'README.md', 'e2e/teststack/cart.spec.ts'), { frontend: false, backend: false, video: false, api: false });
 });
 
 const docs = [{
