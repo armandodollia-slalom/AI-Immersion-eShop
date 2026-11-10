@@ -310,3 +310,38 @@ test('adding a story starts no agent unless qe.autoPlan is on, and a story with 
     gitc('checkout', '-qf', branch);
   }
 });
+
+test('story guard: agents see only the stories handed to the pipeline', () => {
+  write('product-research/epic-coupons.md', '# Coupons epic\n');
+  write('product-research/stories/DEMO-2-gift-wrap.md', '# DEMO-2 Gift wrap\n');
+  const guard = (tool_name, tool_input, env = {}) => {
+    const r = pipeline(['hook', 'pre-tool'], { input: JSON.stringify({ tool_name, tool_input, cwd: repo }), env: { PIPELINE_CHILD: '1', ...env } });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  const other = 'product-research/stories/DEMO-2-gift-wrap.md';
+  try {
+    fs.rmSync(path.join(repo, '.agent-state/active-story'), { force: true });
+    assert.equal(guard('Read', { file_path: STORY }), 'deny', 'nothing handed over yet');
+
+    assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
+    assert.equal(guard('Read', { file_path: path.join(repo, STORY) }), 'allow', 'the active story');
+    assert.equal(guard('Edit', { file_path: STORY }), 'allow');
+    assert.equal(guard('Read', { file_path: other }), 'deny');
+    assert.equal(guard('Read', { file_path: 'product-research/epic-coupons.md' }), 'deny');
+    assert.equal(guard('Glob', { pattern: 'product-research/**/*.md' }), 'deny');
+    assert.equal(guard('Grep', { pattern: 'coupon', path: 'product-research' }), 'deny');
+    assert.equal(guard('Grep', { pattern: 'product-research', path: 'src' }), 'allow', 'a grep regex is not a path');
+    assert.equal(guard('Bash', { command: `cat ${STORY}` }), 'allow');
+    assert.equal(guard('Bash', { command: `cat ${STORY} ./product-research/epic-coupons.md | head` }), 'deny');
+    assert.equal(guard('Bash', { command: 'ls src' }), 'allow');
+    assert.equal(guard('read_many_files', { paths: ['src/Basket/Coupons.cs', other] }), 'deny');
+
+    const sources = { PIPELINE_STORY_SOURCES: path.join(repo, 'product-research/stories') };
+    assert.equal(guard('Read', { file_path: other }, sources), 'allow', 'inside the folder given to implement run');
+    assert.equal(guard('Read', { file_path: 'product-research/epic-coupons.md' }, sources), 'deny');
+    assert.equal(guard('Read', { file_path: other }, { PIPELINE_DISABLE: '1' }), 'allow');
+  } finally {
+    fs.rmSync(path.join(repo, '.agent-state/active-story'), { force: true });
+  }
+});

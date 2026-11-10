@@ -25,6 +25,10 @@ Every e2e test is recorded on video (`video` in `playwright.config.ts`). By defa
 
 Skip this only for backend-only, docs-only or no-behavior-change work, and say so in your summary.
 
+## Story and epic folders
+
+Agents ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
+
 ## AI development pipeline
 
 Stories go through the agent pipeline described in `docs/ai-pipeline/README.md` (architecture review, then QE test plans and automated tests).

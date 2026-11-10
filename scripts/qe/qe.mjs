@@ -196,7 +196,7 @@ async function main() {
         return 0;
       }
       if (event === 'session-start') {
-        process.stdout.write(sessionContext(config, story, listStories(config)));
+        process.stdout.write(sessionContext(config, story));
         return 0;
       }
       console.error(`Unknown hook event "${event}".`);

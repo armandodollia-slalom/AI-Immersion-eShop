@@ -7,6 +7,7 @@ import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, load
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { nowIso } from './lib/util.mjs';
 
 const CMD = 'node scripts/pipeline/pipeline.mjs';
@@ -26,7 +27,7 @@ Pipeline
   metrics [--json] [--since <iso-date>]
 
 Hooks (called by agent tool configs and .githooks)
-  hook stop | hook session-start [--nested]
+  hook stop | hook session-start [--nested] | hook pre-tool
   git-hook post-commit | post-merge | pre-push`;
 
 async function main() {
@@ -88,8 +89,15 @@ async function main() {
     }
 
     case 'hook': {
-      if (isDisabled()) return 0;
       const event = positional[0];
+      // The story guard also binds the agents the pipeline starts (PIPELINE_CHILD); only PIPELINE_DISABLE lifts it.
+      if (event === 'pre-tool') {
+        if (process.env.PIPELINE_DISABLE === '1') return 0;
+        const reason = storyGuard(config, readPayload());
+        if (reason) process.stdout.write(JSON.stringify(denyOutput(reason)));
+        return 0;
+      }
+      if (isDisabled()) return 0;
       const payload = readPayload();
       if (event === 'stop') {
         const output = dispatchStop(config, stages, payload);

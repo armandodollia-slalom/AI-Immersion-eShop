@@ -2,6 +2,7 @@
 // Implement stage of the AI pipeline: implements every story in a folder headlessly, one worktree and
 // branch per story, driving the implementer through the review and QE stages. See docs/ai-pipeline/implement.md.
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { loadConfig } from '../pipeline/lib/config.mjs';
@@ -44,6 +45,8 @@ async function main() {
       const stories = plan(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force) });
       console.log(describePlan(stories));
       if (flags['dry-run'] || stories.every((s) => s.skip)) return 0;
+      // Agents may read only the stories handed to this run (scripts/pipeline/lib/story-guard.mjs).
+      process.env.PIPELINE_STORY_SOURCES = positional.map((p) => path.resolve(p)).join(path.delimiter);
       const parallel = Math.max(1, Number(flags.parallel ?? config.implement.parallel) || 1);
       const results = await runBatch(config, stories, { parallel, pr: Boolean(flags.pr), script: SCRIPT });
       console.log(`\n${formatSummary(results)}`);

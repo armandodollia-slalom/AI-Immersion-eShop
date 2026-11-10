@@ -66,3 +66,5 @@ The agent CLI is the pipeline's (`PIPELINE_AGENT_CLI`, Claude Code by default). 
 ## Not automatic
 
 Adding or merging stories to `product-research/stories` starts nothing: no implementation and no test plans (unless you opted in with `git config qe.autoPlan true`). Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI logged in.
+
+The agents only see the stories you pass to `implement run`: the [story guard](README.md#story-guard) denies them every other story, epic and mockup in `product-research/`. Pass a folder to let them read everything in it (for example an epic folder with its stories), or single story files to keep them to those.

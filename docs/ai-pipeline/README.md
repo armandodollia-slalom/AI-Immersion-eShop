@@ -45,6 +45,7 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | When | Hook | Dispatcher call | Stages | Cost |
 | --- | --- | --- | --- | --- |
 | `pipeline start` | (command) | `story-start` | review, qe | none |
+| Any agent tool call | `PreToolUse` (Gemini `BeforeTool`) | `hook pre-tool` | story guard (see below) | none |
 | Agent session start/resume | `SessionStart` | `hook session-start` | review, qe | none |
 | Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe | LLM, only after `pipeline done` |
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
@@ -53,6 +54,15 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | Weekly | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
 No agent starts on its own when stories or epics are added or changed: agent work starts only from a command (`implement run`, `pipeline start`, `qe plan`, `qe automate`) or from `pipeline done` in a session you started. `scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan true`) are listed in each stage's docs.
+
+## Story guard
+
+Agents ignore the story and epic folders (`storyGuard.folders` in `scripts/pipeline/config.json`, by default `product-research/`) except for what was handed to the pipeline:
+
+- the story given to `pipeline start <KEY>` (recorded in `.agent-state/active-story`), and
+- the folders or files given to `pipeline implement run`, passed to every worker and agent it starts as `PIPELINE_STORY_SOURCES`.
+
+`hook pre-tool` denies any other read, search, listing, edit or shell command that names a path in those folders, including for agents the pipeline starts (`PIPELINE_CHILD=1`); only `PIPELINE_DISABLE=1` lifts it. The QE and review agents get their story text in the prompt, so they never need the folder, and the session-start context names only the active story. `product-research/` is also in `.graphifyignore`, so `graphify query` cannot surface it. A recursive search of the whole repo (for example `grep -r Coupon .`) does not name the folder and can still reach it; the instructions in `AGENTS.md` and its siblings cover that case. Humans are not affected: the guard is an agent hook only. To let an agent write or groom stories, start it with `PIPELINE_DISABLE=1` or set `storyGuard.enabled` to `false` in your copy of the config.
 
 ## The dispatcher
 
@@ -65,7 +75,7 @@ No agent starts on its own when stories or epics are added or changed: agent wor
 
 ## Agent tool coverage
 
-`.claude/settings.json` is the single source of truth for agent hooks: the dispatcher's `SessionStart`, `Stop` and `SubagentStop` hooks, and the graphify `--strict` guard that denies the first raw grep or file read until `graphify query` has run. Several tools load that file themselves, so they get no file of their own; adding one would run every hook twice.
+`.claude/settings.json` is the single source of truth for agent hooks: the dispatcher's `SessionStart`, `Stop` and `SubagentStop` hooks, the story guard (`PreToolUse`, every tool), and the graphify `--strict` guard that denies the first raw grep or file read until `graphify query` has run. Several tools load that file themselves, so they get no file of their own; adding one would run every hook twice.
 
 | Tool | Hook file | Covers | Trust step |
 | --- | --- | --- | --- |
@@ -73,7 +83,7 @@ No agent starts on its own when stories or epics are added or changed: agent wor
 | GitHub Copilot CLI and VS Code agent | `.claude/settings.json` (loaded alongside `.github/hooks/`) | all | add the repo to `trustedFolders` in `~/.copilot/config.json` |
 | Cursor | `.claude/settings.json` (third-party hooks, on by default) | all; Cursor has no `Glob` hook | leave Cursor's third-party (Claude) hooks setting on, the default |
 | Windsurf / Devin | `.claude/settings.json` | pipeline hooks; the graphify guard matchers don't match its lowercase tool names, so the guard is advisory via `AGENTS.md` | none |
-| OpenAI Codex | `.codex/hooks.json` | all; the graphify check covers `Bash` only, Codex's only search tool | trust the project, then approve the hooks in `/hooks` |
+| OpenAI Codex | `.codex/hooks.json` | all; the graphify check and the story guard cover `Bash` only, Codex's only search tool | trust the project, then approve the hooks in `/hooks` |
 | Gemini CLI | `.gemini/settings.json` via `scripts/hooks/gemini-adapter.mjs` | all, `AfterAgent` stands in for `Stop` (no subagent hook) | approve the project hooks when prompted |
 
 `gemini-adapter.mjs` translates Gemini's hook payload and output contract to Claude's, so Gemini runs the same commands.
@@ -113,7 +123,7 @@ node scripts/pipeline/pipeline.mjs implement run <dir|story.md>... [--parallel N
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
-node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]
+node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]|pre-tool
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
 npm run test:pipeline                     # dispatcher and stage tests (fake agent, no LLM)
 ```

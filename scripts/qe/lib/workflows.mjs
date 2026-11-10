@@ -432,14 +432,13 @@ export function hookStop(config, story) {
 }
 
 // Context injected at session start so agents see QE state without asking.
-export function sessionContext(config, story, stories) {
+// Only the active story: agents are not told about other stories (story guard).
+export function sessionContext(config, story) {
   const lines = [];
   if (story) {
     const state = loadState(config, story.key);
     lines.push(`QE for ${story.key}: plan ${planStatus(config, story).state}, test automation ${state.automation.status}.`);
     if (state.automation.bugs?.length) lines.push(`QE found implementation bugs:\n${state.automation.bugs.map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n')}`);
   }
-  const stale = stories.filter((s) => planStatus(config, s).state === 'stale').map((s) => s.key);
-  if (stale.length) lines.push(`Stories whose test plans are stale: ${stale.join(', ')} (\`node scripts/qe/qe.mjs plan --stale\`).`);
   return lines.join('\n');
 }
