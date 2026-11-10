@@ -6,7 +6,7 @@ import { parseFrontMatter, sha, stringifyFrontMatter } from '../../pipeline/lib/
 
 export const INDEX = '_index.md';
 const SECTIONS = ['Preconditions', 'Steps', 'Expected result'];
-const LAYERS = ['functional', 'e2e'];
+const LAYERS = ['unit', 'functional', 'e2e'];
 
 export function readPlan(config, story, reader = fsReader(config.root)) {
   const indexText = reader.read(`${story.planDir}/${INDEX}`);

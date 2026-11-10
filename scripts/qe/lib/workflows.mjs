@@ -17,7 +17,7 @@ import {
 } from './plans.mjs';
 import { clearEscalation, escalate, lockFile, logFile, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { casePrefix, storySha } from '../../pipeline/lib/stories.mjs';
-import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, sleep, tail } from '../../pipeline/lib/util.mjs';
+import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, runAsync, sleep, tail } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, formatGaps, runVerifier } from './verify.mjs';
 
 const QE_SCRIPT = fileURLToPath(new URL('../qe.mjs', import.meta.url));
@@ -127,6 +127,7 @@ export async function planLoop(config, story, { force = false, seedFeedback = nu
       const producer = runAgent(config, {
         name: PRODUCER.plan,
         mode: 'write',
+        model: config.agent.models.plan,
         timeoutSec: config.timeoutsSec.plan,
         task: planTask(config, story, { mode: round === 1 ? mode : 'update', reasons: initial.reasons, storyDiff, feedback }),
       });
@@ -192,7 +193,7 @@ function expand(template, values) {
   });
 }
 
-export function precheckAutomation(config, story, { skipTests = false } = {}) {
+export async function precheckAutomation(config, story, { skipTests = false } = {}) {
   const errors = [];
   const status = planStatus(config, story);
   if (status.state !== 'verified') errors.push(`Plan for ${story.key} is ${status.state}: ${status.reasons.join('; ')}.`);
@@ -204,8 +205,10 @@ export function precheckAutomation(config, story, { skipTests = false } = {}) {
   if (!scenario.some((f) => /scenario\.ya?ml$/.test(f))) errors.push(`Missing scenario: create ${scenarioDir}/scenario.yaml.`);
 
   for (const [file] of tests) {
-    if (file.endsWith('.cs') && !new RegExp(`Trait\\(\\s*"Story"\\s*,\\s*"${story.key}"\\s*\\)`).test(readRel(config, file))) {
-      errors.push(`${file}: tag the story's tests with [Trait("Story", "${story.key}")] so they can be filtered.`);
+    if (!file.endsWith('.cs')) continue;
+    const framework = testFramework(config, projectOf(file));
+    if (!storyTag(framework, story.key).test(readRel(config, file))) {
+      errors.push(`${file}: tag the story's tests with ${storyTagText(framework, story.key)} so they can be filtered (${projectOf(file)} uses ${framework}).`);
     }
   }
   if (errors.length) return { errors, tests };
@@ -218,31 +221,94 @@ export function precheckAutomation(config, story, { skipTests = false } = {}) {
   if (skipTests || !config.precheck.runTests || errors.length) return { errors, tests };
 
   const specFiles = [...tests.keys()].filter((f) => f.endsWith('.ts'));
-  const projects = [...new Set([...tests.keys()].filter((f) => f.endsWith('.cs')).map((f) => f.split('/').slice(0, 2).join('/')))];
-  const commands = [];
-  if (specFiles.length) commands.push({ e2e: true, argv: expand(config.precheck.playwright, { files: specFiles, casePrefix: casePrefix(story.key), story: story.key }) });
-  for (const project of projects) commands.push({ e2e: false, argv: expand(config.precheck.dotnet, { project, story: story.key }) });
+  const projects = [...new Set([...tests.keys()].filter((f) => f.endsWith('.cs')).map(projectOf))];
+  const failure = (argv, result) => `\`${argv.join(' ')}\` failed${result.timedOut ? ' (timed out)' : ''}:\n${tail(result.stdout + result.stderr, 4000)}`;
   let evidence = [];
-  for (const { e2e, argv: [cmd, ...args] } of commands) {
-    log(`${story.key}: running ${cmd} ${args.join(' ')}`);
-    const since = nowIso();
-    const result = run(cmd, args, {
-      cwd: config.root,
-      timeoutSec: config.timeoutsSec.tests,
-      // The verifier needs keyframes from passing tests too, so keep them for every e2e run.
-      env: e2e ? { ...process.env, E2E_KEEP_VIDEOS: '1' } : undefined,
-    });
-    if (e2e) evidence = readEvidence(config, { casePrefix: casePrefix(story.key), since });
-    if (result.status === 0) continue;
-    let error = `\`${cmd} ${args.join(' ')}\` failed:\n${tail(result.stdout + result.stderr, 4000)}`;
-    const failed = evidence.filter((t) => !t.ok);
-    if (failed.length) {
-      error += '\n\nWhat the browser showed (from the recorded run). Open the keyframes with your image/file read tool, '
-        + 'starting with the `failure` and `step failed` frames, before you change any code:\n\n' + formatEvidence(failed);
+
+  // .NET: build each project once, one after another (they share dependencies, so parallel builds
+  // would fight over obj/ folders), then run every project's tests at the same time with --no-build.
+  // Functional test projects start their own containers, so they don't share state.
+  const dotnet = (async () => {
+    const out = [];
+    const built = [];
+    for (const project of projects) {
+      const argv = expand(config.precheck.dotnetBuild, { project, story: story.key });
+      log(`${story.key}: running ${argv.join(' ')}`);
+      const result = run(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests });
+      if (result.status === 0) built.push(project);
+      else out.push(failure(argv, result));
     }
-    errors.push(error);
-  }
+    const results = await Promise.all(built.map((project) => {
+      const argv = expand(dotnetTestCommand(config, project), { project, story: story.key });
+      log(`${story.key}: running ${argv.join(' ')}`);
+      return runAsync(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests }).then((result) => ({ argv, result }));
+    }));
+    for (const { argv, result } of results) if (result.status !== 0) out.push(failure(argv, result));
+    return out;
+  })();
+
+  // e2e: one shared teststack per machine, so specs from different stories (different worktrees)
+  // take turns. The lock lives in git's common dir, which every worktree shares. Runs alongside .NET.
+  const e2e = (async () => {
+    if (!specFiles.length) return [];
+    const argv = expand(config.precheck.playwright, { files: specFiles, casePrefix: casePrefix(story.key), story: story.key });
+    const lock = teststackLock(config);
+    const deadline = Date.now() + config.timeoutsSec.tests * 1000 * 2;
+    while (!acquireLock(lock)) {
+      if (Date.now() > deadline) return [`Timed out waiting for the shared teststack (held by pid ${lockHolder(lock)}).`];
+      log(`${story.key}: waiting for the teststack (pid ${lockHolder(lock)} is running e2e tests)`);
+      await sleep(10_000);
+    }
+    try {
+      log(`${story.key}: running ${argv.join(' ')}`);
+      const since = nowIso();
+      // The verifier needs keyframes from passing tests too, so keep them for every e2e run.
+      const result = await runAsync(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests, env: { ...process.env, E2E_KEEP_VIDEOS: '1' } });
+      evidence = readEvidence(config, { casePrefix: casePrefix(story.key), since });
+      if (result.status === 0) return [];
+      let error = failure(argv, result);
+      const failed = evidence.filter((t) => !t.ok);
+      if (failed.length) {
+        error += '\n\nWhat the browser showed (from the recorded run). Open the keyframes with your image/file read tool, '
+          + 'starting with the `failure` and `step failed` frames, before you change any code:\n\n' + formatEvidence(failed);
+      }
+      return [error];
+    } finally {
+      releaseLock(lock);
+    }
+  })();
+
+  for (const list of await Promise.all([e2e, dotnet])) errors.push(...list);
   return { errors, tests, evidence };
+}
+
+// .NET test projects here use two frameworks: xUnit v3 (functional tests) and MSTest.Sdk (unit
+// tests). They tag and filter differently, so each project gets its own story tag and test command.
+const projectOf = (file) => file.split('/').slice(0, 2).join('/');
+
+export function testFramework(config, project) {
+  const dir = path.join(config.root, project);
+  const csproj = fs.existsSync(dir) ? fs.readdirSync(dir).find((f) => f.endsWith('.csproj')) : null;
+  const text = csproj ? fs.readFileSync(path.join(dir, csproj), 'utf8') : '';
+  return /MSTest/i.test(text) ? 'mstest' : 'xunit';
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const storyTag = (framework, key) => framework === 'mstest'
+  ? new RegExp(`TestCategory\\(\\s*"${escapeRe(key)}"\\s*\\)`)
+  : new RegExp(`Trait\\(\\s*"Story"\\s*,\\s*"${escapeRe(key)}"\\s*\\)`);
+const storyTagText = (framework, key) => (framework === 'mstest' ? `[TestCategory("${key}")]` : `[Trait("Story", "${key}")]`);
+
+// precheck.dotnet is either one command for every project or one per framework ({ xunit, mstest }).
+function dotnetTestCommand(config, project) {
+  const cmd = config.precheck.dotnet;
+  return Array.isArray(cmd) ? cmd : cmd[testFramework(config, project)] ?? cmd.xunit;
+}
+
+// Shared by every worktree of this repository (the main checkout and .claude/worktrees/*).
+function teststackLock(config) {
+  const common = git(config.root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).stdout.trim() || path.join(config.root, '.git');
+  return path.join(common, 'pipeline-locks', 'teststack.lock');
 }
 
 function automationTask(config, story, { mode, feedback, implFiles }) {
@@ -252,7 +318,7 @@ function automationTask(config, story, { mode, feedback, implFiles }) {
     `Mode: ${mode}`,
     `Verified plan: ${story.planDir} (${plan.cases.length} cases: ${plan.cases.map((c) => c.data.id).join(', ')})`,
     `Scenario directory: ${config.scenariosDir}/${story.scenario} (name: ${story.scenario})`,
-    `Every test name must contain its case id; .NET tests also need [Trait("Story", "${story.key}")] and [Trait("TestCase", "<id>")].`,
+    `Every test name must contain its case id. .NET tests also need the story tag and case id: in xUnit projects (functional tests) [Trait("Story", "${story.key}")] and [Trait("TestCase", "<id>")]; in MSTest projects (unit tests, MSTest.Sdk) [TestCategory("${story.key}")] and [TestProperty("TestCase", "<id>")].`,
     '',
     '### Implementation files changed for this story',
     '',
@@ -352,6 +418,7 @@ async function automationPass(config, story, { skipTests, maxRounds }) {
     const producer = runAgent(config, {
       name: PRODUCER.automation,
       mode: 'write',
+      model: config.agent.models.automation,
       timeoutSec: config.timeoutsSec.automation,
       task: automationTask(config, story, { mode, feedback, implFiles }),
     });
@@ -365,7 +432,7 @@ async function automationPass(config, story, { skipTests, maxRounds }) {
       feedback = `The previous run ${producer.timedOut ? 'timed out' : `failed (exit ${producer.status})`}. Finish the tests.`;
       continue;
     }
-    const pre = precheckAutomation(config, story, { skipTests });
+    const pre = await precheckAutomation(config, story, { skipTests });
     if (pre.errors.length) {
       logPrecheck(config, 'automation', story, round, pre.errors);
       feedback = `Deterministic checks failed:\n${pre.errors.map((e) => `- ${e}`).join('\n')}`;

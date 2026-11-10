@@ -3,6 +3,8 @@
   "scenariosDir": "testing/scenarios",
   "agent": {
     "models": {
+      "plan": null,
+      "automation": "sonnet",
       "verifier": null,
       "audit": null
     }
@@ -57,15 +59,35 @@
       "{casePrefix}",
       "{files}"
     ],
-    "dotnet": [
+    "dotnetBuild": [
       "dotnet",
-      "test",
-      "--project",
+      "build",
       "{project}",
-      "--",
-      "--filter-trait",
-      "Story={story}"
-    ]
+      "--nologo",
+      "-v",
+      "quiet"
+    ],
+    "dotnet": {
+      "xunit": [
+        "dotnet",
+        "test",
+        "--project",
+        "{project}",
+        "--no-build",
+        "--",
+        "--filter-trait",
+        "Story={story}"
+      ],
+      "mstest": [
+        "dotnet",
+        "test",
+        "--project",
+        "{project}",
+        "--no-build",
+        "--filter",
+        "TestCategory={story}"
+      ]
+    }
   },
   "categories": {
     "plan": [

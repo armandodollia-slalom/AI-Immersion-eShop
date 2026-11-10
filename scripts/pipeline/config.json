@@ -10,6 +10,11 @@
   },
   "agent": {
     "cli": "claude",
+    "allowedModels": ["opus", "sonnet", "haiku"],
+    "modelIds": {
+      "claude": { "opus": "opus", "sonnet": "sonnet", "haiku": "haiku" },
+      "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5", "haiku": "claude-haiku-5.5" }
+    },
     "models": {
       "default": null
     },

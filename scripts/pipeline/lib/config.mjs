@@ -54,6 +54,13 @@ export function loadConfig(stage = null, root = repoRoot()) {
   config.agent.cmd = process.env.PIPELINE_AGENT_CMD || null;
   config.baseRef = process.env.PIPELINE_BASE_REF || config.baseRef;
   config.abs = (rel) => path.join(root, rel);
+  // Fail on a mistyped model at load time, not halfway through a run.
+  const allowed = config.agent.allowedModels ?? [];
+  for (const [role, alias] of Object.entries(config.agent.models ?? {})) {
+    if (alias && !allowed.includes(alias)) {
+      throw new Error(`agent.models.${role} is "${alias}", which is not in agent.allowedModels (${allowed.join(', ')}).`);
+    }
+  }
   cache.set(cacheKey, config);
   return config;
 }

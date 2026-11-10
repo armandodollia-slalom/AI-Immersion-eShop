@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -33,6 +33,27 @@ export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true }
     throw new Error(`${cmd} ${args.join(' ')} failed (${out.status}): ${out.stderr.trim()}`);
   }
   return out;
+}
+
+// Same result shape as run(), without blocking, so independent commands can run side by side.
+export function runAsync(cmd, args, { cwd, env, timeoutSec } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const child = spawn(cmd, args, { cwd, env: env ?? process.env });
+    const timer = timeoutSec ? setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutSec * 1000) : null;
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (error) => {
+      if (timer) clearTimeout(timer);
+      resolve({ status: 127, stdout, stderr: `${stderr}\n${error.message}`, timedOut });
+    });
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      resolve({ status: code ?? 1, stdout, stderr, timedOut });
+    });
+  });
 }
 
 export function readJson(file, fallback) {

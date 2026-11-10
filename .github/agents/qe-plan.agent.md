@@ -48,7 +48,7 @@ priority: P1
 ```
 
 - `type` is `happy` or `sad`. Sad cases also set `sad-path` to one of the values listed in the task.
-- `layer` is `functional` (API/service level against real dependencies) or `e2e` (through the WebApp UI on the test stack). Choose the cheapest layer that exercises the requirement end to end.
+- `layer` is `unit` (in-process, no running services, for example the AppHost resource model in `tests/eShop.AppHost.UnitTests`), `functional` (API/service level against real dependencies) or `e2e` (through the WebApp UI on the test stack). Choose the cheapest layer that exercises the requirement end to end, and the layer the story's Test scope names when it has one.
 - `covers` names the story section, rule, field or algorithm step the case checks, so a reviewer can trace every requirement.
 
 ## Coverage rules

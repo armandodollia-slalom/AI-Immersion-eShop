@@ -92,6 +92,16 @@ Verifiers improve through calibration: `qe calibrate` re-audits recent 10/10 ver
 
 Tune thresholds, round limits, models and categories in `scripts/qe/config.json`.
 
+## Speed
+
+- **Test run in the precheck.** Each .NET test project is built once (`precheck.dotnetBuild`, one after another, because they share dependencies), then all of them run at the same time with `--no-build`. The Playwright specs run alongside them.
+- **Shared test stack.** The machine has one teststack, and loading a scenario wipes its data. So the e2e part of the precheck holds a lock in git's common dir (`.git/pipeline-locks/teststack.lock`), which every worktree shares. Stories in different worktrees write and build their tests in parallel and take turns only on the e2e run.
+- **Models.** The writers and verifiers each have a model in `agent.models`: `plan`, `automation`, `verifier` and `audit`. Test writing (`automation`) uses `sonnet`: it is a long build-and-fix loop where speed matters, and the automation verifier still scores every round. `null` means the CLI's default model.
+
+## Models
+
+Models are named by alias. `agent.allowedModels` in `scripts/pipeline/config.json` lists the allowed ones, currently `opus`, `sonnet` and `haiku`. Any other value fails when the config loads. `agent.modelIds` maps each alias to each CLI's own model id (Claude Code takes the alias as is; Copilot uses `claude-sonnet-5.5` and so on). A CLI with no id for an alias uses its default model. `PIPELINE_MODEL_OVERRIDE=<alias>` forces one allowed model for every agent, for experiments. To allow another model, add its alias to `allowedModels` and its id for each CLI to `modelIds`.
+
 ## Commands
 
 ```bash
