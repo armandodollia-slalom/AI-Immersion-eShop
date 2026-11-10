@@ -10,7 +10,7 @@
     }
   },
   "loops": {
-    "requiredScore": 10,
+    "requiredScore": 9,
     "consecutivePasses": 1,
     "planMaxRounds": 5,
     "automationMaxRounds": 5

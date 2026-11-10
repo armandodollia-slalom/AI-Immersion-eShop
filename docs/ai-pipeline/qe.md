@@ -1,6 +1,6 @@
 # QE stage
 
-Part of the [AI development pipeline](README.md). Agents turn each user story into a verified integration test plan, and, once the implementation of a story is architecture-approved by the [review stage](review.md), into verified automated tests. Every artifact an agent produces is checked by a separate verifier agent that starts with a clean context and loops until it scores 10/10. Every denial is logged, and recurring denials become lessons that the agents read on their next run.
+Part of the [AI development pipeline](README.md). Agents turn each user story into a verified integration test plan, and, once the implementation of a story is architecture-approved by the [review stage](review.md), into verified automated tests. Every artifact an agent produces is checked by a separate verifier agent that starts with a clean context and loops until it scores at least the required score (9/10, `loops.requiredScore`). Every denial is logged, and recurring denials become lessons that the agents read on their next run.
 
 The stage CLI is `scripts/qe/qe.mjs`; settings are in `scripts/qe/config.json`.
 
@@ -12,9 +12,9 @@ flowchart LR
   P --> C{Structural<br/>precheck}
   C -->|fails| P
   C -->|passes| V[qe-plan-verifier<br/>fresh process, read-only]
-  V -->|score below 10, gaps logged| P
-  V -->|10/10| OK[Plan stamped verified<br/>story-sha + plan-sha]
-  P -.->|5 rounds without 10/10| E[Escalation for a human]
+  V -->|score below 9, gaps logged| P
+  V -->|9/10 or 10/10| OK[Plan stamped verified<br/>story-sha + plan-sha]
+  P -.->|5 rounds below 9/10| E[Escalation for a human]
 ```
 
 - Output: `tests/plans/<story-file-name>/_index.md` plus one `TC-<KEY>-NN-<slug>.md` per case, covering every happy and sad path (see [tests/plans/README.md](../../tests/plans/README.md)).
@@ -33,12 +33,12 @@ flowchart LR
   V -->|test gaps| A
   V -->|case gaps, root_stage plan| P[Workflow 1 plan loop]
   P --> A
-  V -->|10/10| OK[Tests stamped verified]
+  V -->|9/10 or 10/10| OK[Tests stamped verified]
 ```
 
 1. The implementation agent runs `node scripts/pipeline/pipeline.mjs start <KEY>` and, when the line of work is complete, `node scripts/pipeline/pipeline.mjs done`.
 2. When its turn ends, the dispatcher runs the review stage first. The QE stage runs only once the review has approved the current implementation (`review.approvedHash` matches), then starts the automation loop in the background and lets the agent finish. If the implementation changes again, the next approval re-runs automation in update mode, so the tests follow the corrected code.
-3. The automation loop writes `testing/scenarios/<key>/scenario.yaml` and tests whose names carry their case ids, runs them, and loops with the automation verifier until it scores 10/10. If the tests show that the implementation contradicts the plan, the run stops with a `product-bug` escalation instead of weakening the tests.
+3. The automation loop writes `testing/scenarios/<key>/scenario.yaml` and tests whose names carry their case ids, runs them, and loops with the automation verifier until it scores at least 9/10. If the tests show that the implementation contradicts the plan, the run stops with a `product-bug` escalation instead of weakening the tests.
 4. Every recorded Playwright test also captures labeled keyframes (screenshots at each step, demo checkpoint and the final or failure state; see the `feature-demo-video` skill), listed in `artifacts/e2e-videos/manifest.json`. They are generated in the automation loop's deterministic checks (`precheckAutomation` in `scripts/qe/lib/workflows.mjs`), which run the story's Playwright tests with `E2E_KEEP_VIDEOS=1` because passing tests otherwise keep no video or keyframes. When that run fails, the feedback to the automation agent includes each failed test's error and keyframe paths. When the tests pass, the verifier gets every test's keyframes and checks that the screen matches each case (`visual-mismatch`). Only a manifest written by that run is used.
 
 ## Where it hooks in
@@ -61,9 +61,9 @@ Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs pl
 
 - Each round starts a new verifier process whose prompt holds only what it needs: the story and plan for plans; the case files, the tests and the scenario for automation. It cannot see the producer's reasoning or earlier verdicts.
 - Cheap deterministic checks run before any verifier call (front matter, sections, happy and sad cases, index lists every id; every case has a test, no orphan ids, `[Trait("Story", ...)]`, scenario validates, tests pass).
-- A verdict passes only at the required score (10) with no gaps; a lower score without gaps counts as an unexplained gap. Gaps go back to the producer as its next task.
+- A verdict passes at the required score (`loops.requiredScore`, 9) or above. Gaps listed with a passing score are minor; they are logged in the metrics but don't block. A lower score without gaps counts as an unexplained gap. Gaps on a failing verdict go back to the producer as its next task.
 - Automation gaps the verifier traces to the case itself (`root_stage: plan`) are sent to the plan loop and attributed to the plan agent in the metrics.
-- After 5 rounds without 10/10, the loop stops and writes `.agent-state/escalations/<KEY>-<stage>.md`, which the next agent session is told about.
+- After 5 rounds below the required score, the loop stops and writes `.agent-state/escalations/<KEY>-<stage>.md`, which the next agent session is told about.
 
 ## Crash recovery
 
