@@ -69,13 +69,17 @@ const happySad = [{ title: 'Valid coupon applies', type: 'happy' }, { title: 'Ex
 before(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qe-e2e-'));
   scriptFile = path.join(repo, '..', `${path.basename(repo)}-agent.json`);
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
   const config = JSON.parse(read('scripts/qe/config.json'));
   config.precheck.runTests = false;
   write('scripts/qe/config.json', JSON.stringify(config, null, 2));
+  // The PR check's own hook flow is covered in scripts/pr-check/test.
+  const prCheckConfig = JSON.parse(read('scripts/pr-check/config.json'));
+  prCheckConfig.prCheck.hook.enabled = false;
+  write('scripts/pr-check/config.json', JSON.stringify(prCheckConfig, null, 2));
   write('.gitignore', '.agent-state/\n');
   write(STORY, '# DEMO-1 Apply coupon\n\nRule: a valid coupon gives 10% off; an expired coupon is rejected with 400.\n');
   write('src/Basket/Coupons.cs', '// coupons\n');

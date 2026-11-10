@@ -7,6 +7,7 @@ Agents take a user story from implementation to reviewed code with verified test
 | `implement` | `scripts/implement/` | Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages below | [implement.md](implement.md) |
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
+| `pr-check` | `scripts/pr-check/` | Adversarial critics, defender and judge score the work against its story (acceptance criteria, flow, UI design, style, video evidence). From the Stop hook, once QE has verified the tests, it reports and the agent fixes; on demand, a fixer loops it to 10/10 | [pr-check.md](pr-check.md) |
 
 Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
 
@@ -17,6 +18,8 @@ flowchart LR
   D --> R[review stage]
   R -->|changes requested: block<br/>findings go back to the agent| I
   R -->|approved| Q[qe stage<br/>automation in the background]
+  R -->|approved| PC[pr-check stage<br/>waits for QE, then checks in the background]
+  PC -->|findings: block on the next stop| I
   P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
 ```
 
@@ -40,16 +43,16 @@ node scripts/pipeline/pipeline.mjs done            # line of work complete: the 
 node scripts/pipeline/pipeline.mjs status [PROMO-3]
 ```
 
-`start` records the active story and tells each stage (the review resets its rounds). `done` marks the work complete; nothing reviews or tests the work until then, so an agent can stop mid-story without triggering anything.
+`start` records the active story and tells each stage (the review resets its rounds, the PR check its runs). `done` marks the work complete; nothing reviews or tests the work until then, so an agent can stop mid-story without triggering anything.
 
 ## Lifecycle events
 
 | When | Hook | Dispatcher call | Stages | Cost |
 | --- | --- | --- | --- | --- |
-| `pipeline start` | (command) | `story-start` | review, qe | none |
+| `pipeline start` | (command) | `story-start` | review, qe, pr-check | none |
 | Any agent tool call | `PreToolUse` (Gemini `BeforeTool`) | `hook pre-tool` | story guard (see below) | none |
-| Agent session start/resume | `SessionStart` | `hook session-start` | review, qe | none |
-| Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe | LLM, only after `pipeline done` |
+| Agent session start/resume | `SessionStart` | `hook session-start` | review, qe, pr-check | none |
+| Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then pr-check | LLM, only after `pipeline done` |
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
@@ -127,5 +130,6 @@ node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]|pre-tool
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
+node scripts/pr-check/pr-check.mjs run --pr 42 [--no-fix]   # adversarial PR check until 10/10
 npm run test:pipeline                     # dispatcher and stage tests (fake agent, no LLM)
 ```

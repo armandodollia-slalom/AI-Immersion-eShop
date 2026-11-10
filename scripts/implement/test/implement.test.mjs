@@ -39,7 +39,7 @@ before(() => {
   repo = path.join(tmp, 'shop');
   incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -49,6 +49,9 @@ before(() => {
   const implConfig = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/implement/config.json'), 'utf8'));
   implConfig.implement.qePollSec = 0.1;
   write(repo, 'scripts/implement/config.json', JSON.stringify(implConfig, null, 2));
+  const prCheckConfig = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/pr-check/config.json'), 'utf8'));
+  prCheckConfig.prCheck.hook.enabled = false;
+  write(repo, 'scripts/pr-check/config.json', JSON.stringify(prCheckConfig, null, 2));
   write(repo, '.gitignore', '.agent-state/\n');
   write(repo, 'src/Basket/Coupons.cs', '// coupons\n');
   sh(repo, 'git', ['init', '-q', '-b', 'main']);
@@ -64,7 +67,7 @@ before(() => {
   write(incoming, 'DEMO-4-loyalty-tiers.md', `# DEMO-4 Loyalty tiers\n\n* **Blocked by:** [DEMO-3](DEMO-3-loyalty.md)\n\n${rule}`);
 });
 
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
 
 test('implement run: each story gets a worktree and branch, loops with the review, waits for verified tests and stacks dependents', async () => {
   const happySad = [{ title: 'Valid coupon applies', type: 'happy' }, { title: 'Expired coupon rejected', type: 'sad' }];
