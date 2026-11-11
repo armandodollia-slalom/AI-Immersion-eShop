@@ -304,6 +304,9 @@ async function implementStoryInner(config, opts, holder) {
   const { key, base, branch, worktree, pr } = opts;
   const settings = config.implement;
   const started = Date.now();
+  // Epic and bug-group delivery check every ticket once, in the unit's PR check; the Stop hook's
+  // per-story background check would run the whole critic panel again for each ticket.
+  if (opts.epicBranch) process.env.PR_CHECK_SKIP = '1';
   const metrics = { implementerRuns: 0, reviewBlocks: 0, bugFixCycles: 0, promptVersion: null };
   let ctx = null;
   // Usage of the implementer runs this function starts itself (the orchestrator's integration and fix
