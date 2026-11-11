@@ -170,7 +170,7 @@ function policyFinding(item) {
   };
 }
 
-export function policyReview(config, story, round, { files, base, previousReviewId = null } = {}) {
+export function policyReview(config, story, round, { files, statuses = null, base, previousReviewId = null } = {}) {
   const p = config.review.policy;
   if (!p?.enabled) return { verdict: 'SKIPPED', findings: [], summary: 'policy review disabled' };
   if (!fs.existsSync(config.abs(p.agent))) return { verdict: 'SKIPPED', findings: [], summary: `${p.agent} not found` };
@@ -178,7 +178,8 @@ export function policyReview(config, story, round, { files, base, previousReview
     requester: { agent: p.requester, task_id: story.key, iteration: round },
     checkpoint: 'code_review',
     intent: `Implementation of story ${story.key} (${story.file})`,
-    changed_files: files,
+    // A path -> status map (A/M/D); a plain list would make the engine treat every file as modified.
+    changed_files: statuses && files.every((f) => statuses[f]) ? Object.fromEntries(files.map((f) => [f, statuses[f]])) : files,
     ...(base ? { base } : {}),
     ...(previousReviewId ? { previous_review_id: previousReviewId } : {}),
     options: { semantic: p.semantic ?? 'auto' },
@@ -227,8 +228,8 @@ export function policyReview(config, story, round, { files, base, previousReview
 // One review round: the policy gate first, then (unless it blocked) the LLM architecture-reviewer.
 export function reviewRound(config, story, round) {
   const state = loadState(config, story.key);
-  const { base, files } = implChanges(config);
-  const policy = policyReview(config, story, round, { files, base, previousReviewId: state.review.policyReviewId });
+  const { base, files, statuses } = implChanges(config);
+  const policy = policyReview(config, story, round, { files, statuses, base, previousReviewId: state.review.policyReviewId });
   if (policy.reviewId) updateState(config, story.key, (s) => (s.review.policyReviewId = policy.reviewId));
   if (policy.verdict === 'CHANGES_REQUESTED') return { ...policy, summary: `Architecture Policy Pack: ${policy.summary}` };
   const llm = architectureReview(config, story, round);
