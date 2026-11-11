@@ -4,14 +4,14 @@ Running numbers and slide material for the presentation about the first real
 end-to-end run of the agent factory on bug epic #64. Updated at every
 checkpoint; `summary.md` gets the final version. Times are local (CST).
 
-## Headline numbers (as of 10:50)
+## Headline numbers (as of 11:05)
 
 | Metric | Value |
 | --- | --- |
 | Tickets in the epic | 21 bugs (BUG-1 to BUG-21) |
 | Wall clock so far | about 5 h 30 min (04:17 start), including about 1 h 35 min of host sleep |
 | PR groups chosen by the supervisor | 9 (timeline 04:19) |
-| Group PRs open | 4: [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70) catalog-write-auth, [#71](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/71) token-audience, [#72](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/72) login-open-redirect, [#97](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/97) catalog-paging |
+| Group PRs open | 5: [#100](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/100) catalog-item-validation (6 bugs), [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70) catalog-write-auth, [#71](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/71) token-audience, [#72](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/72) login-open-redirect, [#97](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/97) catalog-paging |
 | Group PR CI | #72 green; #70/#71/#97 fail `teststack` (compose drift from BUG-4), #70/#71 also `test` (scopes test, BUG-4) |
 | Tickets verified (implemented + tests verified) | 13: BUG-4, 5, 6, 7, 8, 11, 12, 13, 17, 18, 19, 20, 21 |
 | Tickets escalated to a human | 1: BUG-1 (QE meta-test), blocking BUG-2/3 |
