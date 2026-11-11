@@ -1,0 +1,6 @@
+description: >
+  BUG-20 (catalog v2 PUT with a body id different from the route id returns 500): catalog-edge already
+  has what the cases need (items 1 "Edge 01 Penny Boot" at 0.01 and 2 "Edge 02 Trail Boot" at 59.5 for
+  the mismatch, 4 "Edge 04 Day Pack" for a matching id and 7 "Edge 07 Dome Tent" for an omitted id,
+  14 items in total, admin user), so this scenario only extends it.
+extends: catalog-edge

@@ -382,6 +382,16 @@ public static class CatalogApi
         [AsParameters] CatalogServices services,
         CatalogItem productToUpdate)
     {
+        // The route id identifies the item; a different body id would change the tracked entity's key.
+        if (productToUpdate.Id != 0 && productToUpdate.Id != id)
+        {
+            return TypedResults.BadRequest<ProblemDetails>(new()
+            {
+                Detail = "Route id and body id must match"
+            });
+        }
+        productToUpdate.Id = id;
+
         var errors = CatalogItemValidation.Validate(productToUpdate);
         await CatalogItemValidation.AddReferenceErrorsAsync(productToUpdate, services.Context, errors);
         if (errors.Count > 0)

@@ -3,3 +3,4 @@
 {"ts":"2026-11-11T14:31:58.324Z","story":"BUG-13","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
 {"ts":"2026-11-11T14:43:35.880Z","story":"BUG-19","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
 {"ts":"2026-11-11T15:39:47.321Z","story":"BUG-18","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[{"severity":"minor","category":"resilience","file":"src/Catalog.API/Apis/CatalogApi.cs","line":441,"issue":"The AnyAsync check and the insert are not atomic, so two concurrent creates with the same new explicit id can both pass the check and the loser still gets a 500 from the primary key violation."}]}
+{"ts":"2026-11-11T16:08:25.577Z","story":"BUG-20","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
