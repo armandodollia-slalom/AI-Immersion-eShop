@@ -57,7 +57,7 @@
     "fix": {
       ".md": ["node_modules/.bin/markdownlint", "--fix", "{files}"],
       ".ts": ["node_modules/.bin/eslint", "--fix", "--no-warn-ignored", "{files}"],
-      ".cs": ["dotnet", "format", "whitespace", "--folder", "--include", "{files}"]
+      ".cs": ["dotnet", "format", "eShop.Web.slnf", "--include", "{files}"]
     },
     "lint": {
       ".md": [
@@ -72,8 +72,7 @@
       ".cs": [
         "dotnet",
         "format",
-        "whitespace",
-        "--folder",
+        "eShop.Web.slnf",
         "--verify-no-changes",
         "--include",
         "{files}"
