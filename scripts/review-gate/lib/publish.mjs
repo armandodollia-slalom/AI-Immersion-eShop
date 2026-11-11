@@ -4,6 +4,7 @@
 // Nothing here changes the factory flow before the PR exists, and nothing fails a pipeline outcome.
 import fs from 'node:fs';
 import path from 'node:path';
+import { git } from '../../pipeline/lib/git.mjs';
 import { nowIso, readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { assessPr, logTriageDecision, mainCheckout, recordTicket } from './assessment.mjs';
 import { autoMergePr } from './automerge.mjs';
@@ -15,8 +16,18 @@ export const stateFile = (config, pr) => path.join(config.root, config.stateDir,
 export const loadGateState = (config, pr) => readJson(stateFile(config, pr), null);
 export const saveGateState = (config, pr, state) => writeJson(stateFile(config, pr), { ...state, updatedAt: nowIso() });
 
-export function readCodeowners(root) {
-  const file = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].map((f) => path.join(root, f)).find((f) => fs.existsSync(f));
+const CODEOWNERS_FILES = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
+
+// The CODEOWNERS rules GitHub applies to a PR: the file on its base branch (`base`, e.g. origin/main),
+// not the PR's own copy (a fix branch may predate the file, or change it). Falls back to the working tree.
+export function readCodeowners(root, base = null) {
+  if (base) {
+    for (const f of CODEOWNERS_FILES) {
+      const r = git(root, ['show', `${base}:${f}`]);
+      if (r.status === 0) return parseCodeowners(r.stdout);
+    }
+  }
+  const file = CODEOWNERS_FILES.map((f) => path.join(root, f)).find((f) => fs.existsSync(f));
   return parseCodeowners(file ? fs.readFileSync(file, 'utf8') : '');
 }
 
@@ -37,7 +48,7 @@ export function gatePr(config, a, { gh, prior = null, cwd = config.root, log = (
   const pr = safe(() => prView(gh, repo, a.pr), null);
   const assignees = Object.fromEntries(a.tickets.map((t) => [t.key, t.issue ? safe(() => issueAssignees(gh, repo, t.issue.number), []) : []]));
   const state = gateState(a, decision, prior);
-  const context = { assignees, codeowners: readCodeowners(cwd), author: pr?.author ?? null, currentLabels: pr?.labels ?? [] };
+  const context = { assignees, codeowners: readCodeowners(cwd, a.base ?? config.baseRef), author: pr?.author ?? null, currentLabels: pr?.labels ?? [] };
   if (decision.action === 'auto-merge') {
     const m = autoMergePr(config, gh, a, decision, state, context);
     log(`${a.pr}: ${m.merged ? `auto-merge (${m.state.merge.identity}, ${m.state.merge.method})` : m.problems[0]}`);

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { approvalsFor, decideGate, parseState, renderNotice, reviewersFor, gateState } from '../lib/gate.mjs';
-import { publishGate } from '../lib/publish.mjs';
+import { publishGate, readCodeowners } from '../lib/publish.mjs';
 import { quorum, requiredApprovals } from '../lib/quorum.mjs';
 import { parseCodeowners } from '../lib/systems.mjs';
 import { fakeGh } from './fake-gh.mjs';
@@ -133,4 +133,17 @@ test('publish: a qualifying PR whose checks are still running waits, with no lab
   assert.deepEqual(pr.labels, ['approvals:0'], 'found again by board sync; nothing for review-quorum to enforce');
   assert.match(pr.comments[0].body, /waiting for the checks/);
   assert.equal(parseState(pr.comments[0].body).action, 'wait');
+});
+
+test('CODEOWNERS come from the PR\'s base branch, not the fix branch (which may predate the file)', () => {
+  const root = fixRepo({ files: { 'src/Basket.API/A.cs': 'a' } });
+  // main gets CODEOWNERS after the fix branch was cut.
+  git(root, 'checkout', '-q', 'main');
+  write(root, '.github/CODEOWNERS', '* @landon @erin\n');
+  git(root, 'add', '-A');
+  git(root, 'commit', '-qm', 'codeowners');
+  git(root, 'checkout', '-q', 'bugfix/epic/g1');
+  assert.deepEqual(readCodeowners(root, 'main').map((r) => r.owners), [['landon', 'erin']]);
+  assert.deepEqual(readCodeowners(root), [], 'the fix branch has none');
+  assert.deepEqual(readCodeowners(root, 'no-such-ref'), [], 'an unknown base falls back to the working tree');
 });
