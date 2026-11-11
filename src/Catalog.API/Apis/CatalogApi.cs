@@ -426,7 +426,8 @@ public static class CatalogApi
     }
 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    public static async Task<Results<Created, ValidationProblem>> CreateItem(
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public static async Task<Results<Created, ValidationProblem, Conflict<ProblemDetails>>> CreateItem(
         [AsParameters] CatalogServices services,
         CatalogItem product)
     {
@@ -435,6 +436,14 @@ public static class CatalogApi
         if (errors.Count > 0)
         {
             return TypedResults.ValidationProblem(errors);
+        }
+
+        if (product.Id > 0 && await services.Context.CatalogItems.AnyAsync(i => i.Id == product.Id))
+        {
+            return TypedResults.Conflict<ProblemDetails>(new()
+            {
+                Detail = $"Item with id {product.Id} already exists."
+            });
         }
 
         var item = new CatalogItem(product.Name)
