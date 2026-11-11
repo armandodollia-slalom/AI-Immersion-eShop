@@ -6,6 +6,10 @@ plan-sha: 2a5b08f24aa6
 verified-score: 9
 verified-at: "2026-11-11T15:42:09.563Z"
 verified-by: qe-plan@c3934e11/456099fb
+automation-sha: 58bd47485854
+automation-plan-sha: 2a5b08f24aa6
+automation-score: 9
+automation-verified-at: "2026-11-11T15:56:38.321Z"
 ---
 # Test plan: BUG-11 [BE - Catalog.API] - Negative pageSize or pageIndex returns 500
 
