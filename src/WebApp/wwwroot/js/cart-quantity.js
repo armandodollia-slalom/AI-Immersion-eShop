@@ -9,15 +9,26 @@
 (function () {
     'use strict';
 
+    // Value each input last committed with Enter. Enter leaves the input focused, so the
+    // next click elsewhere (e.g. on [-]) blurs it and the browser fires `change` for the
+    // same typed value; without this check that change re-submits the typed quantity in
+    // parallel with the button's own POST and Redis can end up on the typed value.
+    // A WeakMap (not a data- attribute) so enhanced-navigation DOM morphing can't drop it.
+    var enterCommitted = new WeakMap();
+
+    function quantityInput(e) {
+        return e.target.closest && e.target.closest('[data-cart-quantity-input]');
+    }
+
     function commit(input) {
         var form = input.closest('form');
         if (!form) {
-            return;
+            return null;
         }
 
         var apply = form.querySelector('[data-cart-quantity-apply]');
         if (!apply) {
-            return;
+            return null;
         }
 
         var value = parseInt(input.value, 10);
@@ -32,25 +43,45 @@
         } else {
             apply.click();
         }
+        return input.value;
     }
 
     document.addEventListener('change', function (e) {
-        var input = e.target.closest && e.target.closest('[data-cart-quantity-input]');
+        var input = quantityInput(e);
+        if (!input) {
+            return;
+        }
+        var committed = enterCommitted.get(input);
+        enterCommitted.delete(input);
+        if (committed !== undefined && committed === input.value) {
+            // Already submitted by Enter; this is just the blur after it.
+            return;
+        }
+        commit(input);
+    });
+
+    // Typing again after an Enter-commit means the next change carries a new value.
+    document.addEventListener('input', function (e) {
+        var input = quantityInput(e);
         if (input) {
-            commit(input);
+            enterCommitted.delete(input);
         }
     });
 
     // Enter should apply the typed value rather than trigger the first submit button
-    // (which would be the decrement). Prevent the default submit and blur to commit.
+    // (which would be the decrement). Prevent the default submit, commit, and remember
+    // the committed value so the blur-triggered change doesn't submit it again.
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter') {
             return;
         }
-        var input = e.target.closest && e.target.closest('[data-cart-quantity-input]');
+        var input = quantityInput(e);
         if (input) {
             e.preventDefault();
-            commit(input);
+            var committed = commit(input);
+            if (committed !== null) {
+                enterCommitted.set(input, committed);
+            }
         }
     });
 })();

@@ -1,8 +1,10 @@
+/// <reference types="node" />
 import { execFileSync } from 'child_process';
 import { Browser, Page } from '@playwright/test';
 import { test, expect } from '../fixtures';
 import { DOCKER, loadScenario, login } from './scenario';
 import { redisBasket, USER_IDS } from './auth-basket-helpers';
+import { REDIS_CONTAINER } from './ports';
 
 // Scenario basket-edge: alice has no basket; bob has Explorer 45L Backpack x2 + Carbon Fiber Trekking Poles x1;
 // quinn has 120 trekking poles; oscar's basket also holds product 99999, which is not in the catalog.
@@ -13,7 +15,7 @@ const BOOTS = { id: 1, name: 'Wanderer Black Hiking Boots', price: 109.99 };
 test.describe.configure({ mode: 'serial' });
 
 function deleteBasket(userId: string) {
-  execFileSync(DOCKER, ['exec', 'eshop-teststack-redis-1', 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', 'DEL', `/basket/${userId}`], { windowsHide: true });
+  execFileSync(DOCKER, ['exec', REDIS_CONTAINER, 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', 'DEL', `/basket/${userId}`], { windowsHide: true });
 }
 
 function redisQuantities(userId: string): Record<number, number> {
@@ -136,7 +138,7 @@ test.describe('basket-edge scenario: cart UI', () => {
   // pre-focus value, so the next click elsewhere (e.g. "Decrease") blurs it, fires `change` and
   // re-submits the typed quantity in parallel with the decrement. Which POST lands last is a race,
   // so Redis intermittently keeps 5 while the UI shows 4.
-  test.fixme('typing a quantity, pressing Enter, then clicking Decrease reliably stores the decremented quantity', async ({ browser }) => {
+  test('typing a quantity, pressing Enter, then clicking Decrease reliably stores the decremented quantity', async ({ browser }) => {
     for (let attempt = 0; attempt < 5; attempt++) {
       deleteBasket(USER_IDS.alice);
       const page = await userPage(browser, 'alice');
@@ -263,22 +265,19 @@ test.describe('basket-edge scenario: cart UI', () => {
   });
 
   test('anonymous visitors cannot add to the bag and no basket is written', async ({ browser }) => {
-    const before = execFileSync(DOCKER, ['exec', 'eshop-teststack-redis-1', 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', '--scan', '--pattern', '/basket/*'], { encoding: 'utf8', windowsHide: true });
+    const before = execFileSync(DOCKER, ['exec', REDIS_CONTAINER, 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', '--scan', '--pattern', '/basket/*'], { encoding: 'utf8', windowsHide: true });
     const page = await (await browser.newContext()).newPage();
     await page.goto(`/item/${BACKPACK.id}`);
     await expect(page.getByRole('button', { name: 'Add to shopping bag' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Log in to purchase' }).click();
     await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
-    const after = execFileSync(DOCKER, ['exec', 'eshop-teststack-redis-1', 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', '--scan', '--pattern', '/basket/*'], { encoding: 'utf8', windowsHide: true });
+    const after = execFileSync(DOCKER, ['exec', REDIS_CONTAINER, 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', '--scan', '--pattern', '/basket/*'], { encoding: 'utf8', windowsHide: true });
     expect(after.split('\n').sort()).toEqual(before.split('\n').sort());
     await page.context().close();
   });
 
-  // BUG: BasketState.FetchBasketItemsAsync does catalogItems[item.ProductId] for every basket line, so a line
-  // whose product was removed from the catalog throws KeyNotFoundException ("The given key '99999' was not
-  // present in the dictionary") in the WebApp. CartMenu renders on every page, so after signing in oscar can't
-  // load any page at all. The cart should skip (or flag) the missing product and still show the valid line.
-  test.fixme('a basket line for a product no longer in the catalog does not break the site', async ({ browser }) => {
+  // BUG-7: a basket line whose product is no longer in the catalog is skipped instead of breaking every page.
+  test('a basket line for a product no longer in the catalog does not break the site', async ({ browser }) => {
     const page = await userPage(browser, 'oscar');
     await openCart(page);
     await expect(line(page, BACKPACK.name)).toBeVisible();

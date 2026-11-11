@@ -1,0 +1,4 @@
+description: >
+  BUG-7: basket-edge data. oscar's Redis basket holds Explorer 45L Backpack (id 7) next to
+  product 99999, which is not in the catalog.
+extends: basket-edge

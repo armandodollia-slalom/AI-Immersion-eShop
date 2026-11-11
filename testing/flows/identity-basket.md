@@ -20,10 +20,7 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 | Bug | Evidence | Test (fixme) |
 | --- | --- | --- |
 | Open redirect after sign-in: `/user/login?returnUrl=//evil.example` returns `302 Location: http://evil.example/` | `LogIn.razor` only rejects URIs that parse as absolute; protocol-relative URLs pass | `auth-login.spec.ts` › a protocol-relative returnUrl on /user/login must not redirect off-site |
-| A basket line whose product is no longer in the catalog breaks every page for that user | `BasketState.FetchBasketItemsAsync` indexes `catalogItems[item.ProductId]`; WebApp logs `KeyNotFoundException: The given key '99999' was not present in the dictionary`; `CartMenu` renders on every page | `basket-cart.spec.ts` › a basket line for a product no longer in the catalog does not break the site |
-| Basket.API stores zero and negative quantities | gRPC `UpdateBasket` with quantities -3 and 0 returns OK and writes them to Redis; `BasketItem.Validate` is never invoked | `basket-api.spec.ts` › UpdateBasket rejects zero or negative quantities |
 | Basket.API accepts tokens without the `basket` scope | Identity's `ApiResource`s declare no scopes, so tokens have no `aud`; `AddDefaultAuthentication` sets `ValidateAudience = false` | `basket-api.spec.ts` › a token issued without the basket scope cannot update the basket |
-| Typing a cart quantity, pressing Enter, then clicking − can leave Redis on the typed value while the UI shows the decrement | `cart-quantity.js` commits on Enter but leaves the input focused; the click blurs it, fires `change` and re-submits the typed value in parallel with the decrement POST (reproduced: UI 4, Redis 5) | `basket-cart.spec.ts` › typing a quantity, pressing Enter, then clicking Decrease reliably stores the decremented quantity |
 
 ## Sign in with valid credentials
 
@@ -138,8 +135,8 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 - **Steps:** increase, decrease, type a value, type 0 or a negative number, remove lines.
 - **Expected outcome:** line totals, the bag total, the header count and Redis follow each change; removing the last line shows the empty view and leaves an empty basket.
 - **Positive cases:** + goes from 1 to 2; typing 5 sets 5; − goes from 5 to 4; removing one of two lines keeps the other.
-- **Negative/edge cases:** − is disabled at quantity 1; typing 0 or −4 is clamped to 1 by `cart-quantity.js` (it does not remove the line); removing the last line; type + Enter followed by − races two POSTs (bug, fixme).
-- **Covered by:** `basket-cart.spec.ts` › quantity can be increased, decreased and typed…, typing 0 or a negative quantity is clamped to 1…, removing lines updates the bag…, typing a quantity, pressing Enter, then clicking Decrease… (fixme).
+- **Negative/edge cases:** − is disabled at quantity 1; typing 0 or −4 is clamped to 1 by `cart-quantity.js` (it does not remove the line); removing the last line; type + Enter followed by − posts only the decrement (the blur after Enter does not re-submit the typed value).
+- **Covered by:** `basket-cart.spec.ts` › quantity can be increased, decreased and typed…, typing 0 or a negative quantity is clamped to 1…, removing lines updates the bag…, typing a quantity, pressing Enter, then clicking Decrease….
 
 ## Seeded baskets and the header badge
 
@@ -147,8 +144,8 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 - **Actors:** shopper with a pre-existing Redis basket.
 - **Expected outcome:** the header shows the total unit count (capped at `99+`, while the aria-label keeps the real number); the cart uses catalog prices.
 - **Positive cases:** bob sees 2 lines and 3 units; quinn sees `99+`, an aria-label of 120 items and a $8,398.80 total.
-- **Negative/edge cases:** a line for a product that is no longer in the catalog (oscar) crashes every page (bug, fixme).
-- **Covered by:** `basket-cart.spec.ts` › a seeded basket is shown…, the header count caps at 99+…, a basket line for a product no longer in the catalog… (fixme). The stale stored price case is covered by `returning-customers.spec.ts`.
+- **Negative/edge cases:** a line for a product that is no longer in the catalog (oscar) is skipped; the rest of the basket still shows.
+- **Covered by:** `basket-cart.spec.ts` › a seeded basket is shown…, the header count caps at 99+…, a basket line for a product no longer in the catalog…. The stale stored price case is covered by `returning-customers.spec.ts`.
 
 ## Basket persistence and isolation
 
@@ -164,6 +161,6 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 - **Steps:** call each method anonymously, with malformed or forged tokens, and with alice's token from the `webapp` code flow.
 - **Expected outcome:** the user always comes from the token's `sub`, so a caller can only touch their own basket; writes need a valid token.
 - **Positive cases:** with alice's token: Get (empty), Update (stored in `/basket/<alice>`), Get (same items), Delete (key removed); an empty update leaves an empty basket.
-- **Negative/edge cases:** anonymous Get returns an empty basket; anonymous Update and Delete return `UNAUTHENTICATED`; malformed and tampered-signature tokens return `UNAUTHENTICATED`; bob's basket is checked unchanged after every test; zero or negative quantities are accepted (bug, fixme); tokens without the `basket` scope are accepted (bug, fixme).
+- **Negative/edge cases:** anonymous Get returns an empty basket; anonymous Update and Delete return `UNAUTHENTICATED`; malformed and tampered-signature tokens return `UNAUTHENTICATED`; bob's basket is checked unchanged after every test; zero or negative quantities return `INVALID_ARGUMENT` and leave Redis unchanged; tokens without the `basket` scope are accepted (bug, fixme).
 - **Covered by:** `basket-api.spec.ts`.
 - **Not covered:** the Mobile BFF basket routes (no client in the stack has a usable token flow: the `maui` client has no redirect URI configured).
