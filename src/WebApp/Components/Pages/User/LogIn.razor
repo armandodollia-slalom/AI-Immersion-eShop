@@ -10,15 +10,27 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Nav.NavigateTo(LocalReturnUrl(ReturnUrl));
+        var target = LocalReturnUrl(ReturnUrl);
+        var baseUri = new Uri(Nav.BaseUri);
+        if (!Uri.TryCreate(baseUri, target, out var resolved)
+            || Uri.Compare(resolved, baseUri, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
+        {
+            target = "/";
+        }
+
+        Nav.NavigateTo(target);
         await base.OnInitializedAsync();
     }
 
     // Same rule as MVC's Url.IsLocalUrl: "/path" and "~/path" are local, "//host" and "/\\host" are not.
     // Base-relative paths such as "item/7" (what Url(nav) produces) are local too; anything else falls back to "/".
+    // Leading or trailing whitespace is rejected because Uri trims it, which would turn " //host" into "//host".
     public static string LocalReturnUrl(string? returnUrl)
     {
-        if (string.IsNullOrEmpty(returnUrl) || returnUrl.Any(char.IsControl))
+        if (string.IsNullOrEmpty(returnUrl)
+            || returnUrl.Any(char.IsControl)
+            || char.IsWhiteSpace(returnUrl[0])
+            || char.IsWhiteSpace(returnUrl[^1]))
         {
             return "/";
         }
