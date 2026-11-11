@@ -126,7 +126,7 @@ export const listStories = (config) => listTickets(config, { types: ['story', 'b
 
 export function ticketText(config, story) {
   try {
-    return fs.readFileSync(config.abs ? config.abs(story.file) : path.join(config.root, story.file), 'utf8');
+    return fs.readFileSync(path.join(config.root, story.file), 'utf8');
   } catch {
     return null;
   }

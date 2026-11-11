@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { seedTicket } from './fixtures/tickets.mjs';
 import { runAgent } from '../lib/agents.mjs';
 import { loadConfig } from '../lib/config.mjs';
 import { epicReport, formatStory, overviewReport, storyReport, summarize } from '../lib/costs.mjs';
@@ -66,10 +67,10 @@ describe('pricing', () => {
 describe('cost reports', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'costs-'));
   after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, 'product-research/stories'), { recursive: true });
   fs.mkdirSync(path.join(root, 'scripts/pipeline'), { recursive: true });
   fs.writeFileSync(path.join(root, 'scripts/pipeline/pricing.json'), JSON.stringify(pricing));
-  fs.writeFileSync(path.join(root, 'product-research/epic-demo.md'), '# Epic: Demo\n\n### DEMO-1: a\n### DEMO-2: b\n');
+  // The epic is a board ticket in the cache; it names its stories (they are also its sub-issues).
+  seedTicket(root, { key: 'epic-demo', type: 'epic', text: '# Epic: Demo\n\n### DEMO-1: a\n### DEMO-2: b\n' });
   const config = { ...loadConfig(null, ROOT), root, metricsDir: '.agent-metrics' };
   const row = (story, stage, runId, models, ts = '2026-07-01T00:00:00Z') => usageRecords(config, { ctx: { story, stage }, agent: 'x', mode: 'headless', cli: 'claude', runId, models, ts });
   const rows = [

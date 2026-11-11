@@ -58,7 +58,7 @@ before(() => {
   write(incoming, 'DEMO-1-coupons.md', '# DEMO-1: [BE - Catalog.API, Basket.API] - Coupons\n\n## Acceptance Criteria\n\n- a valid coupon gives 10% off\n- an expired coupon is rejected with 400\n');
 });
 
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
 
 const sub = (id, owns, over = {}) => ({ id, goal: `build ${id}`, acceptance: [`${id} works`], owns, dependsOn: [], modelClass: 'medium', verify: 'code', modelReason: 'normal', verifyReason: 'api', expectedFiles: 1, expectedLoc: 3, confidence: 0.8, alternatives: [{ option: 'self', reason: 'two services' }], ...over });
 
