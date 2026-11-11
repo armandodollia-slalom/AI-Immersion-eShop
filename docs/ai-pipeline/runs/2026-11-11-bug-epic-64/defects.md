@@ -125,6 +125,59 @@ worked on): symptom, root cause, fix, commit and impact.
   killed run's units (`token-audience` "running", BUG-6 "error", its subtask
   "verifying") until they run again.
 
+## D6: resumed tickets restarted from scratch over their own work
+
+- **Symptom:** after the 05:24 resume, BUG-5 (whose QE run had been stopped)
+  was implemented again from round 1. `pipeline start` reset its review state,
+  and the implementer's commit then failed the pre-commit lint on the half-written
+  QE files still in the worktree (MD060 in the plan index, CHARSET in a test file).
+  BUG-5 ended `error` and its group `login-open-redirect` got no PR. BUG-6 was
+  restarted fresh the same way.
+- **Root cause:** `plan()` resumes a ticket only when its run record names a
+  worktree that exists. Epic runs never write a queued record (unlike the batch
+  path), and records written before D3 had no `worktree`, so every interrupted
+  epic ticket (BUG-5, 6, 7, 8, 16) looked new.
+- **Fix:** fall back to the ticket's standard worktree path (`worktreeFor`) when
+  the record has none. Test in `batch.test.mjs`. Commit `ec7c834`.
+- **Impact:** one wasted opus implementer run on BUG-5 and one on BUG-6. The
+  operator tidied BUG-5's leftover plan (`qe tidy`) and fixed the test file's BOM
+  before resuming.
+
+## D7: a delivered group opened no PR (push blocked by a stale plan)
+
+- **Symptom:** `catalog-write-auth` (BUG-4 merged, PR check done) ended `done`
+  with no PR and nothing in the run log. Its saved reason was
+  `push failed: QE: push blocked`.
+- **Root cause:** `prepareUnitWorktree` copies the ticket cache into the group
+  worktree once, before its tickets run. Each ticket's implementer then adds
+  Implementation Notes to the ticket in its own worktree, and the QE plan's
+  `story-sha` covers them. In the group worktree, the pre-push QE check saw the
+  older ticket text and reported `plan=stale`. The PR check also read the old
+  text. The `openPr` failure was not logged.
+- **Fix:** `syncTickets` copies each ticket worktree's cached ticket into the
+  group (or epic) worktree right before the unit PR check and push, and the run
+  log prints `no PR: <reason>`. The epic test asserts the group PR check sees the
+  notes. Commit `8bf1c3c`.
+- **Impact:** the first group PR was delayed about 40 minutes. On resume, PR
+  [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70)
+  opened straight away.
+
+## D8: a redundant per-ticket PR check in group delivery
+
+- **Symptom:** every ticket's worktree had a background
+  `pr-check.mjs hook-run` waiting for QE. BUG-4's and BUG-7's ran the full
+  critic panel (4-5 critics, a defender and a judge on opus) after QE. Waiters
+  for killed QE runs stayed orphaned.
+- **Root cause:** the agent Stop hook starts a background PR check after QE
+  unless `PR_CHECK_SKIP` is set, and `implement` never set it. In epic and
+  bug-group delivery, the unit runs one PR check over all its tickets anyway
+  (implement.md step 6), so each ticket was checked twice.
+- **Fix:** a ticket worker running under epic or group delivery sets
+  `PR_CHECK_SKIP=1` for its agents. Single-ticket runs keep the hook check.
+  Documented in implement.md. Commit `c76fe3c`.
+- **Impact:** about 7 premium opus/sonnet agent runs saved per ticket (21
+  tickets). Three orphaned waiters were stopped.
+
 ## Observations (not changed)
 
 - **O1, lspd leak on kill.** The implement runner has no signal handlers, so
