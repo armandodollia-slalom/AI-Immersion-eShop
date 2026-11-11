@@ -220,7 +220,7 @@ async function main() {
         if (join) {
           const epic = loadTicket(config, join.state.epic, { fetch: false });
           if (epic) epicDir = config.abs(epic.dir);
-          epicRun = { epic: epicInfo(epic, join.state.epic), tickets: given, only: given.map((t) => t.key) };
+          epicRun = { epic: epicInfo(epic, join.state.epic), tickets: given, only: given.map((t) => t.key), groups: join.unit.kind === 'group' };
         }
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
