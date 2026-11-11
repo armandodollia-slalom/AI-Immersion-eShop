@@ -1,7 +1,9 @@
-// The `review-quorum` check: a PR labeled `approvals:N` passes once N distinct people other than its
-// author approve it on its latest push. GitHub rulesets set one approval count per branch, not per PR,
-// so the gate sets the count per PR with this label and the check enforces it. A PR without the label,
-// or with `approvals:0`, passes.
+// The `review-quorum` check: a PR labeled `approvals:N` passes once N distinct people approve it on its
+// latest push. GitHub never lets a PR's author approve their own PR, so with `authorCanApprove` the
+// author approves by submitting a Comment review whose body is `/approve` (a later `/unapprove`, or a
+// push, withdraws it); it counts as one approval, like anyone else's. GitHub rulesets set one approval
+// count per branch, not per PR, so the gate sets the count per PR with this label and the check
+// enforces it. A PR without the label, or with `approvals:0`, passes.
 
 // N from the PR's labels: the highest `approvals:N` (null when there is none).
 export function requiredApprovals(labels, pattern = 'approvals:{n}') {
@@ -18,12 +20,22 @@ export function requiredApprovals(labels, pattern = 'approvals:{n}') {
 // Each reviewer's latest decisive review (APPROVED, CHANGES_REQUESTED or DISMISSED; comments do not
 // change a verdict) counts, and an approval counts only when it was given on the head commit (an
 // approval from before the latest push is stale).
-export function quorum({ labels, reviews, author, headSha, pattern }) {
+const APPROVE = /^\s*\/approve\s*$/im;
+const UNAPPROVE = /^\s*\/unapprove\s*$/im;
+
+export function quorum({ labels, reviews, author, headSha, pattern, authorCanApprove = false }) {
   const required = requiredApprovals(labels, pattern);
   const latest = new Map();
   for (const r of [...(reviews ?? [])].sort((a, b) => String(a.submitted_at ?? '').localeCompare(String(b.submitted_at ?? '')))) {
     const login = r.user?.login ?? r.author?.login ?? null;
-    if (!login || login === author || r.user?.type === 'Bot') continue;
+    if (!login || r.user?.type === 'Bot') continue;
+    if (login === author) {
+      // The author's own `/approve` (a Comment review) stands in for the Approve GitHub withholds.
+      if (!authorCanApprove) continue;
+      if (UNAPPROVE.test(r.body ?? '')) latest.set(login, { ...r, state: 'DISMISSED' });
+      else if (APPROVE.test(r.body ?? '')) latest.set(login, { ...r, state: 'APPROVED' });
+      continue;
+    }
     if (['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) latest.set(login, r);
   }
   const approvers = [...latest.values()].filter((r) => r.state === 'APPROVED' && (!headSha || r.commit_id === headSha)).map((r) => r.user?.login ?? r.author?.login);

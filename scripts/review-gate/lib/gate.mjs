@@ -119,7 +119,7 @@ export function renderNotice(a, d, state) {
     lines.push('', '</details>', '');
   }
   lines.push(`**PR severity:** ${a.severity?.level ?? 'unknown'} (${a.severity?.explanation ?? '-'}) · class \`${a.class}\` · systems: ${a.systems?.names?.join(', ') || 'none'} · checks: ${a.ci ?? 'none yet'}`, '');
-  if (d.action === 'review') lines.push(`The \`review-quorum\` check counts approvals from distinct people other than the author, given on the latest push. Anyone can add more reviewers; the gate only sets how many approvals are required. A "changes requested" review counts as a human reopen of the tickets it names (or all of them), which raises their severity.`, '');
+  if (d.action === 'review') lines.push(`The \`review-quorum\` check counts approvals from distinct people, given on the latest push; the PR's author approves with a Comment review whose body is \`/approve\` (GitHub does not let authors click Approve). Anyone can add more reviewers; the gate only sets how many approvals are required. A "changes requested" review counts as a human reopen of the tickets it names (or all of them), which raises their severity.`, '');
   lines.push(encodeState(state));
   return lines.join('\n');
 }

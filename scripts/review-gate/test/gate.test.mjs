@@ -147,3 +147,18 @@ test('CODEOWNERS come from the PR\'s base branch, not the fix branch (which may 
   assert.deepEqual(readCodeowners(root), [], 'the fix branch has none');
   assert.deepEqual(readCodeowners(root, 'no-such-ref'), [], 'an unknown base falls back to the working tree');
 });
+
+test('quorum: the author approves with a /approve Comment review on the latest push; /unapprove or a push withdraws it', () => {
+  const r = (login, state, body, commit, at) => ({ user: { login, type: 'User' }, state, body, commit_id: commit, submitted_at: at });
+  const labels = ['approvals:1'];
+  const mine = [r('me', 'COMMENTED', 'Looked it over.\n/approve', 'head', '1')];
+  assert.equal(quorum({ labels, reviews: mine, author: 'me', headSha: 'head' }).pass, false, 'off unless enabled');
+  const on = quorum({ labels, reviews: mine, author: 'me', headSha: 'head', authorCanApprove: true });
+  assert.deepEqual([on.pass, on.approvers], [true, ['me']]);
+  assert.equal(quorum({ labels, reviews: mine, author: 'me', headSha: 'newer', authorCanApprove: true }).pass, false, 'stale after a push');
+  assert.equal(quorum({ labels, reviews: [...mine, r('me', 'COMMENTED', '/unapprove', 'head', '2')], author: 'me', headSha: 'head', authorCanApprove: true }).pass, false);
+  assert.equal(quorum({ labels, reviews: [r('me', 'COMMENTED', 'I will /approve later', 'head', '1')], author: 'me', headSha: 'head', authorCanApprove: true }).pass, false, 'only a line that is exactly /approve');
+  // The author is one person: with approvals:2 someone else must approve too.
+  const two = quorum({ labels: ['approvals:2'], reviews: [...mine, r('ann', 'APPROVED', '', 'head', '3')], author: 'me', headSha: 'head', authorCanApprove: true });
+  assert.deepEqual([two.pass, two.approvers.sort()], [true, ['ann', 'me']]);
+});
