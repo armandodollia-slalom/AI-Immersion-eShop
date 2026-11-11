@@ -6,6 +6,10 @@ plan-sha: 9942530c1dec
 verified-score: 9
 verified-at: "2026-11-11T18:38:44.435Z"
 verified-by: qe-plan@c3934e11/73ba1657
+automation-sha: b1db80d7d0d1
+automation-plan-sha: 9942530c1dec
+automation-score: 10
+automation-verified-at: "2026-11-11T19:18:24.393Z"
 ---
 # Test plan: PROMO-2 [BE - Promotions.API] - Promotion rule model and admin API
 
