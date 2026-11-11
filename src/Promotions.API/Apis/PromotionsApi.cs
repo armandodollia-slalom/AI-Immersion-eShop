@@ -6,47 +6,21 @@ public static class PromotionsApi
     {
         var api = app.MapGroup("/api/promotions").HasApiVersion(1.0);
 
-        // Anonymous: storefront reads active promotions without a session. Bearer tokens are ignored.
-        api.MapGet("/active", async (PromotionsContext context, TimeProvider timeProvider) =>
-        {
-            var now = timeProvider.GetUtcNow();
-            var data = await context.Promotions
-                .AsNoTracking()
-                .Where(p => p.Status == PromotionStatus.Published && p.StartsAt <= now && now < p.EndsAt)
-                .OrderByDescending(p => p.Priority)
-                .ThenBy(p => p.Id)
-                .Select(p => new PromotionDto(p.Id, p.Name, p.Type.ToString(), p.Status.ToString(), p.StartsAt, p.EndsAt, p.Priority, p.RequiresCoupon))
-                .ToListAsync();
-            return TypedResults.Ok(data);
-        })
-        .AllowAnonymous()
-        .WithName("ListActivePromotions")
-        .WithSummary("List active promotions");
+        // Anonymous: the storefront reads active promotions without a session. Bearer tokens are ignored.
+        api.MapGet("/active", ListActivePromotions)
+            .AllowAnonymous()
+            .WithName("ListActivePromotions")
+            .WithSummary("List active promotions")
+            .WithDescription("Promotions that are active now and need no coupon, ordered by priority descending then id ascending.");
 
-        api.MapGet("/", async (PromotionsContext context) =>
-        {
-            var data = await context.Promotions
-                .AsNoTracking()
-                .OrderByDescending(p => p.Priority)
-                .ThenBy(p => p.Id)
-                .Select(p => new PromotionDto(p.Id, p.Name, p.Type.ToString(), p.Status.ToString(), p.StartsAt, p.EndsAt, p.Priority, p.RequiresCoupon))
-                .ToListAsync();
-            return TypedResults.Ok(data);
-        })
-        .RequireAuthorization()
-        .WithName("ListPromotions")
-        .WithSummary("List all promotions");
+        app.MapPromotionsAdminApiV1();
 
         return app;
     }
-}
 
-public record PromotionDto(
-    int Id,
-    string Name,
-    string Type,
-    string Status,
-    DateTimeOffset StartsAt,
-    DateTimeOffset EndsAt,
-    int Priority,
-    bool RequiresCoupon);
+    public static async Task<Ok<List<ActivePromotion>>> ListActivePromotions(ActivePromotionsQuery query, CancellationToken cancellationToken)
+    {
+        var promotions = await query.ListAsync(includeCouponOnly: false, cancellationToken);
+        return TypedResults.Ok(promotions.Select(ActivePromotion.From).ToList());
+    }
+}
