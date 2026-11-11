@@ -552,6 +552,10 @@ async function runUnitStories(env, { parallel, deferReview }) {
     else if (s.doneBefore) Object.assign(s, { skip: null, mergeOnly: true });
   }
   const sdeps = epicDeps(planned, note);
+  // A blocker that is already implemented (and so skipped) is on the base branch, like in story
+  // delivery: its dependents don't wait for it to be merged into the epic branch.
+  const delivered = new Set(planned.filter((s) => s.implemented && !force).map((s) => s.key));
+  for (const [k, ds] of sdeps) sdeps.set(k, ds.filter((d) => !delivered.has(d)));
   const owns = new Map((note?.stories ?? []).map((s) => [s.key, s.owns]));
   const outcome = new Map();
   const pending = new Set();

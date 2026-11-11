@@ -43,7 +43,7 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
   const stories = orderStories(collectStories(inputs));
   const byKey = new Map(stories.map((s) => [s.key, s]));
   for (const s of stories) {
-    s.skip = s.implemented && !force ? 'already implemented (has "## Implementation Notes"; --force to redo)' : null;
+    s.skip = s.implemented && !force ? 'already implemented (Implementation Notes or a closed issue; --force to redo)' : null;
     // A later run continues where an interrupted one stopped: finished stories are kept, stories that
     // died part-way resume in their worktree.
     const prev = force || s.skip ? null : loadRun(config, s.key);

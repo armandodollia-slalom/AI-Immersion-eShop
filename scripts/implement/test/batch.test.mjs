@@ -63,3 +63,17 @@ test('dependency cycles and duplicate keys are errors', () => {
   assert.throws(() => collectStories([path.join(dir, 'missing.md')]), /No such file/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('a cached ticket whose issue is closed counts as implemented, even without Implementation Notes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-ticket-'));
+  const ticket = (key, state) => {
+    fs.mkdirSync(path.join(dir, key));
+    fs.writeFileSync(path.join(dir, key, 'story.md'), `# ${key}: Story\n\n**Blocked by:** None\n`);
+    fs.writeFileSync(path.join(dir, key, 'meta.json'), JSON.stringify({ key, slug: key.toLowerCase(), issue: { number: 1, state } }));
+  };
+  ticket('DEMO-1', 'CLOSED');
+  ticket('DEMO-2', 'OPEN');
+  const byKey = Object.fromEntries(collectStories([path.join(dir, 'DEMO-1'), path.join(dir, 'DEMO-2')]).map((s) => [s.key, s.implemented]));
+  assert.deepEqual(byKey, { 'DEMO-1': true, 'DEMO-2': false });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
