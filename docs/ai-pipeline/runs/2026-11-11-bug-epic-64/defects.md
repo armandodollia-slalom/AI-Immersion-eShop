@@ -78,6 +78,32 @@ worked on): symptom, root cause, fix, commit and impact.
   record keeps the stale fields until the run is restarted, and the per-story
   metrics in `.agent-metrics/implement-runs.jsonl` are not affected.
 
+## D4: the pipeline's own QE commit failed the repo's markdown lint
+
+- **Symptom:** BUG-7 and BUG-16 got a verified plan and verified tests, then
+  ended `error` at `git commit -m "<KEY>: Add verified test plan and automated
+  tests"`: the pre-commit hook's markdownlint reported MD025 (multiple
+  top-level headings) on every test case and MD060 on the index table. Group
+  dependents were skipped (BUG-14) and the groups got no PR.
+- **Root cause:** the documented test-case format puts the title in the front
+  matter and repeats it as the `# <id>: <title>` heading (`precheckPlan`
+  requires both). markdownlint counts a front-matter `title` as a top-level
+  heading. The markdown lint hook arrived after the QE format, and the QE
+  stage never ran the linters, so the first lint was the harness's last
+  commit, where nobody can fix it.
+- **Fix:** `.markdownlint.json` sets MD025 `front_matter_title: ""`. QE
+  `precheck.lint` mirrors the hook (markdownlint, eslint,
+  `dotnet format whitespace`) on the plan and test files, and failures go back
+  to the producing agent like any precheck error. The qe-plan agent is told
+  the table style. Unit test for `lintFiles`.
+- **Commit:** `e865f2f` on the run branch, shipped to `main` early as
+  [#69](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/69)
+  because the hook reads the ticket worktree's lint config, which comes from
+  `origin/main`.
+- **Impact on this run:** every ticket would have failed at this commit. The
+  failed tickets keep their verified QE work in their worktrees and resume
+  after `origin/main` (with the fix) is merged into their branches.
+
 ## Cosmetic
 
 - **Fixed (`1d9b9a2`):** `implement run --epic` on a bug epic printed
