@@ -162,6 +162,12 @@ worked on): symptom, root cause, fix, commit and impact.
   [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70)
   opened straight away.
 
+- **Follow-up (D7b):** the next group, `token-audience`, stacks on
+  `catalog-write-auth`, so its branch also carries BUG-4's plan, and its push
+  failed the same way (`FAIL BUG-4 plan=stale`). A stacked group now also syncs
+  the tickets of every group below it (transitively). The test fails without the
+  fix. Commit `0599c43`.
+
 ## D8: a redundant per-ticket PR check in group delivery
 
 - **Symptom:** every ticket's worktree had a background
@@ -177,6 +183,21 @@ worked on): symptom, root cause, fix, commit and impact.
   Documented in implement.md. Commit `c76fe3c`.
 - **Impact:** about 7 premium opus/sonnet agent runs saved per ticket (21
   tickets). Three orphaned waiters were stopped.
+
+## D9: a re-delivered group failed to "open" the PR it already had
+
+- **Symptom:** on the 06:02 resume, `catalog-write-auth` (PR #70 open) was
+  re-delivered (every unit is, on resume) and logged
+  `no PR: gh pr create failed: a pull request ... already exists`. The unit's
+  result had no PR, so the epic summary would report "PRs were not all opened".
+- **Root cause:** `openPr` always ran `gh pr create`. It never looked at the PR
+  saved in the unit state, or on GitHub.
+- **Fix:** `deliverUnit` passes the unit's saved PR. `openPr` pushes, reuses that
+  PR (or an open PR for the branch found with `gh pr list --head`), and refreshes
+  its body. Test: a second run hands the existing PR over and reports the same
+  PRs. Commit `f18bde0`.
+- **Impact:** cosmetic for this run (PR #70 kept, card already in Pending
+  Review). The next restart applies the fix.
 
 ## Observations (not changed)
 
