@@ -163,6 +163,6 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 - **Steps:** call each method anonymously, with malformed or forged tokens, and with alice's token from the `webapp` code flow.
 - **Expected outcome:** the user always comes from the token's `sub`, so a caller can only touch their own basket; writes need a valid token.
 - **Positive cases:** with alice's token: Get (empty), Update (stored in `/basket/<alice>`), Get (same items), Delete (key removed); an empty update leaves an empty basket.
-- **Negative/edge cases:** anonymous Get returns an empty basket; anonymous Update and Delete return `UNAUTHENTICATED`; malformed and tampered-signature tokens return `UNAUTHENTICATED`; bob's basket is checked unchanged after every test; zero or negative quantities are accepted (bug, fixme); tokens without the `basket` scope are accepted (bug, fixme).
+- **Negative/edge cases:** anonymous Get returns an empty basket; anonymous Update and Delete return `UNAUTHENTICATED`; malformed and tampered-signature tokens return `UNAUTHENTICATED`; bob's basket is checked unchanged after every test; zero or negative quantities return `INVALID_ARGUMENT` and leave Redis unchanged; tokens without the `basket` scope are accepted (bug, fixme).
 - **Covered by:** `basket-api.spec.ts`.
 - **Not covered:** the Mobile BFF basket routes (no client in the stack has a usable token flow: the `maui` client has no redirect URI configured).
