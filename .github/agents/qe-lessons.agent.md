@@ -46,11 +46,14 @@ The task may include a **Factory retro** section: a JSON digest of the decision 
 2. `review`: why the architecture review blocked the implementer (grouped by rule or category, with reasons and fixes), and why it approved.
 3. `automation`: why the automation verifier denied the QE agent's tests.
 4. `productBugs`: why the integration tests failed the implementer's code (expected, actual, location, reason).
+5. `implement`: how the orchestrator split stories into subtasks, its escalations, and why the pair verifiers sent subtasks back.
+6. `reviews`: how people reviewed the bug-fix PRs the review gate sent them, by PR class (how often the 2nd and 3rd reviewers found something new, escapes by approval count, latency per extra reviewer), with the harness's `proposals` for the approvals policy.
 
 Use it to find root causes that a lessons rule cannot fix, and fix them at the source:
 
 - QE verifier evidence mainly improves the QE agents (`qe-plan`, `qe-automation`) and their verifiers; architecture review and product-bug evidence mainly improves the `implementer`.
 - Beyond lessons, you may edit only the paths the task allows, for example an agent definition in `.github/agents/` whose instructions cause the mistake, a doc in `docs/` that is wrong or silent, the story template in `docs/ai-pipeline/writing-stories.md` when stories keep leaving the same thing undefined, or an Architecture Policy Pack rule whose message keeps being misunderstood. Never weaken a policy rule or a verifier check to make agents pass.
+- The approvals policy (`implement.reviewGate.approvals` in `scripts/implement/config.json`) is changed only by the harness, from the `reviews` proposals, in this run's PR for a person to approve. Never edit it, and never propose widening auto-merge yourself; you may explain the proposals or fix their causes elsewhere (for example a triage instruction in `.github/agents/bug-triage.agent.md` that keeps over- or under-rating).
 - Change something only when the evidence spans more than one story or the cause is clear from one strong example. Keep each edit small and in the file's existing style.
 - Cases that caught bugs show what good cases look like; repeated `excluded` items or open questions point at gaps in the story template.
 

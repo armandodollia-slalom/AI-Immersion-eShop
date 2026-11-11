@@ -10,13 +10,17 @@ import { currentBranch } from '../pipeline/lib/git.mjs';
 import { loadState, updateState } from '../pipeline/lib/state.mjs';
 import { activeStory, listStories, resolveStory } from '../pipeline/lib/stories.mjs';
 import { log, nowIso, readJson, setLogTag } from '../pipeline/lib/util.mjs';
-import { COLUMNS, failureComment, findIssue, isActive, issueItem, listItems, moveStory, project, setup, storyKind, syncEpicAssignees } from './lib/board.mjs';
+import { runAgent } from '../pipeline/lib/agents.mjs';
+import { COLUMNS, findIssue, isActive, issueItem, listItems, moveStory, project, removeLabel, setup, storyKind, syncEpicAssignees } from './lib/board.mjs';
+import { failureComment, resolveCheck, resolvedLabel } from './lib/escalation.mjs';
 import { upsertEpicEvidence } from './lib/epics.mjs';
 import { captureApiEvidence, featureVideo } from './lib/evidence.mjs';
 import { fetchCommand, migrateCommand, newCommand, publishCommand } from './lib/ticket-commands.mjs';
-import { EVENTS, SETTLED, applyEvent, bugComment, cardFlow, claimComment, eventsForState, failStory, owner, testingComment } from './lib/flow.mjs';
-import { syncBoard } from './lib/sync.mjs';
+import { EVENTS, SETTLED, applyEvent, bugComment, cardFlow, claimComment, eventsForState, failStory, issueComments, owner, readFlow, testingComment } from './lib/flow.mjs';
+import { resolvedItems, syncBoard } from './lib/sync.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
+import { ensureFields } from '../review-gate/lib/fields.mjs';
+import { realGh } from '../review-gate/lib/github.mjs';
 
 setLogTag('board');
 const CONFIG_FILE = path.join(SCRIPTS_DIR, 'board', 'config.json');
@@ -26,8 +30,9 @@ const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
   setup                         enable issues, create the labels, the project, its columns and views
                                 (idempotent). Ticket issues are created by \`new\` and \`migrate --apply\`
   sync                          move closed stories to Done (recording their late outcome), update
-                                their epic's evidence, and put every epic in the lane its stories call
-                                for (also run at the start of \`pipeline implement run\`)
+                                their epic's evidence, put every epic in the lane its stories call
+                                for, and do the review gate's bookkeeping (human reopens, gated PRs);
+                                also run at the start of \`pipeline implement run\`
 
 Tickets (the issue body is the source of truth; see docs/ai-pipeline/board.md)
   fetch <KEY...> | --epic <EPIC> | --all [--refresh]
@@ -48,7 +53,17 @@ Cards
   event <story> <${EVENTS.join('|')}> [--id <id>] [--force] [--takeover]
                                 apply a pipeline event (JSON payload on stdin: {"bugs": [...]})
   fail <story> [--id <id>]      Failed lane, needs-human label and the failure comment from the
-                                story's implement run record
+                                story's implement run record: up to 3 questions for a human (Sonnet),
+                                the details collapsed and a Resolved checkbox
+  resolve-check <issue> [--actor <login>] [--comment <id>] [--label]
+                                validate the answers of the latest failure comment once Resolved is
+                                ticked (run by the board-escalation-resolve workflow; issues only):
+                                untick and list what is missing, or swap needs-human for
+                                escalation-resolved and record the answers under ## Decisions
+  clear-resolved <story>        drop the escalation-resolved label (a re-run of the ticket started)
+  clear-reopened <story>        drop the reopened label (a re-run of a reopened bug fix started)
+  resolved [--json]             the open story cards labeled escalation-resolved without needs-human
+                                (what \`board sync\` re-queues); changes nothing
   move <story> <column> [--force]
                                 move a card by hand (${COLUMNS.join(', ')}); only forward unless --force
   review <story> [--pr <url>] [--epic-branch <branch>] [--id <id>]
@@ -69,7 +84,7 @@ The pipeline is started by hand (\`pipeline implement run <KEY>\` or \`--epic <E
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch', 'epic', 'type', 'key', 'mockups', 'group', 'title', 'tickets']));
+  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch', 'epic', 'type', 'key', 'mockups', 'group', 'title', 'tickets', 'actor', 'comment']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -106,6 +121,12 @@ async function main() {
           fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(file, null, 2)}\n`);
         },
       });
+      // The review gate's triage fields (Impact, Complexity, Fix risk, Severity, Confidence, Human reopens).
+      try {
+        ensureFields(config, realGh, { log: (m) => console.log(m) });
+      } catch (error) {
+        console.log(`triage fields not set up: ${error.message.split('\n')[0]}`);
+      }
       console.log(`Board: ${url}`);
       return 0;
     }
@@ -135,11 +156,24 @@ async function main() {
     case 'sync': {
       // Informational wherever it runs, so an inactive board is not an error.
       if (!isActive(config)) {
-        console.log('Board inactive; nothing to sync.');
+        console.log(flags.json ? JSON.stringify({ done: [], requeued: [], resolved: [], reopened: [], outcomes: [], epics: [] }) : 'Board inactive; nothing to sync.');
         return 0;
       }
       const r = syncBoard(config, { listStories, log: (m) => console.log(m) });
-      console.log(`Board synced: ${r.done.length} story(ies) moved to ${config.board.columns.done}, ${r.outcomes.length} late outcome(s) recorded, ${r.epics.length} epic(s) moved.`);
+      if (flags.json) console.log(JSON.stringify({ done: r.done, requeued: r.requeued, resolved: r.resolved, reopened: r.reopened, outcomes: r.outcomes, epics: r.epics }));
+      else console.log(`Board synced: ${r.done.length} story(ies) moved to ${config.board.columns.done}, ${r.requeued.length} resolved story(ies) moved to ${config.board.columns.ready}, ${r.reopened.length} reopened bug fix(es) to re-run, ${r.outcomes.length} late outcome(s) recorded, ${r.epics.length} epic(s) moved.`);
+      return 0;
+    }
+
+    case 'resolved': {
+      if (!isActive(config)) {
+        console.log(flags.json ? JSON.stringify({ resolved: [], requeued: [] }) : 'Board inactive; nothing resolved.');
+        return 0;
+      }
+      const items = resolvedItems(config, listItems(config));
+      if (flags.json) console.log(JSON.stringify({ resolved: items.map((i) => i.key), requeued: [], columns: Object.fromEntries(items.map((i) => [i.key, i.column])) }));
+      else if (!items.length) console.log('No ticket is labeled escalation-resolved without needs-human.');
+      else for (const i of items) console.log(`${i.key.padEnd(10)} #${i.number} ${lane(config, i.column)}  ${i.title}`);
       return 0;
     }
 
@@ -188,9 +222,59 @@ async function main() {
       requireActive(config);
       const story = requireStory(config, positional[0]);
       const result = readJson(path.join(config.root, config.stateDir, 'implement', `${story.key}.json`), {});
-      const r = failStory(config, story.key, { id: str(flags.id) ?? `failed:${result.finishedAt ?? result.updatedAt ?? nowIso()}`, body: failureComment(config, result, { host: os.hostname() }) }, { log });
+      const id = str(flags.id) ?? `failed:${result.finishedAt ?? result.updatedAt ?? nowIso()}`;
+      // A replayed failure is not posted again, so its questions are not asked again either.
+      const flow = readFlow(config, story.key);
+      const replay = Boolean(flow.ids?.[id] && flow.ids[id] <= (flow.applied ?? 0));
+      let body = 'The pipeline stopped.';
+      if (!replay) {
+        let comments = [];
+        try {
+          const issue = findIssue(config, story.key);
+          if (issue) comments = issueComments(config, issue.number);
+        } catch (error) {
+          log(`${story.key}: could not read the issue's comments: ${error.message}`);
+        }
+        const text = story.file && fs.existsSync(config.abs(story.file)) ? fs.readFileSync(config.abs(story.file), 'utf8') : null;
+        body = failureComment(config, story.key, result, { runAgent, comments, story: text, host: os.hostname(), log });
+      }
+      const r = failStory(config, story.key, { id, body }, { log });
       if (r.status === 'applied') updateEpic(config, r.issue.number, story.key, { status: 'failed', branch: result.branch, note: `Stopped: ${result.outcome ?? 'no result'}${result.reason ? ` (${result.reason})` : ''}` });
       console.log(describe(config, story.key, 'failed', r));
+      return 0;
+    }
+
+    case 'resolve-check': {
+      // Issues only (github.token in Actions): no project access and no active-board check.
+      const number = Number(String(positional[0] ?? '').replace(/^#/, ''));
+      if (!number) {
+        console.error('Usage: board resolve-check <issue number> [--actor <login>] [--comment <id>] [--label]');
+        return 2;
+      }
+      const r = resolveCheck(config, number, { actor: str(flags.actor), comment: str(flags.comment), viaLabel: Boolean(flags.label) });
+      console.log(`#${number}: ${r.status}${r.missing?.length ? ` (${r.missing.join(' ')})` : ''}${r.answers?.length ? ` (${r.answers.map((a) => `${a.id}=${a.choice}`).join(', ')})` : ''}`);
+      return 0;
+    }
+
+    case 'clear-reopened': {
+      requireActive(config);
+      const story = requireStory(config, positional[0]);
+      const issue = findIssue(config, story.key);
+      if (issue) removeLabel(config, issue.number, 'reopened');
+      console.log(issue ? `${story.key} (#${issue.number}): reopened removed (re-run started; the reopen stays in its Triage).` : `${story.key} has no issue; nothing to clear.`);
+      return 0;
+    }
+
+    case 'clear-resolved': {
+      requireActive(config);
+      const story = requireStory(config, positional[0]);
+      const issue = findIssue(config, story.key);
+      if (!issue) {
+        console.log(`${story.key} has no issue; nothing to clear.`);
+        return 0;
+      }
+      removeLabel(config, issue.number, resolvedLabel(config));
+      console.log(`${story.key} (#${issue.number}): ${resolvedLabel(config)} removed (re-run started).`);
       return 0;
     }
 

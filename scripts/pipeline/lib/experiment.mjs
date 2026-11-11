@@ -76,7 +76,7 @@ function runArmProcess(config, exp, arm) {
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
   const fd = fs.openSync(logFile, 'a');
   const args = [IMPLEMENT_CLI, 'run', '--epic', exp.epic, '--delivery', arm.mode, '--base', arm.branch, '--parallel', String(exp.parallel ?? 'auto')];
-  const child = spawn(process.execPath, args, { cwd: arm.worktree, stdio: ['ignore', fd, fd], env: armEnv(exp, arm) });
+  const child = spawn(process.execPath, args, { cwd: arm.worktree, stdio: ['ignore', fd, fd], env: armEnv(exp, arm), windowsHide: true });
   fs.closeSync(fd);
   return new Promise((resolve) => child.on('exit', (code) => resolve({ code, log: path.relative(config.root, logFile) })));
 }

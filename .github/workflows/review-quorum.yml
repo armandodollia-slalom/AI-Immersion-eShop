@@ -1,0 +1,44 @@
+name: review-quorum
+
+# The review gate (docs/ai-pipeline/review-gate.md) labels a bug-fix PR that needs people `approvals:N`.
+# GitHub rulesets set one approval count per branch, not per PR, so this check enforces the count per PR:
+# it passes once approvals from distinct people (not the author, not stale approvals from before the
+# latest push) reach N. A PR without the label, or with `approvals:0`, passes.
+#
+# Making it a required check on main is a repository setting (Settings > Rules > Rulesets, "Require
+# status checks to pass": review-quorum); this workflow does not change any setting.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: review-quorum-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-quorum:
+    name: review-quorum
+    runs-on: ubuntu-latest
+    steps:
+    # The check's code comes from the base branch, so a PR cannot change how its own approvals are counted.
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.base.sha }}
+        sparse-checkout: scripts/review-gate
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+    - name: Count approvals
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        # Until the gate is on the base branch (the PR that adds it), there is nothing to enforce.
+        if [ ! -f scripts/review-gate/quorum.mjs ]; then echo "review-quorum: not on the base branch yet; nothing to enforce"; exit 0; fi
+        node scripts/review-gate/quorum.mjs "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"

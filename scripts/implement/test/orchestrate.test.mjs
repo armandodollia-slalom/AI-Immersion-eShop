@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 import { loadConfig } from '../../pipeline/lib/config.mjs';
 import { readJsonl } from '../../pipeline/lib/util.mjs';
-import { createContext, orchestrate } from '../lib/orchestrate.mjs';
+import { createContext, orchestrate, unitTestProjects } from '../lib/orchestrate.mjs';
 
 const sh = (cwd, ...args) => {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -517,4 +517,20 @@ test('merge conflicts go to the orchestrator in the story worktree', async () =>
   assert.ok(r.ok, JSON.stringify(r));
   assert.equal(fs.readFileSync(path.join(env.repo, 'src/Catalog.API/Api.cs'), 'utf8'), 'resolved');
   assert.deepEqual(readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0].mergeConflictFiles, ['src/Catalog.API/Api.cs']);
+});
+
+test('unitTestProjects adds every unit test project that references a changed service', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'impl-ut-'));
+  const project = (dir, refs) => {
+    fs.mkdirSync(path.join(root, 'tests', dir), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tests', dir, `${dir}.csproj`), `<Project>${refs.map((r) => `<ProjectReference Include="..\\..\\src\\${r}\\${r}.csproj" />`).join('')}</Project>`);
+  };
+  project('Basket.UnitTests', ['Basket.API']);
+  project('Application.UnitTests', ['Identity.API', 'Webhooks.API']);
+  project('Catalog.FunctionalTests', ['Identity.API']);
+  const ut = { project: 'tests/{service}.UnitTests' };
+  assert.deepEqual(unitTestProjects(root, ['src/Identity.API/Configuration/Config.cs'], ut), ['tests/Application.UnitTests'], 'a service with no project of its own still gets the unit tests that reference it; functional tests are not unit tests');
+  assert.deepEqual(unitTestProjects(root, ['src/Basket.API/A.cs', 'src/Identity.API/B.cs'], ut), ['tests/Application.UnitTests', 'tests/Basket.UnitTests']);
+  assert.deepEqual(unitTestProjects(root, ['src/Identity.APIX/A.cs', 'docs/a.md'], ut), [], 'a reference must match the service folder exactly');
+  fs.rmSync(root, { recursive: true, force: true });
 });

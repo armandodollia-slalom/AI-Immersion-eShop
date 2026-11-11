@@ -18,10 +18,11 @@ export function runStage(config, stage, args, { input = '', inherit = false } = 
     input,
     encoding: 'utf8',
     env: process.env,
+    windowsHide: true,
     maxBuffer: 64 * 1024 * 1024,
     stdio: inherit ? ['pipe', 'inherit', 'inherit'] : 'pipe',
   });
-  return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: (result.stderr ?? '') + (result.error ? result.error.message : '') };
+  return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: (result.stderr ?? '') + (result.error ? result.error.message : '') + (result.signal ? `\nkilled by ${result.signal}` : '') };
 }
 
 const forwardLogs = (result) => result.stderr.trim() && process.stderr.write(result.stderr.endsWith('\n') ? result.stderr : `${result.stderr}\n`);

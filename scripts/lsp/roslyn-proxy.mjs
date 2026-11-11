@@ -22,7 +22,7 @@ function setState(state, extra = {}) {
   fs.renameSync(tmp, stateFile);
 }
 
-const server = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+const server = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
 setState('starting');
 
 // Minimal LSP framing (Content-Length headers) for both directions.

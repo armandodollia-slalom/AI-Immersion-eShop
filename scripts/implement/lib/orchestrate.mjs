@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { git } from '../../pipeline/lib/git.mjs';
+import { readDecisions } from '../../pipeline/lib/human-decisions.mjs';
 import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { appendJsonl, extractResult, log as defaultLog, nowIso, runAsync, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
@@ -43,6 +44,8 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     key,
     storyFile,
     storyText: fs.readFileSync(storyFile, 'utf8'),
+    // A human's answers to an earlier run's escalation questions (decisions.md next to the story).
+    decisions: readDecisions(storyFile),
     // Epic delivery: the epic design note, handed to the planner.
     epicNote,
     branch,
@@ -140,8 +143,28 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
   }
 }
 
+// The unit test projects to run for a set of changed files: tests/<Service>.UnitTests for every
+// service with changed files, plus every other unit test project whose .csproj references one of
+// those services (Identity.API's tests live in tests/Application.UnitTests, for example).
+export function unitTestProjects(cwd, files, ut) {
+  const services = [...new Set(files.map((f) => /^src\/([^/]+)\//.exec(f)?.[1]).filter(Boolean))];
+  const projects = new Set(services.map((svc) => ut.project.replace('{service}', svc)).filter((p) => fs.existsSync(path.join(cwd, p))));
+  const testsDir = path.join(cwd, path.dirname(ut.project));
+  const pattern = new RegExp(`^${path.basename(ut.project).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{service\\}', '.+')}$`);
+  if (services.length && fs.existsSync(testsDir)) {
+    for (const dir of fs.readdirSync(testsDir).filter((d) => pattern.test(d)).sort()) {
+      const rel = path.join(path.dirname(ut.project), dir);
+      const csproj = fs.readdirSync(path.join(cwd, rel)).find((f) => f.endsWith('.csproj'));
+      if (!csproj) continue;
+      const text = fs.readFileSync(path.join(cwd, rel, csproj), 'utf8');
+      if (services.some((svc) => new RegExp(`ProjectReference[^>]*[\\\\/]src[\\\\/]${svc.replace(/[.]/g, '\\.')}[\\\\/]`).test(text))) projects.add(rel);
+    }
+  }
+  return [...projects].sort();
+}
+
 // Build and unit tests, as the harness runs them for verifiers: `checks` always, plus the unit test
-// project of every service with changed files.
+// projects of every service with changed files (unitTestProjects).
 export async function runChecks(ctx, cwd, files) {
   const parts = [];
   let ok = true;
@@ -153,11 +176,7 @@ export async function runChecks(ctx, cwd, files) {
   for (const c of ctx.s.checks ?? []) await exec(c.name, c.cmd);
   const ut = ctx.s.unitTests;
   if (ut?.cmd) {
-    const services = [...new Set(files.map((f) => /^src\/([^/]+)\//.exec(f)?.[1]).filter(Boolean))];
-    for (const svc of services) {
-      const project = ut.project.replace('{service}', svc);
-      if (fs.existsSync(path.join(cwd, project))) await exec(`unit tests ${project}`, ut.cmd.replace('{project}', project));
-    }
+    for (const project of unitTestProjects(cwd, files, ut)) await exec(`unit tests ${project}`, ut.cmd.replace('{project}', project));
   }
   return { ok, output: parts.join('\n\n') || '(no checks configured)' };
 }
@@ -185,7 +204,7 @@ export async function planStory(ctx) {
       round: attempt,
       cwd: ctx.worktree,
       timeoutSec: ctx.s.timeouts.plannerSec,
-      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits, errors, epicNote: ctx.epicNote, mockups: uiStory ? mockupText(ctx) : null }),
+      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits, errors, epicNote: ctx.epicNote, mockups: uiStory ? mockupText(ctx) : null, decisions: ctx.decisions }),
     });
     const raw = parsePlanOutput(res.output);
     const agent = { cli: res.cli, model: res.model, version: res.version };
@@ -234,7 +253,7 @@ async function agentFor(ctx, rec, slot, opts) {
 const PATHLIKE = /(?:^|[\s`'"(])((?:src|tests|testing|deploy|scripts|docs)\/[\w./-]+|[\w-]+\.(?:props|targets|json|slnx?|slnf))/g;
 
 async function verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) {
-  const task = codeVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, disputes });
+  const task = codeVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, disputes, decisions: ctx.decisions });
   for (let attempt = 0; attempt <= ctx.config.agent.resultParseRetries; attempt++) {
     const res = await agentFor(ctx, rec, 'verifier', { role: 'verifier', name: 'pair-verifier', mode: 'read', modelClass: ctx.s.roles.verifier.modelClass, cwd: worktree, timeoutSec: ctx.s.timeouts.codeVerifierSec, task });
     discardChanges(worktree);
@@ -304,7 +323,7 @@ async function verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec,
       renders = { ...r, text: formatRenders(r.entries) };
     }
     const mockupRenders = (renders?.entries ?? []).filter((e) => e.kind === 'screen' && e.png).map((e) => e.png);
-    const task = uiVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, webappUrl: lease.webappUrl, screenshotsDir: shots, worktree, mockups: mockupText(ctx), renders, implementerScreens: rec.mockupScreens ?? null, disputes });
+    const task = uiVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, webappUrl: lease.webappUrl, screenshotsDir: shots, worktree, mockups: mockupText(ctx), renders, implementerScreens: rec.mockupScreens ?? null, disputes, decisions: ctx.decisions });
     for (let attempt = 0; attempt <= ctx.config.agent.resultParseRetries; attempt++) {
       const res = await agentFor(ctx, rec, 'verifier', { role: 'uiVerifier', name: 'pair-ui-verifier', mode: 'verify', modelClass: ctx.s.roles.uiVerifier.modelClass, cwd: worktree, timeoutSec: ctx.s.timeouts.uiVerifierSec, task });
       const removed = discardChanges(worktree);
@@ -356,7 +375,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
         model: role === 'pairImplementer' ? st.model ?? null : null,
         cwd: worktree,
         timeoutSec: ctx.s.timeouts.pairImplementerSec,
-        task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self), mockups: st.verify === 'ui' ? mockupText(ctx) : null, mockupRenders }),
+        task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self), mockups: st.verify === 'ui' ? mockupText(ctx) : null, mockupRenders, decisions: ctx.decisions }),
       });
       commitAll(worktree, `${ctx.key}: ${st.id} (round ${round})`);
       if (ctx.deps.lsp.csharpRunning(worktree) && signatureChanges(git(worktree, ['diff', before, 'HEAD']).stdout).length && !res.referencesCalls) {
