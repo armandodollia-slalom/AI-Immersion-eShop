@@ -4,7 +4,7 @@ Give the pipeline story keys (or an epic) from the [board](board.md) and it impl
 
 ```bash
 node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --dry-run
-node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4                   # one story at a time
+node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4                   # as many at once as resources allow (--parallel auto)
 node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4 --parallel 3 --pr
 node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, fetched from its issue
 node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --pr   # every story of the epic (its sub-issues)
@@ -105,7 +105,7 @@ flowchart TD
 4. **Verifier pairs.** For each subtask the harness creates `../<repo>-worktrees/<key>--<id>` on `feat/<key>--<id>` from the story branch's current head (copying the story worktree's graphify graph, running `prepareCmd` (a `dotnet restore`) and starting a language server limited to the subtask's projects). Then, up to `maxPairRounds` times:
    - the **pair-implementer** (implement mode, the subtask's model class, no subagents) implements and commits;
    - the harness checks the diff against `owns`: any other changed file fails the round with a finding naming it (the verifier is not asked);
-   - the harness runs language server diagnostics on the changed files and the `checks` (build) plus the unit tests of each touched service; a failing build fails the round;
+   - the harness runs language server diagnostics on the changed files and the `checks` (build) plus the unit tests of each touched service and of every unit test project that references it; a failing build fails the round;
    - a fresh **pair-verifier** (read mode, model class `medium`) gets only the subtask spec, the diff against the story branch and that output, and returns `APPROVED` or `CHANGES_REQUESTED` with findings tied to file and line. For `verify: "ui"` subtasks the **pair-ui-verifier** (verify mode, model class `large`) checks the running app instead (see [UI verification](#ui-verification)). Diagnostics errors in changed files block approval whatever the verdict;
    - blocking findings, screenshot paths and diagnostics go verbatim to the next implementer round. A verdict that breaks the output contract is asked for again once; if it is still unusable the round is spent and the next round only re-verifies.
 
@@ -294,7 +294,7 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 | `agent.models.implementer` | `null` (the orchestrator's class) | Model alias for the orchestrator or single implementer |
 | `implement.prepareCmd` | `dotnet restore eShop.Web.slnf` | Run in each new subtask worktree (failure is logged, not fatal) |
 | `implement.checks` | `dotnet build eShop.Web.slnf` | Commands whose output verifiers get; a failure fails the round |
-| `implement.unitTests` | `tests/{service}.UnitTests`, `dotnet test --project {project}` | Run for each `src/<service>/` with changes, when that project exists |
+| `implement.unitTests` | `tests/{service}.UnitTests`, `dotnet test --project {project}` | Run for each `src/<service>/` with changes, when that project exists, and for every other `tests/*.UnitTests` project whose `.csproj` references a changed service (for example `tests/Application.UnitTests` for `Identity.API`) |
 | `implement.ui.*` | `slotsCmd`, `teststackCmd`, `leaseWaitSec` 300, `leaseRetrySec` 30, `stackTimeoutSec` 2400, `renewEverySec` 1800, `screenshotsDir` `artifacts/pairs` | Stack slot contract and timing |
 | `implement.lsp.*` | `lspdCmd`, `slnfCmd`, `timeoutSec` 300, `enabled` | Language server tooling |
 | `implement.decisions.*` | see [Decision log](#decision-log) | Labeling thresholds |

@@ -401,7 +401,7 @@ export function formatLessonsRecovery(r) {
   return 'QE: the lessons and factory retro run kept crashing and was escalated (.agent-state/escalations/lessons-qe.md).';
 }
 
-// Re-checks recent 10/10 results with a stricter auditor so the verifiers themselves can improve.
+// Re-checks recent passing results (at or above loops.requiredScore) with a stricter auditor so the verifiers themselves can improve.
 export function calibrateCommand(config, { stage = null, sample = 3 } = {}) {
   const data = loadMetrics(config);
   const stories = listStories(config);

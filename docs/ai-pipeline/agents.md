@@ -7,6 +7,9 @@ Part of the [AI development pipeline](README.md). Every agent is defined once in
 | Agent | Stage | Started by | Access | Sees | Returns |
 | --- | --- | --- | --- | --- | --- |
 | `implementer` | [implement](implement.md) | `implement run`, or you | writes code, commits; no push, reset or branch switch | the story, the codebase, `docs/`, review or bug findings | `done`, `blocked` or `needs-input` |
+| `pair-implementer` | [implement](implement.md#what-happens) | implement harness, one per delegated subtask (never by hand) | writes and commits only the files the subtask owns, in its own worktree | the subtask spec, the codebase, the previous round's findings | the subtask's commits |
+| `pair-verifier` | [implement](implement.md#what-happens) | implement harness, every pair round | read-only | the subtask spec, its diff, build, unit test and diagnostics output | `APPROVED` or `CHANGES_REQUESTED` with findings |
+| `pair-ui-verifier` | [implement](implement.md#ui-verification) | implement harness, every round of a `verify: "ui"` subtask | runs shell commands and Playwright against a leased stack slot; no source edits | the subtask spec, its diff, the running app, mockups and their renders | `APPROVED` or `CHANGES_REQUESTED` with findings citing screenshots |
 | `arch-review` | [review](review.md) | review stage (as `architecture-policy/agents/arch_review.py review`), before each LLM review; any agent on request | read-only | changed files, Architecture Policy Pack rules | `PASS`, `WARN` or `BLOCK` with rule findings |
 | `architecture-reviewer` | [review](review.md) | review stage | read-only | the story, the implementation diff, `AGENTS.md`, `CONTRIBUTING.md` | `APPROVED` or `CHANGES_REQUESTED` with findings |
 | `qe-plan` | [qe](qe.md) | `qe plan`, or QE after review approval | writes `tests/plans/` | the story (and its diff when it changed) | test plan files |

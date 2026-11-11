@@ -10,7 +10,7 @@ import { clip, decisionRecord, formatBugs, normalizeBugs } from '../../pipeline/
 import { computeMetrics } from '../lib/metrics.mjs';
 import { acquireLock, bootId, extractResult, isProcessAlive, lockHolder, parseFrontMatter, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 import { attributedAgent, normalizeVerdict } from '../lib/verify.mjs';
-import { lintFiles } from '../lib/workflows.mjs';
+import { fixFiles, lintFiles } from '../lib/workflows.mjs';
 
 const config = {
   loops: { requiredScore: 10 },
@@ -274,5 +274,19 @@ test("lintFiles runs the commit hook's linters on the agent's files and skips li
   assert.deepEqual(calls, [['bin/mdlint', 'plans/a.md', 'plans/b.md'], ['dotnet', 'format', 'tests/A.cs']], 'a missing local linter binary is skipped');
   assert.equal(errors.length, 1, 'a linter that is not on PATH (127) is skipped');
   assert.match(errors[0], /bin\/mdlint.*failed on plans\/a\.md, plans\/b\.md:\n.*MD060/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('fixFiles auto-fixes the agent files by extension, ignores exit codes and skips fixers that are not installed', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qe-fix-'));
+  const config = { root, precheck: { fix: { '.ts': ['node_modules/.bin/eslint', '--fix', '{files}'], '.cs': ['dotnet', 'format', 'whitespace', '--include', '{files}'] } } };
+  const calls = [];
+  const runner = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    return { status: 2, stdout: '', stderr: 'could not fix everything' };
+  };
+  const fixed = fixFiles(config, ['e2e/a.spec.ts', 'tests/A.cs', 'tests/B.cs', 'plans/a.md'], { runner });
+  assert.deepEqual(calls, [['dotnet', 'format', 'whitespace', '--include', 'tests/A.cs', 'tests/B.cs']], 'a missing local fixer binary is skipped; extensions with no fixer are left alone');
+  assert.deepEqual(fixed, ['tests/A.cs', 'tests/B.cs']);
   fs.rmSync(root, { recursive: true, force: true });
 });
