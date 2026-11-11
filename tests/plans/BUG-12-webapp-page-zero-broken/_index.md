@@ -6,6 +6,10 @@ plan-sha: 7dc568f4d00d
 verified-score: 9
 verified-at: "2026-11-11T16:10:39.395Z"
 verified-by: qe-plan@c3934e11/456099fb
+automation-sha: 92580d21db4e
+automation-plan-sha: 7dc568f4d00d
+automation-score: 9
+automation-verified-at: "2026-11-11T16:32:31.374Z"
 ---
 # Test plan: BUG-12 [FE - WebApp] - Catalog page ?page=0 or ?page=-1 never loads
 

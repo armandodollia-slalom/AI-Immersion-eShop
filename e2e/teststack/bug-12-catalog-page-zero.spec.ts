@@ -12,7 +12,7 @@ const LONG_NAME = 'Edge 13 Ultra Long Name Hiking Pack Edition Max 50';
 
 const names = (page: Page) => page.locator('.catalog-product .name');
 const pager = (page: Page) => page.getByRole('navigation', { name: 'Catalog pages' });
-const errorBar = (page: Page) => page.getByText('An unhandled error has occurred.');
+const errorBar = (page: Page) => page.getByText('An unhandled error has occurred.').locator('visible=true');
 
 async function expectFirstPage(page: Page) {
   await expect(page.locator('.catalog-count')).toHaveText('14 products');
