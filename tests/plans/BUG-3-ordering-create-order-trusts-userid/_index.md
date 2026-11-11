@@ -6,10 +6,10 @@ plan-sha: 973c061cc73f
 verified-score: 9
 verified-at: "2026-11-11T21:38:28.782Z"
 verified-by: qe-plan@c3934e11/456099fb
-automation-sha: 7311f5afc5b3
+automation-sha: 48cc68d477f0
 automation-plan-sha: 973c061cc73f
 automation-score: 9
-automation-verified-at: "2026-11-11T21:49:01.897Z"
+automation-verified-at: "2026-11-11T22:26:30.274Z"
 ---
 # Test plan: BUG-3 Create order uses the userId from the request body instead of the token
 
