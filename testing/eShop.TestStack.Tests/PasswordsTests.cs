@@ -22,7 +22,10 @@ public sealed class PasswordsTests
         }
 
         var layer = ScenarioParser.ParseFile(Path.Combine(root, "testing", "scenarios", "default", "scenario.yaml"), ["catalogdb", "identitydb"]);
-        var users = ((TableStep)layer.Postgres.Single(p => p.Database == "identitydb").Steps.Single()).Rows;
+        var users = layer.Postgres.Single(p => p.Database == "identitydb").Steps
+            .OfType<TableStep>()
+            .Single(step => step.Table == "AspNetUsers")
+            .Rows;
 
         Assert.AreEqual(2, users.Count);
         foreach (var user in users)

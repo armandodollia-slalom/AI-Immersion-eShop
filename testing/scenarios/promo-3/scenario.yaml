@@ -1,0 +1,7 @@
+description: >
+  PROMO-3 (cart pricing evaluation) needs exactly the data of promo-2 and no more: promotions 1-7 in promotionsdb
+  (1 Fall Hiking Sale 20% on Type 3, 2 Buy 2 Get 1 Free on Product 40, 3 "$10 off orders over $150" on All, 4 coupon-only
+  10% with coupons FALL10 and WELCOME5, 5 Draft, 6 ended yesterday, 7 starts tomorrow; the start events of 1-4 are already
+  recorded as sent) plus users alice (admin role) and bob (no role) from default. Cases that need more promotions create
+  them through the admin API, so their ids start at 8.
+extends: promo-2

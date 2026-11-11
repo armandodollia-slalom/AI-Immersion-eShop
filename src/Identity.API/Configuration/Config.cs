@@ -2,6 +2,10 @@
 {
     public class Config
     {
+        // ASP.NET Identity role for store administrators. ProfileService issues it as a 'role' claim,
+        // which Promotions.API (PromotionsPolicies.Admin) and the WebApp ('Admin' policy) authorize on.
+        public const string AdminRole = "admin";
+
         // ApiResources define the apis in your system
         public static IEnumerable<ApiResource> GetApis()
         {

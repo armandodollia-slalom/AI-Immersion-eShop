@@ -1,5 +1,6 @@
 ﻿@using eShop.WebAppComponents.Item
 @using System.Globalization
+@using eShop.WebAppComponents.Promotions
 @inject IProductImageUrlProvider ProductImages
 
 <div class="catalog-item"
@@ -12,10 +13,24 @@
             {
                 <span class="catalog-product-brand">@brand.Brand</span>
             }
+            @if (BadgePromotion is { } badgePromotion)
+            {
+                <span class="catalog-product-promo"><PromotionBadge Label="@badgePromotion.BadgeLabel" /></span>
+            }
         </span>
         <span class='catalog-product-content'>
             <span class='name'>@Item.Name</span>
-            <span class='price'>$@Item.Price.ToPriceDisplay()</span>
+            @if (BadgePromotion is { Type: PromotionType.PercentOff } percentOff)
+            {
+                <span class='price'>
+                    <s class="price-original">$@Item.Price.ToPriceDisplay()</s>
+                    <span class="price-sale">$@PromotionPricing.SalePrice(Item.Price, percentOff.Value).ToPriceDisplay()</span>
+                </span>
+            }
+            else
+            {
+                <span class='price'>$@Item.Price.ToPriceDisplay()</span>
+            }
         </span>
     </a>
 </div>
@@ -26,4 +41,11 @@
 
     [Parameter]
     public bool IsLoggedIn { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<ActivePromotion>? Promotions { get; set; }
+
+    // AmountOffOrder applies to the order, not the item, so it never shows a badge here.
+    private ActivePromotion? BadgePromotion =>
+        PromotionMatching.BestMatch(Promotions?.Where(p => p.Type != PromotionType.AmountOffOrder).ToList(), Item);
 }

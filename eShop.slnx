@@ -32,6 +32,7 @@
     <Project Path="tests/Webhooks.FunctionalTests/Webhooks.FunctionalTests.csproj" />
     <Project Path="tests/eShop.AppHost.UnitTests/eShop.AppHost.UnitTests.csproj" />
     <Project Path="tests/ClientApp.UnitTests/ClientApp.UnitTests.csproj" />
+    <Project Path="tests/WebApp.UnitTests/WebApp.UnitTests.csproj" />
   </Folder>
   <Folder Name="/testing/">
     <Project Path="testing/eShop.TestStack/eShop.TestStack.csproj" />

@@ -1,0 +1,10 @@
+description: >
+  Default data plus the seven promotions of PROMO-2's cases in promotionsdb: ids 1-3 Active without coupon, 4 Active
+  coupon-only (coupons FALL10 and WELCOME5), 5 Draft, 6 Published and ended yesterday, 7 Published and starting
+  tomorrow. The start event of promotions 1-4 is already recorded as sent, so the lifecycle worker writes no events for
+  the seed rows and cases that count IntegrationEventLog rows see only the events they cause. Users alice (admin role)
+  and bob (no role) come from default.
+extends: default
+postgres:
+  promotionsdb:
+    - sql: promotions.sql

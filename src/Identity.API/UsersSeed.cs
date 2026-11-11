@@ -1,10 +1,25 @@
 ﻿
 namespace eShop.Identity.API;
 
-public class UsersSeed(ILogger<UsersSeed> logger, UserManager<ApplicationUser> userManager) : IDbSeeder<ApplicationDbContext>
+public class UsersSeed(ILogger<UsersSeed> logger, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager) : IDbSeeder<ApplicationDbContext>
 {
     public async Task SeedAsync(ApplicationDbContext context)
     {
+        if (!await roleManager.RoleExistsAsync(Config.AdminRole))
+        {
+            var roleResult = await roleManager.CreateAsync(new IdentityRole(Config.AdminRole));
+
+            if (!roleResult.Succeeded)
+            {
+                throw new Exception(roleResult.Errors.First().Description);
+            }
+
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("{Role} role created", Config.AdminRole);
+            }
+        }
+
         var alice = await userManager.FindByNameAsync("alice");
 
         if (alice == null)
@@ -47,6 +62,17 @@ public class UsersSeed(ILogger<UsersSeed> logger, UserManager<ApplicationUser> u
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug("alice already exists");
+            }
+        }
+
+        // alice is the demo store administrator; bob stays a regular shopper.
+        if (!await userManager.IsInRoleAsync(alice, Config.AdminRole))
+        {
+            var roleResult = await userManager.AddToRoleAsync(alice, Config.AdminRole);
+
+            if (!roleResult.Succeeded)
+            {
+                throw new Exception(roleResult.Errors.First().Description);
             }
         }
 
