@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test';
 import baseConfig from './playwright.config';
+import { WEBAPP_URL } from './e2e/teststack/ports';
 
 /**
  * Runs the e2e suite against the Docker Compose test stack (testing/teststack up) instead of
@@ -12,7 +13,8 @@ export default defineConfig({
   ...baseConfig,
   use: {
     ...baseConfig.use,
-    baseURL: process.env.TESTSTACK_URL ?? 'http://localhost:18080',
+    // TESTSTACK_URL, else the WebApp of TESTSTACK_SLOT (slot 0: http://localhost:18080).
+    baseURL: process.env.TESTSTACK_URL ?? WEBAPP_URL,
     launchOptions: {
       // Identity redirects the browser to host.docker.internal:18081 (the same URL the containers use).
       args: ['--host-resolver-rules=MAP host.docker.internal 127.0.0.1'],

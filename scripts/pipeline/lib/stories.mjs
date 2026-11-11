@@ -1,46 +1,15 @@
+// Story lookup for every stage. Stories live on the GitHub board; scripts/pipeline/lib/tickets.mjs is
+// the one loader (cache in .agent-state/board/, fetched on demand). This module keeps the names the
+// stages already import and adds the active-story and case-id helpers.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fsReader, currentBranch } from './git.mjs';
+import { currentBranch } from './git.mjs';
 import { sha } from './util.mjs';
+import { epicOf, listEpics, listStories, resolveStory, storiesFromPaths } from './tickets.mjs';
 
-const KEY = /^([A-Z][A-Z0-9]*-\d+)-/;
+export { epicOf, listEpics, listStories, resolveStory, storiesFromPaths };
+
 export const CASE_ID = /TC-([A-Z][A-Z0-9]*-\d+)-(\d{2,})(?!\d)/g;
-
-export function listStories(config, reader = fsReader(config.root)) {
-  return reader
-    .list(config.storiesDir)
-    .filter((name) => name.endsWith('.md') && KEY.test(name))
-    .map((name) => {
-      const slug = name.slice(0, -3);
-      return {
-        key: KEY.exec(name)[1],
-        slug,
-        file: `${config.storiesDir}/${name}`,
-        planDir: config.plansDir ? `${config.plansDir}/${slug}` : null,
-        scenario: KEY.exec(name)[1].toLowerCase(),
-      };
-    });
-}
-
-export function resolveStory(config, arg, reader) {
-  if (!arg) return null;
-  const needle = path.basename(String(arg)).replace(/\.md$/, '').toUpperCase();
-  const stories = listStories(config, reader);
-  return (
-    stories.find((s) => s.key === needle) ??
-    stories.find((s) => s.slug.toUpperCase() === needle) ??
-    stories.find((s) => needle.startsWith(`${s.key}-`)) ??
-    null
-  );
-}
-
-export function storiesFromPaths(config, paths, reader) {
-  const prefix = `${config.storiesDir}/`;
-  const keys = new Set(
-    paths.filter((p) => p.startsWith(prefix) && p.endsWith('.md')).map((p) => path.basename(p)),
-  );
-  return listStories(config, reader).filter((s) => keys.has(path.basename(s.file)));
-}
 
 export const storySha = (text) => sha(text.replace(/\r\n/g, '\n'));
 
@@ -54,22 +23,24 @@ export function caseIdsIn(text, key) {
   return ids;
 }
 
-// The story file registered with `pipeline start` (not inferred from the branch name).
+const activeFile = (config) => path.join(config.root, config.stateDir, 'active-story');
+
+// The story registered with `pipeline start` (not inferred from the branch name), from the cache only.
 export function activeStoryFile(config) {
-  const file = path.join(config.root, config.stateDir, 'active-story');
-  if (!fs.existsSync(file)) return null;
-  return resolveStory(config, fs.readFileSync(file, 'utf8').trim())?.file ?? null;
+  if (!fs.existsSync(activeFile(config))) return null;
+  return resolveStory(config, fs.readFileSync(activeFile(config), 'utf8').trim(), { fetch: false })?.file ?? null;
 }
 
 export function activeStory(config) {
-  const file = path.join(config.root, config.stateDir, 'active-story');
-  if (fs.existsSync(file)) {
-    const story = resolveStory(config, fs.readFileSync(file, 'utf8').trim());
+  if (fs.existsSync(activeFile(config))) {
+    const story = resolveStory(config, fs.readFileSync(activeFile(config), 'utf8').trim());
     if (story) return story;
   }
+  // Hooks call this on every turn: a branch name only matches tickets already in the cache (`pipeline
+  // start`, `implement run` and `board fetch` put them there), so no hook waits on GitHub.
   const branch = currentBranch(config.root).toUpperCase();
   for (const match of branch.matchAll(/([A-Z][A-Z0-9]*-\d+)/g)) {
-    const story = resolveStory(config, match[1]);
+    const story = resolveStory(config, match[1], { fetch: false });
     if (story) return story;
   }
   return null;

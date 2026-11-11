@@ -23,9 +23,29 @@ export const CHECKS_FILE = 'pr-checks.jsonl';
 const rel = (ctx, p) => path.relative(ctx.workRoot, p).replace(/\\/g, '/');
 const json = (value) => JSON.stringify(value, null, 2);
 
+// The lenses of a round; `ctx.only` (--lenses) narrows them, for example to the design lens of an epic.
 export function activeLenses(ctx) {
   const hasVideo = ctx.video.videos.length > 0 || ctx.video.unreadable.length > 0;
-  return ['acceptance', 'flow', ...(ctx.isFrontend ? ['design'] : []), 'style', ...(hasVideo ? ['video'] : [])];
+  const lenses = ['acceptance', 'flow', ...(ctx.isFrontend ? ['design'] : []), 'style', ...(hasVideo ? ['video'] : [])];
+  return ctx.only?.length ? lenses.filter((l) => ctx.only.includes(l)) : lenses;
+}
+
+// The tickets block of a multi-ticket check: every ticket with its story and mockups, the epic's journey,
+// and how the critics (the design critic above all) use them.
+export function ticketsBlock(ctx) {
+  if (!ctx.multi) return [];
+  const mock = (t) => (t.mockups.length ? t.mockups.join(', ') : '(no mockup: use its Outputs and the design system)');
+  return [
+    '',
+    `### Tickets in this check (${ctx.tickets.length}${ctx.epic ? `, epic ${ctx.epic.key}` : ''})`,
+    '',
+    'The PR delivers all of these; hold it to every one. The design lens checks every frontend ticket against its own mockups, and the journey across them against the epic.',
+    '',
+    ...ctx.tickets.map((t) => `- ${t.key}${t.frontend ? ' (frontend)' : ''}: ${t.title}\n  - Story: ${t.file}\n  - Mockups: ${mock(t)}`),
+    ...(ctx.epic ? [`- Epic ${ctx.epic.key}: ${ctx.epic.title} (the journey across the tickets)\n  - Body: ${ctx.epic.file}\n  - Mockups: ${ctx.epic.mockups.join(', ') || '(none)'}`] : []),
+    '',
+    'Name the ticket key (or "journey") in the `requirement` of every finding.',
+  ];
 }
 
 export function modelFor(config, role) {
@@ -97,16 +117,18 @@ function header(config, ctx, round, files) {
     `Round folder: ${files.roundDir}`,
     '',
     'Files (paths relative to the repository root; read what you need):',
-    `- Story: ${story.file}`,
+    `- Story (ticket cache, absolute path): ${config.abs(story.file)}`,
     `- PR description: ${files.prFile}`,
     `- Diff against ${ctx.baseRef} (merge base ${ctx.baseRev.slice(0, 10)}): ${files.diffFile}`,
     `- Changed files (${ctx.diff.files.length}): ${ctx.diff.files.slice(0, 200).join(', ')}${ctx.diff.files.length > 200 ? ', ...' : ''}`,
     `- Conventions: ${ctx.conventions.join(', ') || '(none)'}`,
-    `- Mockups: ${ctx.mockups.join(', ') || '(none for this story)'}`,
+    `- Mockups (absolute paths): ${ctx.mockups.join(', ') || '(none for this story)'}`,
+    ...(ctx.mockupRenders?.ok && ctx.mockupRenders.entries.length ? [`- Mockup renders: ${rel(ctx, path.join(ctx.runDir, 'context', 'mockups', 'manifest.json'))} (${ctx.mockupRenders.entries.filter((e) => e.kind === 'screen' && e.png).length} screens and states as PNGs)`] : []),
     `- Video frames: ${ctx.video.videos.length ? `${files.framesFile} (${ctx.video.videos.length} video(s), ${ctx.video.videos.reduce((n, v) => n + v.frames.length, 0)} frames)` : '(no readable videos)'}`,
   ];
   if (ctx.video.unreadable.length) lines.push(`- Videos that could not be read: ${ctx.video.unreadable.map((u) => `${u.source} (${u.reason})`).join('; ')}`);
   if (files.previousRulings) lines.push(`- Upheld findings from the previous round: ${files.previousRulings}`);
+  lines.push(...ticketsBlock(ctx));
   lines.push('', '### Diff stat', '', '```', ctx.diff.stat.trimEnd() || '(empty)', '```');
   return lines.join('\n');
 }
@@ -121,6 +143,7 @@ async function callAgent(config, ctx, files, { role, agent, label, task, mode = 
       cwd: ctx.workRoot,
       timeoutSec: timeoutSec ?? config.prCheck.timeoutSec,
       promptFile: path.join(files.roundAbs, `${label}.prompt.md`),
+      usage: { stage: 'pr-check', story: ctx.story?.key ?? null, round: files.round ?? null, step: label },
     });
     fs.writeFileSync(path.join(files.roundAbs, `${label}.out.md`), result.output ?? '');
     const raw = extractResult(result.output ?? '');
@@ -246,6 +269,7 @@ function roundFiles(ctx, round, { clean = true } = {}) {
   if (clean) fs.rmSync(roundAbs, { recursive: true, force: true });
   fs.mkdirSync(roundAbs, { recursive: true });
   return {
+    round,
     roundAbs,
     roundDir: rel(ctx, roundAbs),
     prFile: rel(ctx, path.join(ctx.runDir, 'context', 'pr.md')),
@@ -383,6 +407,7 @@ export async function runPrCheck(config, ctx, { fix, resume = null, onProgress =
       ts: nowIso(),
       target: ctx.id,
       story: ctx.story.key,
+      ...(ctx.multi ? { stories: ctx.tickets.map((t) => t.key), epic: ctx.epic?.key ?? null } : {}),
       round,
       score: result.score,
       lensScores: result.lensScores,

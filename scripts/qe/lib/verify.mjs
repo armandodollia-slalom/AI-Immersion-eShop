@@ -50,6 +50,7 @@ export function runVerifier(config, { stage, story, round, task, producerVersion
       mode: 'read',
       model: model ?? config.agent.models.verifier,
       timeoutSec: config.timeoutsSec.verifier,
+      usage: { stage: `${stage}-verify`, story: story.key, round },
     });
     const raw = extractResult(result.output);
     if (raw) {

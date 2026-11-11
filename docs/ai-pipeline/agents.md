@@ -17,7 +17,7 @@ Part of the [AI development pipeline](README.md). Every agent is defined once in
 | `pr-check` | [pr-check](pr-check.md) | you (Copilot or Claude Code) | runs `npm run pr-check` | the PR or branch | summary of the report |
 | `pr-check-acceptance` | [pr-check](pr-check.md) | PR check round | read-only | story, diff | lens score and findings |
 | `pr-check-flow` | [pr-check](pr-check.md) | PR check round | read-only | story, diff | lens score and findings |
-| `pr-check-design` | [pr-check](pr-check.md) | PR check round, frontend stories only | read-only | story, diff, mockups, frames | lens score and findings |
+| `pr-check-design` | [pr-check](pr-check.md) | PR check round, frontend stories only | read-only | story (or every ticket of an epic check), diff, mockups and their renders, frames | lens score and findings |
 | `pr-check-style` | [pr-check](pr-check.md) | PR check round | read-only | diff, repo conventions | lens score and findings |
 | `pr-check-video` | [pr-check](pr-check.md) | PR check round, when a video exists | read-only | video frames, story | lens score and findings |
 | `pr-check-defender` | [pr-check](pr-check.md) | PR check round | read-only | the round's findings, story, diff | concede, rebut or partial per finding |

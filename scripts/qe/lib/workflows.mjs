@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentDefinition, runAgent } from '../../pipeline/lib/agents.mjs';
@@ -6,6 +7,7 @@ import { spawnBackground } from '../../pipeline/lib/background.mjs';
 import { formatBugs, logDecision, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges } from '../../pipeline/lib/git.mjs';
 import { readEvidence, formatEvidence } from './evidence.mjs';
+import { onLeasedSlot } from './slots.mjs';
 import {
   INDEX,
   automationFiles,
@@ -20,6 +22,7 @@ import {
 import { clearEscalation, escalate, lockFile, logFile, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { RECOVERY_DONE, nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { casePrefix, storySha } from '../../pipeline/lib/stories.mjs';
+import { storyVersion } from '../../board/lib/source.mjs';
 import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, runAsync, selfProcess, sleep, tail } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, formatGaps, runVerifier } from './verify.mjs';
 
@@ -47,18 +50,24 @@ function logPrecheck(config, stage, story, round, errors) {
   });
 }
 
-// Finds the committed version of the story the plan was written against and diffs it with the
-// current story, so an update can edit the affected cases in place instead of rewriting the plan.
-export function storyDiffSince(config, story, oldSha) {
+// Finds the version of the story the plan was written against (the ticket cache keeps every version it
+// fetched, by story sha; else the issue's edit history) and diffs it with the current story, so an update
+// can edit the affected cases in place instead of rewriting the plan.
+export function storyDiffSince(config, story, oldSha, { version = storyVersion } = {}) {
   if (!oldSha) return null;
-  const revs = git(config.root, ['log', '--format=%H', '-n', '50', '--', story.file]).stdout.split('\n').filter(Boolean);
-  for (const rev of revs) {
-    const text = git(config.root, ['show', `${rev}:${story.file}`]);
-    if (text.status === 0 && storySha(text.stdout) === oldSha) {
-      return git(config.root, ['diff', '--no-ext-diff', rev, '--', story.file]).stdout || null;
-    }
+  const current = config.abs(story.file);
+  if (!fs.existsSync(current) || storySha(fs.readFileSync(current, 'utf8')) === oldSha) return null;
+  const old = version(config, story.key, oldSha);
+  if (old == null) return null;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'story-diff-'));
+  try {
+    const before = path.join(tmp, 'story.md');
+    fs.writeFileSync(before, old);
+    const diff = git(config.root, ['diff', '--no-index', '--no-ext-diff', '--', before, current]).stdout;
+    return diff ? diff.replaceAll(before, `${story.key}@${oldSha}`).replaceAll(current, story.file) : null;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
-  return null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -158,6 +167,7 @@ export async function planLoop(config, story, { force = false, resume = false, s
         mode: 'write',
         model: config.agent.models.plan,
         timeoutSec: config.timeoutsSec.plan,
+        usage: { stage: 'plan', story: story.key, round },
         task: planTask(config, story, { mode: round === 1 ? mode : 'update', reasons: initial.reasons, storyDiff, feedback }),
       });
       if (!producer.ok) {
@@ -277,23 +287,18 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
     return out;
   })();
 
-  // e2e: one shared teststack per machine, so specs from different stories (different worktrees)
-  // take turns. The lock lives in git's common dir, which every worktree shares. Runs alongside .NET.
+  // e2e: on a leased stack slot of its own when several tickets run at once (qe.useSlots, see
+  // lib/slots.mjs), else the one shared slot-0 teststack per machine, where specs from different stories
+  // (different worktrees) take turns. The lock lives in git's common dir, which every worktree shares.
+  // Runs alongside .NET.
   const e2e = (async () => {
     if (!specFiles.length) return [];
     const argv = expand(config.precheck.playwright, { files: specFiles, casePrefix: casePrefix(story.key), story: story.key });
-    const lock = teststackLock(config);
-    const deadline = Date.now() + config.timeoutsSec.tests * 1000 * 2;
-    while (!acquireLock(lock)) {
-      if (Date.now() > deadline) return [`Timed out waiting for the shared teststack (held by pid ${lockHolder(lock)}).`];
-      log(`${story.key}: waiting for the teststack (pid ${lockHolder(lock)} is running e2e tests)`);
-      await sleep(10_000);
-    }
-    try {
-      log(`${story.key}: running ${argv.join(' ')}`);
+    const runSpecs = async (slotEnv) => {
+      log(`${story.key}: running ${argv.join(' ')}${slotEnv.TESTSTACK_SLOT ? ` on slot ${slotEnv.TESTSTACK_SLOT}` : ''}`);
       const since = nowIso();
       // The verifier needs keyframes from passing tests too, so keep them for every e2e run.
-      const result = await runAsync(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests, env: { ...process.env, E2E_KEEP_VIDEOS: '1' } });
+      const result = await runAsync(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests, env: { ...process.env, E2E_KEEP_VIDEOS: '1', ...slotEnv } });
       evidence = readEvidence(config, { casePrefix: casePrefix(story.key), since });
       if (result.status === 0) return [];
       let error = failure(argv, result);
@@ -303,6 +308,18 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
           + 'starting with the `failure` and `step failed` frames, before you change any code:\n\n' + formatEvidence(failed);
       }
       return [error];
+    };
+    const onSlot = await onLeasedSlot(config, { key: story.key, specFiles, timeoutSec: config.timeoutsSec.tests }, runSpecs);
+    if (onSlot) return onSlot;
+    const lock = teststackLock(config);
+    const deadline = Date.now() + config.timeoutsSec.tests * 1000 * 2;
+    while (!acquireLock(lock)) {
+      if (Date.now() > deadline) return [`Timed out waiting for the shared teststack (held by pid ${lockHolder(lock)}).`];
+      log(`${story.key}: waiting for the teststack (pid ${lockHolder(lock)} is running e2e tests)`);
+      await sleep(10_000);
+    }
+    try {
+      return await runSpecs({});
     } finally {
       releaseLock(lock);
     }
@@ -349,6 +366,7 @@ function automationTask(config, story, { mode, feedback, implFiles }) {
     `Verified plan: ${story.planDir} (${plan.cases.length} cases: ${plan.cases.map((c) => c.data.id).join(', ')})`,
     `Scenario directory: ${config.scenariosDir}/${story.scenario} (name: ${story.scenario})`,
     `Every test name must contain its case id. .NET tests also need the story tag and case id: in xUnit projects (functional tests) [Trait("Story", "${story.key}")] and [Trait("TestCase", "<id>")]; in MSTest projects (unit tests, MSTest.Sdk) [TestCategory("${story.key}")] and [TestProperty("TestCase", "<id>")].`,
+    'Playwright specs under e2e/teststack/ build every URL from e2e/teststack/ports.ts (WEBAPP_URL, IDENTITY_URL, CATALOG_URL, port(name)); never hard-code 18xxx ports, so the specs run on whichever stack slot the run leased.',
     '',
     '### Implementation files changed for this story',
     '',
@@ -453,6 +471,7 @@ async function automationPass(config, story, { skipTests, maxRounds, targetHash,
       mode: 'write',
       model: config.agent.models.automation,
       timeoutSec: config.timeoutsSec.automation,
+      usage: { stage: 'automation', story: story.key, round },
       task: automationTask(config, story, { mode, feedback, implFiles }),
     });
     const reported = extractResult(producer.output);

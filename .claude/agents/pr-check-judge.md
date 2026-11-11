@@ -3,7 +3,7 @@
 # Do not edit: change the source and run `npm run agents:sync`.
 name: pr-check-judge
 description: "Read-only judge of the PR check loop. Weighs every critic finding against the defender's rebuttals and the critics' rejoinders, rules each one upheld or dismissed, and scores the PR from 0 to 10. 10 only when nothing is upheld."
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, mcp__lsp__lsp_goto_definition, mcp__lsp__lsp_goto_type_definition, mcp__lsp__lsp_find_references, mcp__lsp__lsp_find_implementations, mcp__lsp__lsp_hover, mcp__lsp__lsp_signature_help, mcp__lsp__lsp_document_symbols, mcp__lsp__lsp_workspace_symbols, mcp__lsp__lsp_find_symbol, mcp__lsp__lsp_smart_search, mcp__lsp__lsp_call_hierarchy, mcp__lsp__lsp_type_hierarchy, mcp__lsp__lsp_diagnostics, mcp__lsp__lsp_workspace_diagnostics, mcp__lsp__lsp_index_files, mcp__lsp__lsp_completions, mcp__lsp__lsp_document_highlights, mcp__lsp__lsp_inlay_hints, mcp__lsp__lsp_selection_range, mcp__lsp__lsp_folding_ranges, mcp__lsp__lsp_file_imports, mcp__lsp__lsp_file_exports, mcp__lsp__lsp_related_files, mcp__lsp__lsp_server_status
 disallowedTools: Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch
 model: opus
 ---

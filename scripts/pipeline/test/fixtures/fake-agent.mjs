@@ -72,6 +72,14 @@ for (const [file, content] of Object.entries(step.writeFiles ?? {})) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content);
 }
+
+if (step.screenshot) {
+  const dir = /Save every screenshot under (\S+?) \(/.exec(prompt)?.[1];
+  if (dir) fs.writeFileSync(path.join(dir, step.screenshot), 'png');
+}
+
+if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+
 // Simulates a crash of the QE runner that called this agent: SIGKILL, so nothing gets cleaned up.
 if (step.killRunner) {
   const state = JSON.parse(fs.readFileSync(`.agent-state/stories/${field('Story')}.json`, 'utf8'));

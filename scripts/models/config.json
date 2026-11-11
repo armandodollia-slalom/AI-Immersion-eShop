@@ -1,0 +1,4 @@
+{
+  "$comment": "Discovery settings only. The model policy (which models the pipeline may call) is agent.allowedModels and agent.modelIds in scripts/pipeline/config.json. See docs/ai-pipeline/models.md.",
+  "cacheTtlHours": 24
+}

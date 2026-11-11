@@ -16,31 +16,44 @@ const keyOrder = (a, b) => {
   return pa === pb ? Number(na) - Number(nb) : pa.localeCompare(pb);
 };
 
-// Story files from directories (not recursive) and individual files, named <KEY>-<title>.md.
+// A cached board ticket (scripts/pipeline/lib/tickets.mjs): story.md with meta.json next to it.
+const ticketMeta = (file) => {
+  const meta = path.join(path.dirname(file), 'meta.json');
+  if (path.basename(file) !== 'story.md' || !fs.existsSync(meta)) return null;
+  return JSON.parse(fs.readFileSync(meta, 'utf8'));
+};
+
+// Stories from cached board tickets (their story.md, or the ticket folder), plus Markdown story files
+// named <KEY>-<title>.md and directories of them (not recursive). `implement run <KEY>` resolves keys
+// to cached tickets first (fetching them from the board).
 export function collectStories(inputs, cwd = process.cwd()) {
   const files = [];
   for (const input of inputs) {
     const abs = path.resolve(cwd, input);
     if (!fs.existsSync(abs)) throw new Error(`No such file or directory: ${input}`);
-    if (fs.statSync(abs).isDirectory()) {
+    if (fs.statSync(abs).isDirectory() && fs.existsSync(path.join(abs, 'story.md')) && ticketMeta(path.join(abs, 'story.md'))) {
+      files.push(path.join(abs, 'story.md'));
+    } else if (fs.statSync(abs).isDirectory()) {
       for (const name of fs.readdirSync(abs).sort()) if (STORY_FILE.test(name)) files.push(path.join(abs, name));
-    } else if (STORY_FILE.test(path.basename(abs))) {
+    } else if (STORY_FILE.test(path.basename(abs)) || ticketMeta(abs)) {
       files.push(abs);
     } else {
-      throw new Error(`${input} is not a story file (expected <KEY>-<title>.md, for example PROMO-3-cart-pricing.md).`);
+      throw new Error(`${input} is not a story (give a story key, a cached ticket's story.md, or a <KEY>-<title>.md file).`);
     }
   }
   const byKey = new Map();
   for (const file of files) {
     const name = path.basename(file);
-    const key = STORY_FILE.exec(name)[1];
+    const meta = ticketMeta(file);
+    const key = meta?.key ?? STORY_FILE.exec(name)[1];
     if (byKey.has(key) && byKey.get(key).file !== file) throw new Error(`Two story files for ${key}: ${byKey.get(key).file} and ${file}.`);
     const text = fs.readFileSync(file, 'utf8');
     byKey.set(key, {
       key,
       file,
-      slug: name.slice(0, -3),
-      title: /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? key,
+      slug: meta?.slug ?? (meta ? key : name.slice(0, -3)),
+      title: /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? meta?.title ?? key,
+      // The cached text is the truth (an edited issue may have new blockers since migration).
       blockedBy: blockersOf(text, key),
       implemented: /^##\s+Implementation Notes\b/m.test(text),
     });

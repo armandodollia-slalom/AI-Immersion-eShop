@@ -1,22 +1,28 @@
 {
-  "storiesDir": "product-research/stories",
+  "tickets": {
+    "dir": ".agent-state/board",
+    "repo": "armandodollia-slalom/AI-Immersion-eShop",
+    "assetsBranch": "board-assets",
+    "spikeEpic": { "key": "epic-targeted-advertising", "title": "Targeted Advertising" }
+  },
   "stateDir": ".agent-state",
   "metricsDir": ".agent-metrics",
   "agentsDir": ".github/agents",
   "lessonsDir": ".github/agents/lessons",
   "baseRef": "origin/main",
   "storyGuard": {
-    "folders": ["product-research"]
+    "folders": [".agent-state/board"]
   },
   "agent": {
     "cli": "claude",
-    "allowedModels": ["opus", "sonnet", "haiku"],
+    "allowedModels": ["opus", "sonnet", "sol"],
     "modelIds": {
-      "claude": { "opus": "opus", "sonnet": "sonnet", "haiku": "haiku" },
-      "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5", "haiku": "claude-haiku-5.5" }
+      "claude": { "opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5" },
+      "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5", "sol": "gpt-6.1-sol" }
     },
+    "strictModels": true,
     "models": {
-      "default": null
+      "default": "sonnet"
     },
     "resultParseRetries": 1
   },
@@ -29,7 +35,6 @@
     "tests",
     "e2e",
     "testing/scenarios",
-    "product-research",
     ".agent-metrics",
     ".agent-state",
     "graphify-out",

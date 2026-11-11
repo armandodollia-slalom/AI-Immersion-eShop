@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 "$(dirname "$0")/graphify-refresh" "$@"
-# AI pipeline stages in the background; never blocks git. QE plans for changed stories only with `git config qe.autoPlan true`.
+# AI pipeline stages in the background; never blocks git. Stories are board issues, so commits never start a test plan (`board fetch` does, with `git config qe.autoPlan true`).
 command -v node >/dev/null 2>&1 && node "$(git rev-parse --show-toplevel)/scripts/pipeline/pipeline.mjs" git-hook post-merge || true

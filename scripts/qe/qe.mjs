@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // QE stage of the AI pipeline: verified test plans and automated tests. See docs/ai-pipeline/qe.md.
+import { lessonsDisabled } from '../pipeline/lib/run-tags.mjs';
 import { parseArgs as parse, readPayload, readStdin, requireStory, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { changedFiles, fsReader, git, gitReader, mergeBase, revExists } from '../pipeline/lib/git.mjs';
 import { loadState, updateState } from '../pipeline/lib/state.mjs';
-import { CASE_ID, activeStory, listStories, storiesFromPaths } from '../pipeline/lib/stories.mjs';
-import { log, selfProcess, setLogTag } from '../pipeline/lib/util.mjs';
+import { CASE_ID, activeStory, listStories } from '../pipeline/lib/stories.mjs';
+import { keysFromPaths, keysInText, loadTicket, storyOf } from '../pipeline/lib/tickets.mjs';
+import { selfProcess, setLogTag } from '../pipeline/lib/util.mjs';
 import { calibrateCommand, formatLessonsRecovery, lessonsCommand, recoverLessons } from './lib/lessons.mjs';
 import { computeMetrics, formatMetrics } from './lib/metrics.mjs';
 import { automationFiles, automationStatus, planStatus } from './lib/plans.mjs';
@@ -40,18 +42,43 @@ Hooks (called by scripts/pipeline/pipeline.mjs)
 const VALUE_FLAGS = new Set(['changed-from', 'rev', 'impl-hash', 'since', 'stage', 'sample']);
 const parseArgs = (argv) => parse(argv, VALUE_FLAGS);
 
-// Stories touched by a set of changed paths: the story file, its plan, or tests carrying its case ids.
-function touchedStories(config, paths, reader) {
-  const keys = new Set(storiesFromPaths(config, paths, reader).map((s) => s.key));
-  for (const story of listStories(config, reader)) {
-    if (paths.some((p) => p.startsWith(`${story.planDir}/`) || p.startsWith(`${config.scenariosDir}/${story.scenario}/`))) keys.add(story.key);
-  }
+// The story for a key: its ticket (cache, else fetched from the board), else, when the board cannot be
+// reached, a stand-in built from its plan folder at `reader`'s revision, so the plan is still checked.
+function storyForKey(config, key, reader) {
+  const ticket = loadTicket(config, key);
+  if (ticket) return ['story', 'bug'].includes(ticket.type) ? ticket : null;
+  const dir = reader.list(config.plansDir).find((d) => d === key || d.startsWith(`${key}-`));
+  return dir ? storyOf(config, { key, type: 'story', slug: dir }) : null;
+}
+
+// Stories touched by a set of changed paths (their plan or scenario folder, tests carrying their case
+// ids) and by the ticket keys named in `texts` (commit messages, branch names). Stories are not files in
+// the repository any more, so a push that changes only code still finds its story through its branch
+// and commit messages.
+function touchedStories(config, paths, reader, texts = []) {
+  const keys = keysFromPaths(config, paths);
   for (const file of paths) {
     if (!config.testExtensions.some((ext) => file.endsWith(ext))) continue;
     for (const match of (reader.read(file) ?? '').matchAll(CASE_ID)) keys.add(match[1]);
   }
-  return listStories(config, reader).filter((s) => keys.has(s.key));
+  for (const text of texts) for (const key of keysInText(text)) keys.add(key);
+  return [...keys]
+    .sort()
+    .map((key) => storyForKey(config, key, reader))
+    .filter(Boolean);
 }
+
+// Every story with a plan at `reader`'s revision, plus every cached story.
+function allStories(config, reader) {
+  const keys = new Set(listStories(config).map((s) => s.key));
+  for (const dir of reader.list(config.plansDir)) {
+    const key = /^([A-Z][A-Z0-9]*-\d+)(?:-|$)/.exec(dir)?.[1];
+    if (key) keys.add(key);
+  }
+  return [...keys].sort().map((key) => storyForKey(config, key, reader)).filter(Boolean);
+}
+
+const commitTexts = (config, from, to) => [git(config.root, ['log', '--format=%s%n%b', `${from}..${to}`]).stdout];
 
 function checkStories(config, stories, reader, { allowMissing = false } = {}) {
   let failed = 0;
@@ -73,11 +100,12 @@ function prePush(config, input) {
   if (process.env.QE_SKIP === '1') return 0;
   let failed = 0;
   for (const line of input.split('\n').filter(Boolean)) {
-    const [, localSha, , remoteSha] = line.split(' ');
+    const [localRef, localSha, , remoteSha] = line.split(' ');
     if (!localSha || /^0+$/.test(localSha)) continue;
     const from = /^0+$/.test(remoteSha ?? '') || !revExists(config.root, remoteSha) ? mergeBase(config.root, config.baseRef) : remoteSha;
     const reader = gitReader(config.root, localSha);
-    failed += checkStories(config, touchedStories(config, changedFiles(config.root, from, localSha), reader), reader, { allowMissing: true });
+    const texts = [localRef ?? '', ...commitTexts(config, from, localSha)];
+    failed += checkStories(config, touchedStories(config, changedFiles(config.root, from, localSha), reader, texts), reader, { allowMissing: true });
   }
   if (failed) console.error('\nQE: push blocked. Run `node scripts/qe/qe.mjs plan <story>` (and commit the plan) or re-run `automate`. Bypass once with QE_SKIP=1.');
   return failed ? 1 : 0;
@@ -101,7 +129,7 @@ async function main() {
         console.log(`Plan run started in the background (pid ${bg.pid}, log ${bg.log}).`);
         return 0;
       }
-      let stories = positional.map((arg) => requireStory(config, arg));
+      let stories = positional.map((arg) => requireStory(config, arg, { update: true }));
       if (flags.stale || flags.all) {
         stories = listStories(config).filter((s) => {
           const state = planStatus(config, s).state;
@@ -134,12 +162,13 @@ async function main() {
       if (flags['pre-push']) return prePush(config, readStdin());
       if (flags.rev) reader = gitReader(config.root, flags.rev);
       if (flags.all) {
-        stories = listStories(config, reader);
+        stories = allStories(config, reader);
         return checkStories(config, stories, reader, { allowMissing: true }) ? 1 : 0;
       }
       const from = flags['changed-from'] ? git(config.root, ['merge-base', flags.rev ?? 'HEAD', flags['changed-from']]).stdout.trim() : mergeBase(config.root, config.baseRef);
       const paths = changedFiles(config.root, from, flags.rev);
-      stories = touchedStories(config, paths, reader);
+      const head = flags.rev ?? 'HEAD';
+      stories = touchedStories(config, paths, reader, [git(config.root, ['rev-parse', '--abbrev-ref', head]).stdout, ...commitTexts(config, from, head)]);
       if (stories.length === 0) {
         console.log('No stories, plans or story tests changed.');
         return 0;
@@ -231,22 +260,10 @@ async function main() {
     case 'git-hook': {
       const event = positional[0];
       if (event === 'pre-push') return prePush(config, readStdin());
-      // Agents only start from a command. Background planning on commit/merge is opt-in: git config qe.autoPlan true.
-      if (isDisabled() || git(config.root, ['config', '--bool', 'qe.autoPlan']).stdout.trim() !== 'true') return 0;
-      let paths = [];
-      if (event === 'post-commit') {
-        paths = revExists(config.root, 'HEAD~1')
-          ? changedFiles(config.root, 'HEAD~1', 'HEAD')
-          : git(config.root, ['show', '--name-only', '--format=', 'HEAD']).stdout.split('\n').filter(Boolean);
-      } else if (event === 'post-merge') {
-        paths = changedFiles(config.root, 'ORIG_HEAD', 'HEAD');
-      }
-      const stories = storiesFromPaths(config, paths).filter((s) => planStatus(config, s).state !== 'verified');
-      if (stories.length) {
-        const bg = spawnQe(config, stories[0].key, 'plan', ['plan', ...stories.map((s) => s.key)]);
-        log(`stories changed (${stories.map((s) => s.key).join(', ')}); writing test plans in the background (log ${bg.log}).`);
-      }
-      if (event === 'post-merge' && git(config.root, ['config', '--bool', 'qe.autoLessons']).stdout.trim() === 'true') {
+      // Stories are board issues, not committed files, so a commit never starts a plan: `qe plan <KEY>`
+      // does (or `board fetch`, which plans changed stories in the background with qe.autoPlan true).
+      if (isDisabled()) return 0;
+      if (event === 'post-merge' && !lessonsDisabled() && git(config.root, ['config', '--bool', 'qe.autoLessons']).stdout.trim() === 'true') {
         spawnQe(config, 'lessons', 'lessons', ['lessons', '--if-due']);
       }
       return 0;

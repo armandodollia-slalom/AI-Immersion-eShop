@@ -4,16 +4,126 @@
       "implementer": null
     }
   },
+  "modelClasses": {
+    "small": "sonnet",
+    "medium": "sonnet",
+    "large": "opus"
+  },
   "implement": {
     "worktreeDir": "../{repo}-worktrees",
     "branchPrefix": "feat/",
-    "parallel": 1,
+    "delivery": "epic",
+    "epic": {
+      "branchPrefix": "epic/",
+      "bugfixPrefix": "bugfix/",
+      "grouping": "auto",
+      "planTimeoutSec": 1800,
+      "qe": true,
+      "prCheck": "report",
+      "prCheckTimeoutSec": 14400
+    },
+    "maxBugsPerGroup": null,
+    "parallel": "auto",
     "implementerTimeoutSec": 5400,
     "maxImplementerRuns": 8,
     "maxBugFixCycles": 2,
     "qeTimeoutSec": 14400,
     "qePollSec": 5,
     "maxWorkerRetries": 2,
-    "retryDelaySec": 30
+    "retryDelaySec": 30,
+    "orchestrate": true,
+    "maxSubtasks": 4,
+    "selfModeMaxFiles": 6,
+    "maxConcurrentPairs": 2,
+    "maxConcurrentAgents": 6,
+    "maxPairRounds": 3,
+    "maxTakeovers": 1,
+    "maxLargeSubtasks": 1,
+    "maxAgentRunsPerStory": 20,
+    "storyWallClockSec": 10800,
+    "timeouts": {
+      "plannerSec": 1800,
+      "orchestratorSec": 3600,
+      "pairImplementerSec": 1800,
+      "codeVerifierSec": 600,
+      "uiVerifierSec": 1200,
+      "checkSec": 1800
+    },
+    "roles": {
+      "orchestrator": {
+        "cli": null,
+        "modelClass": "large"
+      },
+      "pairImplementer": {
+        "cli": null
+      },
+      "verifier": {
+        "cli": null,
+        "modelClass": "medium"
+      },
+      "uiVerifier": {
+        "cli": null,
+        "modelClass": "large"
+      }
+    },
+    "prepareCmd": "export PATH=$HOME/.dotnet:$PATH && dotnet restore eShop.Web.slnf -v q",
+    "checks": [
+      {
+        "name": "build",
+        "cmd": "export PATH=$HOME/.dotnet:$PATH && dotnet build eShop.Web.slnf -nologo -v q -clp:ErrorsOnly"
+      }
+    ],
+    "unitTests": {
+      "project": "tests/{service}.UnitTests",
+      "cmd": "export PATH=$HOME/.dotnet:$PATH && dotnet test --project {project}"
+    },
+    "ui": {
+      "slotsCmd": [
+        "node",
+        "scripts/stack/slots.mjs"
+      ],
+      "teststackCmd": [
+        "testing/teststack"
+      ],
+      "leaseWaitSec": 300,
+      "leaseRetrySec": 30,
+      "stackTimeoutSec": 2400,
+      "screenshotsDir": "artifacts/pairs",
+      "renewEverySec": 1800
+    },
+    "lsp": {
+      "enabled": true,
+      "setupCmd": [
+        "sh",
+        "scripts/lsp/setup.sh"
+      ],
+      "lspdCmd": [
+        "node",
+        "scripts/lsp/lspd.mjs"
+      ],
+      "slnfCmd": [
+        "node",
+        "scripts/lsp/slnf.mjs"
+      ],
+      "timeoutSec": 300
+    },
+    "decisions": {
+      "smallDiffLoc": 60,
+      "tinySubtaskLoc": 40,
+      "tinySubtaskFiles": 3,
+      "selfMaxTotalLoc": 150,
+      "selfOverheadRunsPerSubtask": 2
+    }
+  },
+  "resources": {
+    "reserveGb": 6,
+    "worktreeGb": 3,
+    "agentGb": 0.5,
+    "roslynGb": 0.8,
+    "stackGb": 1.6,
+    "dockerOverheadGb": 1,
+    "maxParallel": null,
+    "waitPollSec": 15,
+    "maxWaitSec": 1800
   }
 }

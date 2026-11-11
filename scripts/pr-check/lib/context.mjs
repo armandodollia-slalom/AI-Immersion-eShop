@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { currentBranch, git, revExists } from '../../pipeline/lib/git.mjs';
 import { activeStory, resolveStory } from '../../pipeline/lib/stories.mjs';
+import { epicTickets, loadTicket, mockupFiles } from '../../pipeline/lib/tickets.mjs';
 import { log } from '../../pipeline/lib/util.mjs';
 import { fetchPullRequest } from './github.mjs';
 
@@ -42,13 +43,38 @@ export function removeCheckout(config, ctx) {
   git(config.root, ['worktree', 'prune']);
 }
 
-export async function resolveTarget(config, { pr: prNumber, story: storyArg, base, fix }) {
+// The tickets of a multi-ticket check (an epic delivered on one branch): the stories given with --stories,
+// else the epic's stories and bugs, plus the epic itself (its body and mockups describe the journey).
+function ticketSet(config, { stories = [], epic = null }) {
+  const epicTicket = epic ? loadTicket(config, String(epic).startsWith('epic-') ? epic : `epic-${String(epic).toLowerCase()}`) : null;
+  if (epic && !epicTicket) throw new Error(`unknown epic "${epic}"`);
+  const keys = stories.length ? stories : epicTicket ? epicTickets(config, epicTicket.key).map((t) => t.key) : [];
+  const tickets = keys.map((k) => {
+    const t = resolveStory(config, k);
+    if (!t) throw new Error(`unknown story "${k}"`);
+    return t;
+  });
+  if (epic && !tickets.length) throw new Error(`epic ${epicTicket.key} has no stories on the board (or in the ticket cache)`);
+  return { tickets, epic: epicTicket };
+}
+
+// One ticket of the check, as the critics get it: its story file, title, mockups and whether it is frontend.
+function ticketRef(config, t) {
+  const text = fs.readFileSync(config.abs(t.file), 'utf8');
+  const title = text.split('\n')[0].replace(/^#\s*/, '').trim();
+  const mockups = mockupFiles(config, t.key).map((f) => config.abs(f));
+  return { key: t.key, title, file: config.abs(t.file), dir: config.abs(t.dir), mockups, frontend: /\[FE\b/i.test(title) || mockups.length > 0 };
+}
+
+export async function resolveTarget(config, { pr: prNumber, story: storyArg, stories: storiesArg = [], epic: epicArg = null, base, fix }) {
   const pr = prNumber ? await fetchPullRequest(config.root, prNumber) : null;
   const branch = currentBranch(config.root);
-  const story = storyArg ? resolveStory(config, storyArg) : storyFromText(config, [pr?.headRef, pr?.title, branch, pr?.body]) ?? activeStory(config);
+  const set = storiesArg.length || epicArg ? ticketSet(config, { stories: storiesArg, epic: epicArg }) : null;
+  const story = storyArg ? resolveStory(config, storyArg) : set?.tickets[0] ?? storyFromText(config, [pr?.headRef, pr?.title, branch, pr?.body]) ?? activeStory(config);
   if (storyArg && !story) throw new Error(`unknown story "${storyArg}"`);
   if (!story) throw new Error('no story found for this PR: pass --story <KEY> (the check compares the PR with its story)');
-  const id = pr ? `pr-${pr.number}` : story.key;
+  const setKeys = set ? [...new Set([story.key, ...set.tickets.map((t) => t.key)])] : [story.key];
+  const id = pr ? `pr-${pr.number}` : set?.epic ? set.epic.key : setKeys.length > 1 ? `${setKeys[0]}+${setKeys.length - 1}` : story.key;
 
   let workRoot = config.root;
   const headMatches = pr && branch === pr.headRef && (!pr.headSha || git(config.root, ['rev-parse', 'HEAD']).stdout.trim() === pr.headSha);
@@ -70,20 +96,22 @@ export async function resolveTarget(config, { pr: prNumber, story: storyArg, bas
   if (!baseCandidates.length) throw new Error(`base ${baseRef} not found`);
   const baseRev = git(workRoot, ['merge-base', 'HEAD', baseCandidates[0]], { allowFail: false }).stdout.trim();
 
-  const storyText = fs.readFileSync(path.join(workRoot, story.file), 'utf8');
-  const mockupsRoot = path.join(workRoot, 'product-research', 'mockups');
-  const mockups = fs.existsSync(mockupsRoot)
-    ? fs
-        .readdirSync(mockupsRoot)
-        .filter((d) => d.toUpperCase().startsWith(`${story.key}-`))
-        .flatMap((d) => fs.readdirSync(path.join(mockupsRoot, d)).map((f) => `product-research/mockups/${d}/${f}`))
-    : [];
+  // The story and its mockups come from the ticket cache of this checkout (fetched from the board), not
+  // from the PR's tree: the board is the source of truth. Mockup paths are absolute so agents working in
+  // a PR checkout can open them, and the story guard lets the check's agents read exactly this ticket.
+  // A multi-ticket check (--stories, --epic) holds the PR to every ticket, and the epic's body and mockups
+  // describe the journey across them.
+  const storyText = fs.readFileSync(config.abs(story.file), 'utf8');
+  const tickets = setKeys.map((k) => ticketRef(config, k === story.key ? story : set.tickets.find((t) => t.key === k)));
+  const epic = set?.epic ? ticketRef(config, set.epic) : null;
+  const mockups = [...new Set([...tickets, ...(epic ? [epic] : [])].flatMap((t) => t.mockups))];
+  process.env.PIPELINE_STORY_SOURCES = [process.env.PIPELINE_STORY_SOURCES, ...[...tickets, ...(epic ? [epic] : [])].map((t) => t.dir)].filter(Boolean).join(path.delimiter);
   const conventions = config.prCheck.conventions.filter((f) => fs.existsSync(path.join(workRoot, f)));
 
-  const ctx = { id, pr, story, storyTitle: storyText.split('\n')[0].replace(/^#\s*/, '').trim(), branch: pr?.headRef ?? branch, workRoot, baseRef: baseCandidates[0], baseRev, mockups, conventions };
+  const ctx = { id, pr, story, storyTitle: storyText.split('\n')[0].replace(/^#\s*/, '').trim(), branch: pr?.headRef ?? branch, workRoot, baseRef: baseCandidates[0], baseRev, mockups, conventions, tickets, epic, multi: tickets.length > 1 || Boolean(epic) };
   const { files } = prDiff(config, ctx);
   const frontendHit = (f) => config.prCheck.frontendPaths.some((p) => (p.endsWith('/') ? f.startsWith(p) : f.endsWith(p)));
-  ctx.isFrontend = /\[FE\b/i.test(ctx.storyTitle) || mockups.length > 0 || files.some(frontendHit);
+  ctx.isFrontend = tickets.some((t) => t.frontend) || mockups.length > 0 || files.some(frontendHit);
   return ctx;
 }
 

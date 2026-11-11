@@ -3,7 +3,7 @@
 # Do not edit: change the source and run `npm run agents:sync`.
 name: pr-check-flow
 description: "Read-only adversarial critic for the PR check. Traces the end-to-end flow a pull request implements (UI, API, domain, integration events, persistence) and the user journey, and finds where they diverge from the story's flow. Scores it from 0 to 10."
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, mcp__lsp__lsp_goto_definition, mcp__lsp__lsp_goto_type_definition, mcp__lsp__lsp_find_references, mcp__lsp__lsp_find_implementations, mcp__lsp__lsp_hover, mcp__lsp__lsp_signature_help, mcp__lsp__lsp_document_symbols, mcp__lsp__lsp_workspace_symbols, mcp__lsp__lsp_find_symbol, mcp__lsp__lsp_smart_search, mcp__lsp__lsp_call_hierarchy, mcp__lsp__lsp_type_hierarchy, mcp__lsp__lsp_diagnostics, mcp__lsp__lsp_workspace_diagnostics, mcp__lsp__lsp_index_files, mcp__lsp__lsp_completions, mcp__lsp__lsp_document_highlights, mcp__lsp__lsp_inlay_hints, mcp__lsp__lsp_selection_range, mcp__lsp__lsp_folding_ranges, mcp__lsp__lsp_file_imports, mcp__lsp__lsp_file_exports, mcp__lsp__lsp_related_files, mcp__lsp__lsp_server_status
 disallowedTools: Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch
 model: opus
 ---

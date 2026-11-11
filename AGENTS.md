@@ -27,7 +27,16 @@ Skip this only for backend-only, docs-only or no-behavior-change work, and say s
 
 ## Story and epic folders
 
-Agents ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
+Stories, epics, spikes and mockups are GitHub issues on the story board; the pipeline caches them in `.agent-state/board/<KEY>/`. Agents ignore that cache except for what was handed to the pipeline: the story given to `pipeline start <KEY>` (its folder, with its own mockups), or the tickets given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
+
+## Code intelligence (LSP)
+
+The MCP server `lsp` exposes language servers for C#, TypeScript/JavaScript, bash, JSON, YAML, CSS and HTML (`docs/code-intelligence.md`). graphify stays the entry point: use it first to find where to look and for investigations (architecture, where things live, relationships). Use the `lsp` tools for precise work at code graphify or a read already located:
+
+- Before changing existing code, confirm it with LSP when available: `lsp_goto_definition` and `lsp_hover` for the real definition and signature, `lsp_find_references` for every caller before you change a signature or behavior.
+- After every edit, run `lsp_diagnostics` on the edited files (Claude Code also reports new errors after edits automatically).
+- Rename with `lsp_rename` (`dry_run: true` first) instead of search and replace.
+- Paths are absolute and inside your own checkout; line and column are 1-indexed. If a call answers "C# language server unavailable", do not retry in a loop: use graphify and grep.
 
 ## AI development pipeline
 

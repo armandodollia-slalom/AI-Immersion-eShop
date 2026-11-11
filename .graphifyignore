@@ -10,9 +10,6 @@ deploy/
 artifacts/
 testing/scenarios/
 
-# Stories, epics and mockups: agents only see the stories handed to the pipeline
-# (story guard, scripts/pipeline/lib/story-guard.mjs), so keep them out of the graph too.
-product-research/
 
 # App images, icons and fonts (product photos, UI assets)
 src/Catalog.API/Pics/

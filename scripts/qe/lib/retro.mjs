@@ -85,6 +85,18 @@ export function retroDigest(config, decisions, since) {
     },
     // 4. Why the integration tests failed the implementer's code.
     productBugs: take(bugs, n * 2),
+    // 5. How the orchestrator split stories into subtasks (and why), and why the pair verifiers sent
+    //    subtasks back: model, verification and split choices next to how they fared.
+    implement: {
+      plans: take(
+        of('implement-plan')
+          .filter((d) => ['plan-written', 'plan-rejected', 'blocked'].includes(d.decision))
+          .map((d) => ({ story: d.story, decision: d.decision, mode: d.mode ?? null, reason: d.reason, subtasks: (d.items ?? []).map(({ id, modelClass, modelReason, verify, verifyReason, confidence }) => ({ id, modelClass, modelReason, verify, verifyReason, confidence })) })),
+        n * 2,
+      ),
+      escalations: take(of('implement-plan').filter((d) => d.decision?.startsWith('escalation-') || d.decision === 'gave-up').map((d) => ({ story: d.story, subtask: d.subtask, decision: d.decision, pairOutcome: d.pair_outcome, reason: d.reason })), n),
+      verifierFindings: findingGroups(of('implement-verify').filter((d) => d.decision !== 'approved'), (i) => key(i.agent, i.category, i.severity)).slice(0, n * 2),
+    },
   };
   return digest;
 }

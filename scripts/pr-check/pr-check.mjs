@@ -10,10 +10,11 @@ import { git } from '../pipeline/lib/git.mjs';
 import { lockFile, metricsFile } from '../pipeline/lib/state.mjs';
 import { activeStory } from '../pipeline/lib/stories.mjs';
 import { acquireLock, log, lockHolder, nowIso, readJson, readJsonl, releaseLock, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
+import { renderMockups } from '../implement/lib/mockups.mjs';
 import { isClean, removeCheckout, resolveTarget } from './lib/context.mjs';
 import { commentOnPullRequest } from './lib/github.mjs';
 import { hookRun, hookStop, recoverHookRuns, resetPrCheck, sessionContext } from './lib/hooks.mjs';
-import { CHECKS_FILE, runPrCheck } from './lib/loop.mjs';
+import { CHECKS_FILE, LENSES, runPrCheck } from './lib/loop.mjs';
 import { renderReport } from './lib/report.mjs';
 import { interruptedRuns, readProgress, resumeRuns, writeProgress } from './lib/runs.mjs';
 import { extractVideoFrames, videoSources } from './lib/video.mjs';
@@ -22,10 +23,13 @@ setLogTag('pr-check');
 
 const USAGE = `Usage: node scripts/pr-check/pr-check.mjs <command> [options]
 
-  run [--pr <n>] [--story <KEY>] [--base <ref>] [--videos <path|url>,...]
+  run [--pr <n>] [--story <KEY>] [--stories <KEY>,...] [--epic <EPIC>] [--lenses <lens>,...]
+      [--base <ref>] [--videos <path|url>,...]
       [--no-fix] [--max-rounds <n>] [--debate-turns <n>] [--comment] [--push] [--json]
         Review the PR (or the current branch) against its story until it scores 10/10.
         Without --pr it checks the current branch. --no-fix runs one report-only round.
+        --stories / --epic hold it to several tickets (an epic's stories, and the epic's journey);
+        --lenses runs only those lenses (acceptance, flow, design, style, video).
         --resume continues an interrupted run of the same check from its last saved round.
   resume [KEY|pr-<n>] [--force] restart interrupted checks in the background (manual runs from their
                                 last round, Stop-hook runs from the start), at most recovery.maxAttempts times
@@ -39,7 +43,8 @@ Hooks (called by scripts/pipeline/pipeline.mjs; PR_CHECK_SKIP=1 turns them off)
 Models: PR_CHECK_MODEL_<ROLE> (JUDGE, ACCEPTANCE, FLOW, DESIGN, STYLE, VIDEO, DEFENDER, FIXER)
 overrides scripts/pr-check/config.json.`;
 
-const VALUE_FLAGS = new Set(['pr', 'story', 'base', 'videos', 'max-rounds', 'debate-turns', 'since', 'hash']);
+const VALUE_FLAGS = new Set(['pr', 'story', 'stories', 'epic', 'lenses', 'base', 'videos', 'max-rounds', 'debate-turns', 'since', 'hash']);
+const list = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
 const resultDir = (config, id) => path.join(config.root, config.stateDir, 'pr-check', id);
 
@@ -56,7 +61,11 @@ async function executeCheck(config, flags) {
   if (flags['debate-turns']) config.prCheck.debateTurns = Number(flags['debate-turns']);
   if (!fix) config.prCheck.maxRounds = 1;
 
-  const ctx = await resolveTarget(config, { pr: flags.pr ? positiveInt(flags.pr, 'pr') : null, story: flags.story, base: flags.base, fix });
+  const only = list(flags.lenses);
+  const unknown = only.filter((l) => !LENSES[l]);
+  if (unknown.length) throw new Error(`unknown lens ${unknown.join(', ')} (lenses: ${Object.keys(LENSES).join(', ')})`);
+  const ctx = await resolveTarget(config, { pr: flags.pr ? positiveInt(flags.pr, 'pr') : null, story: flags.story, stories: list(flags.stories).map((k) => k.toUpperCase()), epic: typeof flags.epic === 'string' ? flags.epic : null, base: flags.base, fix });
+  ctx.only = only;
   const lock = lockFile(config, ctx.id, 'pr-check');
   if (!acquireLock(lock)) throw new Error(`a PR check of ${ctx.id} is already running (pid ${lockHolder(lock)})`);
   // Manual runs record their progress so an interrupted one can resume; Stop-hook runs recover through prCheck state.
@@ -82,6 +91,11 @@ async function executeCheck(config, flags) {
     const values = typeof flags.videos === 'string' ? flags.videos.split(',').map((v) => v.trim()).filter(Boolean) : [];
     ctx.video = await extractVideoFrames(config, ctx.runDir, videoSources(config, { values, prBody: ctx.pr?.body ?? '' }), ctx.workRoot);
     writeJson(path.join(contextDir, 'frames.json'), ctx.video);
+    // The design lens gets PNG renders of every mockup screen and state (cached by the mockups' sha).
+    if (ctx.isFrontend && ctx.mockups.length && (!ctx.only?.length || ctx.only.includes('design'))) {
+      ctx.mockupRenders = await renderMockups({ files: ctx.mockups, outDir: path.join(contextDir, 'mockups'), cacheDir: path.join(config.root, config.stateDir, 'pr-check', '.mockup-cache') });
+      if (!ctx.mockupRenders.ok) log(`could not render the mockups (${ctx.mockupRenders.error}); the design critic reads the sources`);
+    }
 
     log(`checking ${ctx.id} against ${ctx.story.key} (base ${ctx.baseRef}, ${fix ? `fixing, up to ${config.prCheck.maxRounds} rounds` : 'report only'})`);
     const started = Date.now();
@@ -105,6 +119,8 @@ async function executeCheck(config, flags) {
     const summary = {
       id: ctx.id,
       story: ctx.story.key,
+      ...(ctx.multi ? { stories: ctx.tickets.map((t) => t.key), epic: ctx.epic?.key ?? null } : {}),
+      lenses: Object.keys(last?.lensScores ?? {}),
       pr: ctx.pr?.url ?? null,
       verdict: result.verdict,
       score: last?.score ?? 0,

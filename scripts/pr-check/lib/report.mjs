@@ -10,7 +10,7 @@ export function renderReport(ctx, result) {
   const lines = [
     `# PR check: ${verdict} ${last ? `${last.score}/10` : ''}`.trim(),
     '',
-    `- Story: ${ctx.story.key} - ${ctx.storyTitle}`,
+    ctx.multi ? `- Tickets: ${ctx.tickets.map((t) => `${t.key}${t.frontend ? ' (frontend)' : ''}`).join(', ')}${ctx.epic ? `; epic ${ctx.epic.key} - ${ctx.epic.title}` : ''}` : `- Story: ${ctx.story.key} - ${ctx.storyTitle}`,
     ctx.pr ? `- Pull request: [#${ctx.pr.number} ${cell(ctx.pr.title)}](${ctx.pr.url})` : `- Branch: ${ctx.branch}`,
     `- Base: ${ctx.baseRef} (merge base ${ctx.baseRev.slice(0, 10)})`,
     `- Frontend story: ${ctx.isFrontend ? 'yes' : 'no'}; rounds: ${history.length}`,
@@ -52,6 +52,7 @@ export function renderReport(ctx, result) {
 
   const skipped = [];
   if (!ctx.isFrontend) skipped.push('UI design (not a frontend story)');
+  if (ctx.only?.length) skipped.push(`every lens but ${ctx.only.join(', ')} (--lenses)`);
   if (!ctx.video.videos.length) skipped.push('video evidence (no readable video)');
   for (const h of history) for (const l of h.failedLenses) skipped.push(`${LENSES[l].title} in round ${h.round} (the critic failed; scored 0)`);
   if (skipped.length) lines.push('', '## Not checked', '', ...skipped.map((s) => `- ${s}`));

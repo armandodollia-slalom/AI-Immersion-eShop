@@ -35,24 +35,42 @@ export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true }
   return out;
 }
 
-// Same result shape as run(), without blocking, so independent commands can run side by side.
-export function runAsync(cmd, args, { cwd, env, timeoutSec } = {}) {
+// Async twin of run(): lets a caller run several processes at once. Same result shape.
+export function runAsync(cmd, args, { cwd, input, env, timeoutSec, signal } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const child = spawn(cmd, args, { cwd, env: env ?? process.env });
-    const timer = timeoutSec ? setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutSec * 1000) : null;
-    child.stdout.on('data', (d) => (stdout += d));
-    child.stderr.on('data', (d) => (stderr += d));
-    child.on('error', (error) => {
-      if (timer) clearTimeout(timer);
-      resolve({ status: 127, stdout, stderr: `${stderr}\n${error.message}`, timedOut });
+    let settled = false;
+    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const finish = (status, extra = '') => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr: stderr + extra, timedOut });
+    };
+    const timer = timeoutSec
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGTERM');
+          setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+        }, timeoutSec * 1000)
+      : null;
+    child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
+    child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+    };
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+    child.on('error', (error) => finish(127, `\n${error.message}`));
+    child.on('close', (code, sig) => {
+      signal?.removeEventListener('abort', onAbort);
+      finish(code ?? (sig ? 1 : 0));
     });
-    child.on('close', (code) => {
-      if (timer) clearTimeout(timer);
-      resolve({ status: code ?? 1, stdout, stderr, timedOut });
-    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(input ?? '');
   });
 }
 

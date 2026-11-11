@@ -1,4 +1,7 @@
 {
+  "enabledMcpjsonServers": [
+    "lsp"
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -71,6 +74,18 @@
             "type": "command",
             "command": "node scripts/pipeline/pipeline.mjs hook stop",
             "timeout": 1800
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/lsp/hook.mjs",
+            "timeout": 30
           }
         ]
       }

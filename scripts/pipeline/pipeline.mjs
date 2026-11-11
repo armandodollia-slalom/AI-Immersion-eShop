@@ -3,10 +3,13 @@
 // stages listed in stages.json. See docs/ai-pipeline/README.md.
 import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/cli.mjs';
 import { isDisabled, loadConfig } from './lib/config.mjs';
+import { epicReport, findEpic, formatEpic, formatOverview, formatStory, overviewReport, storyReport } from './lib/costs.mjs';
 import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, runStage, sessionStartOutput } from './lib/dispatch.mjs';
+import { experimentReport, formatReport, gradeExperiment, runExperiment } from './lib/experiment.mjs';
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { mockupsDir } from './lib/tickets.mjs';
 import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { nowIso } from './lib/util.mjs';
 
@@ -24,13 +27,29 @@ Implementation agent
                                 escalated after crashing repeatedly
 
 Pipeline
-  implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
-                                implement every story given, each on its own worktree and branch
+  implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+                                implement every story given (or of an epic), each on its own worktree
+                                and branch; claims each story's board card (--force takes it over)
   implement resume [--parallel N] [--pr]
                                 continue the last implement run that did not finish
   implement status [story]      progress of the latest implement run
+  implement cleanup [story...]  remove subtask worktrees a failed run left behind
+  implement decisions [--story KEY] [--json]
+                                orchestrator decisions and how they turned out
+  experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential] [--base <ref>]
+                 [--parallel N|auto] [--no-grade]
+                                run the epic once per delivery mode (and repeat), each arm in its own
+                                worktree from the same base, board/lessons/PRs off, then grade the arms
+                                (pooled epic e2e tests, PR check without fixer); docs/ai-pipeline/experiments.md
+  experiment grade <id>         grade (again) the arms of an experiment
+  experiment report <id> [--json]
+                                cost, tokens, wall clock, overhead, rework, shared tests, findings per arm
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
+  costs [story] [--epic <epic>] [--since <iso-date>] [--json] [--markdown]
+                                agent tokens, cache hits and cost: one ticket itemized by stage, one
+                                epic itemized by ticket and stage, or (no story) the overview by epic,
+                                ticket, stage, model and month
 
 Hooks (called by agent tool configs and .githooks)
   hook stop | hook session-start [--nested] | hook pre-tool
@@ -38,7 +57,7 @@ Hooks (called by agent tool configs and .githooks)
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -50,15 +69,15 @@ async function main() {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
       const args = process.argv.slice(3);
-      if (args[0] && !['run', 'resume', 'story', 'status', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      if (args[0] && !['run', 'resume', 'story', 'status', 'cleanup', 'decisions', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
       return runStage(config, stage, args, { inherit: true }).status;
     }
 
     case 'start': {
-      const story = requireStory(config, positional[0]);
+      const story = requireStory(config, positional[0], { update: true });
       setActiveStory(config, story.key);
       updateState(config, story.key, (s) => (s.done = null));
-      console.log(`Active story: ${story.key}.`);
+      console.log(`Active story: ${story.key}. Story: ${story.file}${mockupsDir(config, story.key) ? `; mockups: ${story.mockupsDir}/` : ''}.`);
       for (const { stdout } of dispatchText(config, stages, 'hooks', 'story-start', [story.key])) if (stdout.trim()) console.log(stdout.trim());
       console.log(`Run \`${CMD} done\` when the line of work is complete.`);
       return 0;
@@ -98,6 +117,54 @@ async function main() {
       return 0;
     }
 
+    case 'costs': {
+      const opts = { since: flags.since };
+      let report;
+      let format;
+      if (flags.epic) {
+        const epic = findEpic(config, flags.epic);
+        if (!epic) {
+          console.error(`Unknown epic "${flags.epic}".`);
+          return 2;
+        }
+        [report, format] = [epicReport(config, epic.key, opts), formatEpic];
+      } else if (positional[0]) [report, format] = [storyReport(config, requireStory(config, positional[0]).key, opts), formatStory];
+      else [report, format] = [overviewReport(config, opts), formatOverview];
+      console.log(flags.json ? JSON.stringify(report, null, 2) : format(report, { markdown: Boolean(flags.markdown) }));
+      return 0;
+    }
+
+    case 'experiment': {
+      const [sub, id] = positional;
+      if (sub === 'run') {
+        if (typeof flags.epic !== 'string') {
+          console.error('Usage: pipeline experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential]');
+          return 2;
+        }
+        const implConfig = loadConfig('implement');
+        const exp = await runExperiment(implConfig, {
+          epic: flags.epic,
+          modes: String(flags.modes ?? 'epic,story').split(',').filter(Boolean),
+          repeat: Math.max(1, Number(flags.repeat ?? 1) || 1),
+          sequential: Boolean(flags.sequential),
+          base: typeof flags.base === 'string' ? flags.base : implConfig.baseRef,
+          parallel: flags.parallel ?? 'auto',
+          grade: !flags['no-grade'],
+        });
+        console.log(formatReport(experimentReport(implConfig, exp.id)));
+        return 0;
+      }
+      if (!id || !['grade', 'report'].includes(sub)) {
+        console.error('Usage: pipeline experiment run --epic <EPIC> ... | grade <id> | report <id> [--json]');
+        return 2;
+      }
+      const implConfig = loadConfig('implement');
+      if (sub === 'grade') await gradeExperiment(implConfig, id);
+      const report = experimentReport(implConfig, id);
+      console.log(flags.json ? JSON.stringify(report, null, 2) : formatReport(report));
+      return 0;
+    }
+
     case 'stages': {
       for (const s of stages) console.log(`${s.name.padEnd(8)} ${s.cli.padEnd(28)} hooks=${s.hooks.join(',') || '-'} git=${s.gitHooks.join(',') || '-'}\n         ${s.description}`);
       return 0;
@@ -123,7 +190,7 @@ async function main() {
         const story = activeStory(config);
         const header = [];
         if (story) {
-          header.push(`AI pipeline: active story ${story.key}.`);
+          header.push(`AI pipeline: active story ${story.key} (story: ${story.file}${mockupsDir(config, story.key) ? `, mockups: ${story.mockupsDir}/` : ''}).`);
           if (!loadState(config, story.key).done) header.push(`When your line of work for ${story.key} is complete, run \`${CMD} done\` before finishing so the review and test stages run.`);
         }
         const escalations = listEscalations(config);

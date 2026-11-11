@@ -14,10 +14,13 @@
     "review": "node scripts/review/review.mjs",
     "pr-check": "node scripts/pr-check/pr-check.mjs",
     "qe": "node scripts/qe/qe.mjs",
+    "board": "node scripts/board/board.mjs",
     "test:pipeline": "node --test scripts/*/test/*.test.mjs",
     "implement": "node scripts/pipeline/pipeline.mjs implement",
     "agents:sync": "node scripts/sync-agents.mjs",
     "agents:check": "node scripts/sync-agents.mjs --check",
+    "models": "node scripts/models/models.mjs list",
+    "models:check": "node scripts/models/models.mjs check",
     "lint": "npm run lint:js && npm run lint:cs && npm run lint:md",
     "lint:fix": "eslint . --fix && dotnet format eShop.Web.slnf && npm run lint:md -- --fix",
     "lint:js": "eslint .",
@@ -31,11 +34,17 @@
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.1.2",
+    "ajv": "^8.20.0",
+    "bash-language-server": "5.8.1",
     "dotenv": "^17.4.2",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",
+    "lsp-mcp-server": "1.1.27",
     "markdownlint-cli": "^0.48.0",
     "typescript": "~6.0.0",
-    "typescript-eslint": "^8.72.2"
+    "typescript-eslint": "^8.72.2",
+    "typescript-language-server": "5.3.0",
+    "vscode-langservers-extracted": "4.10.0",
+    "yaml-language-server": "1.25.0"
   }
 }

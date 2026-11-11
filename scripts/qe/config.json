@@ -36,7 +36,6 @@
         ".github/agents/",
         ".claude/agents/",
         "docs/",
-        "product-research/",
         "architecture-policy/"
       ]
     }
@@ -133,5 +132,6 @@
       "conflict",
       "dependency-failure"
     ]
-  }
+  },
+  "useSlots": true
 }

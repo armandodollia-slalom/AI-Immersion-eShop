@@ -31,6 +31,14 @@
       "hooks": ["story-start", "stop", "session-start"],
       "gitHooks": [],
       "commands": ["status", "resume", "metrics"]
+    },
+    {
+      "name": "board",
+      "description": "Moves the story's card on the GitHub Project board as pipeline events happen (In Progress, Testing, back to In Progress on a product bug, Pending Review with evidence, Failed) and keeps its epic in step",
+      "cli": "scripts/board/board.mjs",
+      "hooks": ["story-start", "stop"],
+      "gitHooks": [],
+      "commands": ["status"]
     }
   ]
 }

@@ -8,7 +8,6 @@ permissions:
 on:
   pull_request:
     paths:
-      - 'product-research/stories/**'
       - 'tests/**'
       - 'e2e/**'
       - 'testing/scenarios/**'
@@ -18,6 +17,10 @@ on:
       - 'scripts/qe/**'
       - 'scripts/pr-video/**'
       - 'scripts/pr-check/**'
+      - 'scripts/board/**'
+      - 'scripts/models/**'
+      - 'scripts/stack/**'
+      - 'scripts/lsp/**'
       - 'scripts/hooks/**'
       - '.github/agents/**'
       - '.claude/agents/**'
@@ -40,6 +43,8 @@ jobs:
         node-version: 20.x
     - name: Claude agents match .github/agents
       run: node scripts/sync-agents.mjs --check
+    - name: Configured models are allowed (agent.allowedModels)
+      run: node scripts/models/models.mjs check
     - name: Dispatcher and stage tests (fake agent, no LLM)
       run: node --test scripts/*/test/*.test.mjs
 

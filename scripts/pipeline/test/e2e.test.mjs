@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { CACHE, seedTicket } from './fixtures/tickets.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = path.resolve(here, '..', '..', '..');
@@ -62,14 +63,16 @@ async function waitFor(predicate, timeoutMs = 30_000) {
   throw new Error('timed out waiting for background run');
 }
 
-const STORY = 'product-research/stories/DEMO-1-apply-coupon.md';
+// The story is a board ticket: its cached copy, as `board fetch` writes it (no GitHub in these tests).
+const STORY = `${CACHE}/DEMO-1/story.md`;
+const STORY_TEXT = '# DEMO-1 Apply coupon\n\nRule: a valid coupon gives 10% off; an expired coupon is rejected with 400.\n';
 const PLAN = 'tests/plans/DEMO-1-apply-coupon';
 const happySad = [{ title: 'Valid coupon applies', type: 'happy' }, { title: 'Expired coupon rejected', type: 'sad' }];
 
 before(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qe-e2e-'));
   scriptFile = path.join(repo, '..', `${path.basename(repo)}-agent.json`);
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check', 'scripts/board', 'scripts/models', 'scripts/pr-video']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -81,7 +84,7 @@ before(() => {
   prCheckConfig.prCheck.hook.enabled = false;
   write('scripts/pr-check/config.json', JSON.stringify(prCheckConfig, null, 2));
   write('.gitignore', '.agent-state/\n');
-  write(STORY, '# DEMO-1 Apply coupon\n\nRule: a valid coupon gives 10% off; an expired coupon is rejected with 400.\n');
+  seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-apply-coupon', text: STORY_TEXT });
   write('src/Basket/Coupons.cs', '// coupons\n');
   gitc('init', '-q', '-b', 'main');
   gitc('config', 'user.email', 'qe@example.com');
@@ -132,8 +135,10 @@ test('workflow 1: plan loops with a fresh verifier until 10/10, logs denials, an
   gitc('add', '-A');
   gitc('commit', '-qm', 'plan');
   gitc('checkout', '-qb', 'feature/DEMO-1');
-  write(STORY, `${read(STORY)}\nRule: coupons cannot be combined (409).\n`);
-  gitc('commit', '-qam', 'story change');
+  // The issue changed and was fetched again; the push carries only code, and is found through its branch.
+  seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-apply-coupon', text: `${read(STORY)}\nRule: coupons cannot be combined (409).\n` });
+  write('src/Basket/Coupons.cs', '// coupons v2\n');
+  gitc('commit', '-qam', 'code change');
 
   const check = qe(['check', '--changed-from', 'main']);
   assert.equal(check.status, 1);
@@ -172,7 +177,7 @@ test('workflow 2: the dispatcher runs the review stage first, then automation lo
 
   const start = pipeline(['start', 'DEMO-1']);
   assert.equal(start.status, 0, start.stderr);
-  assert.match(start.stdout, /Active story: DEMO-1\.\nTest plan for DEMO-1: verified/, 'stages report on story-start');
+  assert.match(start.stdout, /Active story: DEMO-1\. Story: \.agent-state\/board\/DEMO-1\/story\.md\.\nTest plan for DEMO-1: verified/, 'stages report on story-start');
   const context = JSON.parse(pipeline(['hook', 'session-start']).stdout);
   assert.match(context.additionalContext, /active story DEMO-1[\s\S]*Architecture review for DEMO-1: not run[\s\S]*QE for DEMO-1: plan verified/, 'Copilot reads only the top-level key; every stage contributes');
   assert.equal(context.hookSpecificOutput.additionalContext, context.additionalContext);
@@ -477,16 +482,17 @@ test('an interrupted review round runs again on the next stop, escalates after r
   assert.equal(calls()['architecture-reviewer'], 2);
 });
 
-test('adding a story starts no agent unless qe.autoPlan is on, and a story with no plan yet can be pushed', async () => {
+test('commits and merges start no agent (stories are board issues, not files), and a story with no plan yet can be pushed', async () => {
   const branch = gitc('branch', '--show-current').stdout.trim();
   gitc('add', '-A');
   gitc('commit', '-qm', 'wip', '--allow-empty');
   gitc('checkout', '-qb', 'feature/DEMO-9');
   try {
     agentScript({ 'qe-plan': [{ writePlan: happySad }], 'qe-plan-verifier': [{ result: { score: 10, gaps: [] } }] });
-    write('product-research/stories/DEMO-9-gift-cards.md', '# DEMO-9 Gift cards\n\nRule: a gift card pays for the basket.\n');
+    seedTicket(repo, { key: 'DEMO-9', slug: 'DEMO-9-gift-cards', text: '# DEMO-9 Gift cards\n\nRule: a gift card pays for the basket.\n' });
+    write('src/Basket/GiftCards.cs', '// gift cards\n');
     gitc('add', '-A');
-    gitc('commit', '-qm', 'add story');
+    gitc('commit', '-qm', 'DEMO-9: gift cards');
 
     assert.equal(pipeline(['git-hook', 'post-commit']).status, 0);
     assert.equal(pipeline(['git-hook', 'post-merge']).status, 0);
@@ -498,24 +504,28 @@ test('adding a story starts no agent unless qe.autoPlan is on, and a story with 
     assert.equal(prePush.status, 0, prePush.stdout + prePush.stderr);
     assert.equal(qe(['check', '--changed-from', 'main']).status, 0);
 
+    // Even with qe.autoPlan a commit plans nothing: `board fetch` (changed stories) or `qe plan` does.
     gitc('config', 'qe.autoPlan', 'true');
     assert.equal(pipeline(['git-hook', 'post-commit']).status, 0);
-    await waitFor(() => calls()['qe-plan-verifier'] === 1);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.deepEqual(calls(), {});
+    assert.equal(qe(['plan', 'DEMO-9']).status, 0);
+    assert.equal(calls()['qe-plan-verifier'], 1);
   } finally {
     gitc('config', '--unset', 'qe.autoPlan');
     gitc('checkout', '-qf', branch);
   }
 });
 
-test('story guard: agents see only the stories handed to the pipeline', () => {
-  write('product-research/epic-coupons.md', '# Coupons epic\n');
-  write('product-research/stories/DEMO-2-gift-wrap.md', '# DEMO-2 Gift wrap\n');
+test('story guard: agents see only the tickets handed to the pipeline', () => {
+  const epic = seedTicket(repo, { key: 'epic-coupons', type: 'epic', text: '# Epic: Coupons\n' });
+  const other = seedTicket(repo, { key: 'DEMO-2', text: '# DEMO-2 Gift wrap\n', mockups: { 'DEMO-2-wrap/Main.png': 'png' } });
+  seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-apply-coupon', text: read(STORY), mockups: { 'DEMO-1-coupon/Main.dc.html': '<html></html>' } });
   const guard = (tool_name, tool_input, env = {}) => {
     const r = pipeline(['hook', 'pre-tool'], { input: JSON.stringify({ tool_name, tool_input, cwd: repo }), env: { PIPELINE_CHILD: '1', ...env } });
     assert.equal(r.status, 0, r.stderr);
     return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
   };
-  const other = 'product-research/stories/DEMO-2-gift-wrap.md';
   try {
     fs.rmSync(path.join(repo, '.agent-state/active-story'), { force: true });
     assert.equal(guard('Read', { file_path: STORY }), 'deny', 'nothing handed over yet');
@@ -523,19 +533,22 @@ test('story guard: agents see only the stories handed to the pipeline', () => {
     assert.equal(pipeline(['start', 'DEMO-1']).status, 0);
     assert.equal(guard('Read', { file_path: path.join(repo, STORY) }), 'allow', 'the active story');
     assert.equal(guard('Edit', { file_path: STORY }), 'allow');
+    assert.equal(guard('Read', { file_path: `${CACHE}/DEMO-1/mockups/DEMO-1-coupon/Main.dc.html` }), 'allow', "the active story's own mockups");
     assert.equal(guard('Read', { file_path: other }), 'deny');
-    assert.equal(guard('Read', { file_path: 'product-research/epic-coupons.md' }), 'deny');
-    assert.equal(guard('Glob', { pattern: 'product-research/**/*.md' }), 'deny');
-    assert.equal(guard('Grep', { pattern: 'coupon', path: 'product-research' }), 'deny');
-    assert.equal(guard('Grep', { pattern: 'product-research', path: 'src' }), 'allow', 'a grep regex is not a path');
+    assert.equal(guard('Read', { file_path: `${CACHE}/DEMO-2/mockups/DEMO-2-wrap/Main.png` }), 'deny', "another story's mockups");
+    assert.equal(guard('Read', { file_path: epic }), 'deny');
+    assert.equal(guard('Glob', { pattern: `${CACHE}/**/*.md` }), 'deny');
+    assert.equal(guard('Grep', { pattern: 'coupon', path: CACHE }), 'deny');
+    assert.equal(guard('Grep', { pattern: CACHE, path: 'src' }), 'allow', 'a grep regex is not a path');
     assert.equal(guard('Bash', { command: `cat ${STORY}` }), 'allow');
-    assert.equal(guard('Bash', { command: `cat ${STORY} ./product-research/epic-coupons.md | head` }), 'deny');
+    assert.equal(guard('Bash', { command: `cat ${STORY} ./${epic} | head` }), 'deny');
     assert.equal(guard('Bash', { command: 'ls src' }), 'allow');
     assert.equal(guard('read_many_files', { paths: ['src/Basket/Coupons.cs', other] }), 'deny');
 
-    const sources = { PIPELINE_STORY_SOURCES: path.join(repo, 'product-research/stories') };
-    assert.equal(guard('Read', { file_path: other }, sources), 'allow', 'inside the folder given to implement run');
-    assert.equal(guard('Read', { file_path: 'product-research/epic-coupons.md' }, sources), 'deny');
+    // implement run hands over ticket folders (or keys); nothing else in the cache opens up.
+    assert.equal(guard('Read', { file_path: other }, { PIPELINE_STORY_SOURCES: path.join(repo, CACHE, 'DEMO-2') }), 'allow', 'a ticket folder given to implement run');
+    assert.equal(guard('Read', { file_path: other }, { PIPELINE_STORY_SOURCES: 'DEMO-2' }), 'allow', 'a ticket key given to implement run');
+    assert.equal(guard('Read', { file_path: epic }, { PIPELINE_STORY_SOURCES: 'DEMO-2' }), 'deny');
     assert.equal(guard('Read', { file_path: other }, { PIPELINE_DISABLE: '1' }), 'allow');
   } finally {
     fs.rmSync(path.join(repo, '.agent-state/active-story'), { force: true });

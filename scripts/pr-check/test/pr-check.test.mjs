@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 import { videoLinks } from '../lib/github.mjs';
 import { scoreRound } from '../lib/loop.mjs';
 
@@ -78,12 +79,12 @@ const upheldRound = { result: { score: 6, lensScores: { acceptance: 6 }, summary
 before(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-check-e2e-'));
   scriptFile = path.join(repo, '..', `${path.basename(repo)}-agent.json`);
-  for (const dir of ['scripts/pipeline', 'scripts/pr-check']) {
+  for (const dir of ['scripts/pipeline', 'scripts/pr-check', 'scripts/board', 'scripts/implement']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
   write('.gitignore', '.agent-state/\n.agent-metrics/\n');
-  write('product-research/stories/DEMO-1-apply-coupon.md', '# DEMO-1 Apply coupon\n\nAC 1: a valid coupon gives 10% off. AC 2: an expired coupon is rejected with 400.\n');
+  seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-apply-coupon', text: '# DEMO-1 Apply coupon\n\nAC 1: a valid coupon gives 10% off. AC 2: an expired coupon is rejected with 400.\n' });
   sh('git', ['init', '-q', '-b', 'main']);
   sh('git', ['config', 'user.email', 'qe@example.com']);
   sh('git', ['config', 'user.name', 'QE Test']);
@@ -113,6 +114,47 @@ test('report-only (--no-fix) runs one round, never calls the fixer, and fails be
   assert.deepEqual([result.verdict, result.score, result.rounds], ['FAIL', 6, 1]);
   assert.deepEqual(result.openFindings.map((f) => f.id), ['ACC-1-1']);
   assert.equal(calls()['pr-check-fixer'], undefined);
+});
+
+test('a multi-ticket check (--epic, --stories) runs the design lens for every frontend ticket and the epic journey', (t) => {
+  // The other tests count this repo's PR check records: leave them as they were.
+  const checks = path.join(repo, '.agent-metrics/pr-checks.jsonl');
+  const before = fs.existsSync(checks) ? fs.readFileSync(checks, 'utf8') : null;
+  t.after(() => (before === null ? fs.rmSync(checks, { force: true }) : fs.writeFileSync(checks, before)));
+  seedTicket(repo, { key: 'epic-checkout', type: 'epic', text: '# Epic: Checkout\n\nOne journey from cart to order.\n', mockups: { 'epic-checkout-journey/Journey.dc.html': '<x-dc></x-dc>' } });
+  seedTicket(repo, { key: 'DEMO-3', parent: 'epic-checkout', text: '# DEMO-3: [FE - WebApp] - Cart coupon box\n', mockups: { 'DEMO-3-cart/Main.dc.html': '<x-dc></x-dc>', 'DEMO-3-cart/README.md': '# Cart' } });
+  seedTicket(repo, { key: 'DEMO-4', parent: 'epic-checkout', text: '# DEMO-4: [BE - Ordering.API] - Coupon on the order\n' });
+  const run = (args, script) => {
+    fs.writeFileSync(scriptFile, JSON.stringify(script));
+    for (const suffix of ['.calls.json', '.prompts.log']) fs.rmSync(scriptFile + suffix, { force: true });
+    const env = { ...process.env, PIPELINE_AGENT_CMD: `"${process.execPath}" "${fakeAgent}"`, PIPELINE_FAKE_SCRIPT: scriptFile, PIPELINE_BASE_REF: 'main' };
+    delete env.PIPELINE_CHILD;
+    delete env.PIPELINE_DISABLE;
+    return spawnSync(process.execPath, ['scripts/pr-check/pr-check.mjs', 'run', ...args], { cwd: repo, encoding: 'utf8', env });
+  };
+  const missing = { severity: 'major', title: 'Coupon box has no error state', detail: 'the mockup shows an expired-coupon error', evidence: 'src/Basket/Coupons.cs:1', requirement: 'DEMO-3 Main.dc.html', fix: 'add the error state' };
+  const r = run(['--epic', 'checkout', '--lenses', 'design', '--no-fix', '--json'], {
+    'pr-check-design': [{ result: { lens: 'design', score: 8, summary: 'one state missing', coverage: [], findings: [missing] } }],
+    'pr-check-defender': [{ result: { responses: [{ id: 'UI-1-1', position: 'concede', argument: 'true' }] } }],
+    'pr-check-judge': [{ result: { score: 8, lensScores: { design: 8 }, summary: 'state missing', rulings: [{ id: 'UI-1-1', ruling: 'upheld', severity: 'major', reason: 'conceded' }] } }],
+  });
+  assert.equal(r.status, 1, r.stderr);
+  const result = JSON.parse(r.stdout);
+  assert.deepEqual([result.id, result.story, result.stories, result.epic, result.lenses], ['epic-checkout', 'DEMO-3', ['DEMO-3', 'DEMO-4'], 'epic-checkout', ['design']]);
+  assert.deepEqual(Object.keys(calls()).sort(), ['pr-check-defender', 'pr-check-design', 'pr-check-judge'], 'only the design lens ran');
+  const prompt = fs.readFileSync(`${scriptFile}.prompts.log`, 'utf8').split('=== pr-check-design #1')[1].split('\n=== ')[0];
+  assert.match(prompt, /### Tickets in this check \(2, epic epic-checkout\)/);
+  assert.match(prompt, /- DEMO-3 \(frontend\): DEMO-3: \[FE - WebApp\] - Cart coupon box\n {2}- Story: .*DEMO-3\/story\.md\n {2}- Mockups: .*DEMO-3-cart\/Main\.dc\.html/);
+  assert.match(prompt, /- DEMO-4: .*\n {2}- Story: .*\n {2}- Mockups: \(no mockup: use its Outputs and the design system\)/);
+  assert.match(prompt, /- Epic epic-checkout: Epic: Checkout \(the journey across the tickets\)\n {2}- Body: .*\n {2}- Mockups: .*epic-checkout-journey\/Journey\.dc\.html/);
+  const rec = fs.readFileSync(path.join(repo, '.agent-metrics/pr-checks.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1);
+  assert.deepEqual([rec.target, rec.stories, rec.epic, rec.upheld.map((f) => [f.lens, f.requirement])], ['epic-checkout', ['DEMO-3', 'DEMO-4'], 'epic-checkout', [['design', 'DEMO-3 Main.dc.html']]]);
+
+  // --stories names the set without an epic.
+  const s = run(['--stories', 'DEMO-3,demo-4', '--lenses', 'design', '--no-fix', '--json'], { 'pr-check-design': [clean('design')], 'pr-check-judge': [{ result: { score: 10, lensScores: { design: 10 }, summary: 'ok', rulings: [] } }] });
+  assert.equal(s.status, 0, s.stderr);
+  assert.deepEqual([JSON.parse(s.stdout).id, JSON.parse(s.stdout).stories, JSON.parse(s.stdout).epic], ['DEMO-3+1', ['DEMO-3', 'DEMO-4'], null]);
+  assert.match(run(['--stories', 'DEMO-3', '--lenses', 'looks', '--no-fix'], {}).stderr, /unknown lens looks/);
 });
 
 test('the loop debates, fixes, commits and re-reviews with fresh critics until 10/10', () => {

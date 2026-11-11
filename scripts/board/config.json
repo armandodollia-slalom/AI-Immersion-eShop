@@ -1,0 +1,45 @@
+{
+  "board": {
+    "owner": "armandodollia-slalom",
+    "ownerType": "user",
+    "repo": "armandodollia-slalom/AI-Immersion-eShop",
+    "projectNumber": 1,
+    "projectTitle": "eShop Story Board",
+    "statusField": "Status",
+    "columns": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "inProgress": "In Progress",
+      "testing": "Testing",
+      "review": "Pending Review",
+      "failed": "Failed",
+      "done": "Done"
+    },
+    "storyLabel": "story",
+    "blockedLabel": "needs-human",
+    "epicLabel": "epic",
+    "spikeLabel": "spike",
+    "evidence": {
+      "playwright": [
+        "npx",
+        "playwright",
+        "test",
+        "-c",
+        "playwright.teststack.config.ts",
+        "--grep",
+        "{casePrefix}",
+        "--trace",
+        "on",
+        "--output",
+        "{output}",
+        "--reporter",
+        "json",
+        "{files}"
+      ],
+      "timeoutSec": 1800,
+      "maxExchanges": 60,
+      "maxBodyChars": 1500,
+      "maxCommentChars": 60000
+    }
+  }
+}

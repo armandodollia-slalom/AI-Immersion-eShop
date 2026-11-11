@@ -8,7 +8,7 @@ It checks four things, plus video evidence:
 | --- | --- | --- | --- |
 | Acceptance criteria | `pr-check-acceptance` | always | every rule and acceptance criterion in the story is implemented and tested |
 | Flow | `pr-check-flow` | always | the end-to-end journey (UI, API, events, data) matches the story's flow, including sad paths |
-| UI design | `pr-check-design` | frontend stories (`[FE` in the title, a mockup under `product-research/mockups/<KEY>-*`, or changed Razor/CSS/WebApp files) | layout, components, states and copy match the mockup and the design system |
+| UI design | `pr-check-design` | frontend stories (`[FE` in the title, a mockup on the story's ticket, or changed Razor/CSS/WebApp files) | layout, components, states and copy match the mockup and the design system |
 | Code style | `pr-check-style` | always | the code follows `AGENTS.md`, `.editorconfig`, the architecture docs and the implementer's conventions |
 | Video evidence | `pr-check-video` | a video was found | frames show the journey working, with no error banners, 500s, blank screens or broken layouts |
 
@@ -30,6 +30,9 @@ Or ask the `pr-check` agent (Copilot or Claude Code) to check a PR; it runs the 
 | --- | --- | --- |
 | `--pr <n>` | none | PR to check. Metadata comes from `gh`, or the GitHub API with `GITHUB_TOKEN`/`GH_TOKEN` |
 | `--story <KEY>` | from the PR branch, title, body, or the active story | the story the PR is held to |
+| `--stories <KEY>,...` | none | hold the PR to several tickets (a branch that delivers them together); see [Several tickets](#several-tickets-an-epic) |
+| `--epic <EPIC>` | none | hold the PR to every story and bug of the epic (or of `--stories`), and to the epic's journey |
+| `--lenses <lens>,...` | all that apply | run only these lenses (`acceptance`, `flow`, `design`, `style`, `video`) |
 | `--base <ref>` | the PR base, else `PIPELINE_BASE_REF` | what the diff is taken against |
 | `--videos a,b` | links in the PR description, else `test-results/` | video files, folders or URLs |
 | `--no-fix` | fix | report only, one round |
@@ -39,6 +42,27 @@ Or ask the `pr-check` agent (Copilot or Claude Code) to check a PR; it runs the 
 | `--resume` | off | continue the interrupted run of the same check from its last saved round |
 
 Exit code 0 means PASS (10/10); anything else is FAIL or ESCALATED. Fix mode needs the PR branch checked out at the PR head with a clean working tree; `--push` is skipped for PRs from forks. report-only mode reviews a PR that isn't checked out in a temporary detached worktree.
+
+## Several tickets (an epic)
+
+An epic delivered on one branch is checked once against all of its tickets:
+
+```bash
+npm run pr-check -- run --epic promotions-and-recommendations --lenses design --no-fix --json
+npm run pr-check -- run --stories PROMO-3,PROMO-4 --epic promotions-and-recommendations --pr 42
+```
+
+- **Tickets:** `--stories` names them; without it `--epic` takes the epic's stories and bugs (its sub-issues, in Blocked-by order). The first is the check's `story` (its id, lock and progress); with `--story` that one is.
+- **Prompts:** every round header gets **Tickets in this check**: each ticket with its story file, whether it is frontend (`[FE` in the title or a mockup) and its absolute mockup paths, and the epic with its body and mockups. The critics hold the PR to every ticket and name the ticket key (or `journey`) in each finding's `requirement`.
+- **Design lens:** runs when any ticket is frontend, any ticket or the epic has mockups, or the PR changes frontend files. The critic checks every frontend ticket against its own mockups (or its Outputs), then the journey across them against the epic's body and mockups.
+- **Story guard:** the check's agents may read exactly these tickets' folders and the epic's.
+- **Output:** `result.json` gains `stories`, `epic` and `lenses`; the id is the epic key (else `<first>+<n>`, or `pr-<n>` with `--pr`). Each `pr-checks.jsonl` record carries `stories` and `epic`, so [`implement decisions`](implement.md#decision-log) credits upheld design findings to the right tickets.
+
+The epic flow calls it like any other check; the exit code is 0 only at 10/10.
+
+## Mockup renders
+
+When the design lens runs and the tickets have mockups, the check renders every mockup screen and state to PNGs before round 1 (the same renderer as the implement stage's UI verifier, see [Mockups](implement.md#mockups); cached by the mockups' sha under `.agent-state/pr-check/.mockup-cache/`) into `context/mockups/`, and the round header points at its `manifest.json`. A render that fails is logged; the critic then reads the `.dc.html` sources.
 
 ## Runs automatically from the Stop hook
 
@@ -111,14 +135,14 @@ The judge and critics run on the largest models. Defaults are in `scripts/pr-che
 | Defender | `opus` | `claude-sonnet-5.5` (a different model from the critics, so the debate isn't one model arguing with itself) |
 | Style critic | `sonnet` | `claude-sonnet-5.5` |
 
-Every model must be allowed by `agent.allowedModels` in `scripts/pipeline/config.json` (currently `opus`, `sonnet` and `haiku`, or the CLI id one of them maps to in `agent.modelIds`); see [qe.md](qe.md#models). Override one role with `PR_CHECK_MODEL_<ROLE>`, for example `PR_CHECK_MODEL_JUDGE=sonnet`.
+Every model must be allowed by `agent.allowedModels` in `scripts/pipeline/config.json` (currently `opus` and `sonnet`, or the CLI id one of them maps to in `agent.modelIds`; Codex has no ids, so a PR check on Codex is refused); see [qe.md](qe.md#models). Override one role with `PR_CHECK_MODEL_<ROLE>`, for example `PR_CHECK_MODEL_JUDGE=sonnet`.
 
 ## Files
 
 Each run writes to `.agent-state/pr-check/<id>/` (`<id>` is `pr-<n>`, or the story key):
 
 - `result.json` and `report.md`: the verdict, scores per round and lens, open findings with fixes, findings resolved during the loop, video evidence and what was not checked.
-- `context/pr.md`, `context/frames.json` and `videos/`: what the agents were given.
+- `context/pr.md`, `context/frames.json`, `context/mockups/` (mockup renders) and `videos/`: what the agents were given.
 - `round-<n>/`: `diff.patch`, every prompt and agent output, `debate.json` (each finding with its full thread), `coverage.json`, and `rulings.json`.
 
 Every round is appended to `.agent-metrics/pr-checks.jsonl`, which `metrics` and `pipeline metrics` summarize. Each record keeps the upheld findings (id, lens, severity, title, detail, requirement, evidence, and `repeat` when the finding survived a fix round) and the findings the judge dismissed, with the judge's reason. Commit it with the work it describes, like the other metrics.

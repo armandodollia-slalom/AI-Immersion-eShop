@@ -17,8 +17,8 @@ flowchart LR
   P -.->|5 rounds below 9/10| E[Escalation for a human]
 ```
 
-- Output: `tests/plans/<story-file-name>/_index.md` plus one `TC-<KEY>-NN-<slug>.md` per case, covering every happy and sad path (see [tests/plans/README.md](../../tests/plans/README.md)).
-- The runner owns the index front matter. `story-sha` records the story text the plan was written for. When the story changes, the plan becomes stale and the agent gets the story diff and updates the affected cases in place, keeping the ids of the others stable.
+- Output: `tests/plans/<story-slug>/_index.md` (the slug is the story's original file name, kept in its issue metadata) plus one `TC-<KEY>-NN-<slug>.md` per case, covering every happy and sad path (see [tests/plans/README.md](../../tests/plans/README.md)).
+- The runner owns the index front matter. `story-sha` records the story text the plan was written for (the cached ticket's text, so it stays the same after the move to the board) and `story-issue` links the story's issue. When the story changes on the board, the plan becomes stale and the agent gets the story diff and updates the affected cases in place, keeping the ids of the others stable. The diff comes from the ticket cache, which keeps every version it fetched (`.agent-state/board/<KEY>/history/`), or else from the issue's edit history.
 - Every case file starts with a `## Why` section: the requirement or risk it protects and why it sits at its layer. The plan agent's result also lists what it deliberately left out and why. Both go to the [decision log](#decision-log), not to the verifier.
 - The verifier sees only the story and the plan. It never sees the planner's reasoning in its own context; the `## Why` sections are part of the plan it reads.
 
@@ -51,11 +51,11 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | `session-start` | resumes plan and automation runs that died; test plan and automation state of the active story, open product bugs, stale plans |
 | `stop` | after review approval: starts automation in the background, or resumes it if its run died |
 | `post-commit`, `post-merge` | nothing by default; with `git config qe.autoPlan true`, the plan loop in the background for stories added or changed |
-| `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes) |
+| `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes). A push touches a story through its plan or scenario folder, tests carrying its case ids, or its key in the branch name or a commit message; stories are checked against their cached ticket (fetched when missing) |
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
-| weekly | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
+| manual (local, or `workflow_dispatch`) | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
 
-Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself. Opt in to automatic planning on commit with `git config qe.autoPlan true`; opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
+Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself; `qe plan <KEY>` re-checks the issue first. Opt in to automatic planning with `git config qe.autoPlan true`: `board fetch` then plans every story it brings in changed (commits no longer do, since stories are not files in the repository); opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
 
 ## Verifier loops
 
@@ -124,12 +124,16 @@ Tune thresholds, round limits, models and categories in `scripts/qe/config.json`
 ## Speed
 
 - **Test run in the precheck.** Each .NET test project is built once (`precheck.dotnetBuild`, one after another, because they share dependencies), then all of them run at the same time with `--no-build`. The Playwright specs run alongside them.
-- **Shared test stack.** The machine has one teststack, and loading a scenario wipes its data. So the e2e part of the precheck holds a lock in git's common dir (`.git/pipeline-locks/teststack.lock`), which every worktree shares. Stories in different worktrees write and build their tests in parallel and take turns only on the e2e run.
+- **Shared test stack.** The machine has one teststack, and loading a scenario wipes its data. So the e2e part of the precheck holds a lock in git's common dir (`.git/pipeline-locks/teststack.lock`), which every worktree shares. Stories in different worktrees write and build their tests in parallel and take turns only on the e2e run, unless they run on [stack slots](#stack-slots).
+
+### Stack slots
+
+When `implement run` works on several tickets at once (`IMPLEMENT_PARALLEL` > 1, which it sets from `--parallel`; or `QE_USE_SLOTS=1`) and `useSlots` is on (`scripts/qe/config.json`, default `true`; `QE_USE_SLOTS=0` turns it off), a story's e2e run leases an isolated stack slot instead of waiting for slot 0 (`scripts/qe/lib/slots.mjs`): `slots.mjs lease --owner qe-<KEY>`, `testing/teststack --slot <n> up` from the story's worktree (it builds that worktree's code), the specs with `TESTSTACK_SLOT=<n>` and `TESTSTACK_URL` set to the slot's WebApp, then `down` and `release`, even when the run fails. The specs follow the slot through `e2e/teststack/ports.ts` (`WEBAPP_URL`, `IDENTITY_URL`, `CATALOG_URL`, `BASKET_GRPC_URL`, `port(name)`), `playwright.teststack.config.ts` (its `baseURL`) and `loadScenario` (which runs `testing/teststack` with `TESTSTACK_SLOT`). The run stays on slot 0, behind the lock, when any of its specs names a slot-0 host port literally (`localhost:18xxx`, `host.docker.internal:18xxx`; the older specs do), when no slot is free, or when the slot's stack does not come up. The automation agent is told to build URLs from `ports.ts`, so new specs run on any slot. How many slots exist is `TESTSTACK_SLOTS`, which `--parallel auto` sizes from Docker's memory ([implement](implement.md#resources)).
 - **Models.** The writers and verifiers each have a model in `agent.models`: `plan`, `automation`, `verifier` and `audit`. Test writing (`automation`) uses `sonnet`: it is a long build-and-fix loop where speed matters, and the automation verifier still scores every round. `null` means the CLI's default model.
 
 ## Models
 
-Models are named by alias. `agent.allowedModels` in `scripts/pipeline/config.json` lists the allowed ones, currently `opus`, `sonnet` and `haiku`. Any other value fails when the config loads. `agent.modelIds` maps each alias to each CLI's own model id (Claude Code takes the alias as is; Copilot uses `claude-sonnet-5.5` and so on). A CLI with no id for an alias uses its default model. `PIPELINE_MODEL_OVERRIDE=<alias>` forces one allowed model for every agent, for experiments. To allow another model, add its alias to `allowedModels` and its id for each CLI to `modelIds`.
+Models are named by alias. `agent.allowedModels` in `scripts/pipeline/config.json` lists the allowed ones, currently `opus`, `sonnet` and `sol` (Opus 5.5 and Sonnet 5.5 on every CLI, Sol 6.1 as `gpt-6.1-sol` on Copilot only). Any other value fails when the config loads. `agent.modelIds` maps each alias to each CLI's own model id (`claude-opus-5-5` for Claude Code, `claude-opus-5.5` for Copilot, and so on). With `agent.strictModels` (on), a run without a model uses `agent.models.default` (`sonnet`) and a CLI with no id for an alias is refused rather than falling back to its own default model, so Codex, which has no ids, cannot run. `PIPELINE_MODEL_OVERRIDE=<alias>` forces one allowed model for every agent, for experiments. To allow another model, add its alias to `allowedModels` and its id for each CLI to `modelIds`. See [models](models.md) for the per-CLI view, discovery and `npm run models:check`.
 
 ## Commands
 

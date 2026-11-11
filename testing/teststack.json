@@ -1,6 +1,7 @@
 {
   // Settings for the scenario-driven Docker Compose test stack (see testing/README.md).
-  // Host ports must match src/eShop.AppHost/TestStack.cs.
+  // Slot-0 host ports; they must match scripts/stack/config.json and src/eShop.AppHost/TestStack.cs (checked by
+  // scripts/stack/test). For --slot <n>, testing/teststack generates a shifted copy in artifacts/teststack/slot-<n>/.
   "compose": {
     "project": "eshop-teststack",
     "file": "deploy/teststack/docker-compose.yaml",

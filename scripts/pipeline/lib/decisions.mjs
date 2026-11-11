@@ -6,6 +6,7 @@
 // - agent:    the agent that decided; subject: the agent whose work the decision is about
 // - decision: plan-written | approved | denied | changes-requested | product-bug
 // - reason:   the agent's own summary; items: per case, finding, gap or bug, each with its own `reason`
+import { runTags } from './run-tags.mjs';
 import { metricsFile } from './state.mjs';
 import { appendJsonl, nowIso, readJsonl } from './util.mjs';
 
@@ -32,7 +33,7 @@ const cleanObject = (obj) =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined).map(([k, v]) => [k, cleanValue(v)]));
 
 export function decisionRecord({ stage, story, round = null, agent, agentVer = null, subject, decision, reason = null, items = [], ...extra }) {
-  return cleanObject({ ts: nowIso(), stage, story, round, agent, agent_ver: agentVer, subject, decision, reason, ...extra, items: items ?? [] });
+  return cleanObject({ ts: nowIso(), stage, story, round, agent, agent_ver: agentVer, subject, decision, reason, ...extra, ...runTags(), items: items ?? [] });
 }
 
 export function logDecision(config, fields) {

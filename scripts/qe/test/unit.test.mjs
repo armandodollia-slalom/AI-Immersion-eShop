@@ -185,6 +185,21 @@ test('the retro digest ties later findings back to why each case was written', (
   assert.equal(digest.productBugs[0].why_written, 'protects AC1');
 });
 
+test('the factory retro shows the implement orchestrator\'s plans, escalations and pair verifier findings', () => {
+  const d = (stage, decision, extra = {}) => ({ ts: '2026-02-01', stage, story: 'A-1', agent: 'implementer', decision, ...extra });
+  const decisions = [
+    d('implement-plan', 'plan-written', { mode: 'delegate', reason: 'two services', items: [{ id: 'api', modelClass: 'large', modelReason: 'new aggregate', verify: 'code', verifyReason: 'api only', confidence: 0.6 }] }),
+    d('implement-plan', 'escalation-takeover', { subtask: 'api', pair_outcome: 'exhausted', reason: 'the spec was ambiguous' }),
+    d('implement-verify', 'changes-requested', { agent: 'pair-verifier', items: [{ severity: 'blocking', category: 'logic', file: 'src/A.cs', line: 2, reason: 'no owner check' }] }),
+    d('implement-verify', 'approved', { agent: 'pair-verifier' }),
+  ];
+  const digest = retroDigest({ lessons: { examplesPerCategory: 5 } }, decisions, '2026-01-01');
+  assert.deepEqual(digest.implement.plans, [{ story: 'A-1', decision: 'plan-written', mode: 'delegate', reason: 'two services', subtasks: [{ id: 'api', modelClass: 'large', modelReason: 'new aggregate', verify: 'code', verifyReason: 'api only', confidence: 0.6 }] }]);
+  assert.deepEqual(digest.implement.escalations, [{ story: 'A-1', subtask: 'api', decision: 'escalation-takeover', pairOutcome: 'exhausted', reason: 'the spec was ambiguous' }]);
+  assert.equal(digest.implement.verifierFindings.length, 1);
+  assert.equal(digest.implement.verifierFindings[0].examples[0].reason, 'no owner check');
+});
+
 test('computeMetrics summarizes loops per stage and categories per attributed agent', () => {
   const data = {
     runs: [

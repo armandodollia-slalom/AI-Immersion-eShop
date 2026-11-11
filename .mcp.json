@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lsp": {
+      "type": "stdio",
+      "command": "sh",
+      "args": ["-c", "exec node \"$(git rev-parse --show-toplevel)/scripts/lsp/mcp.mjs\""]
+    }
+  }
+}

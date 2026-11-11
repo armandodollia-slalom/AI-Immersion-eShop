@@ -1,0 +1,47 @@
+{
+  "poolSize": 2,
+  "maxSlot": 8,
+  "slotStride": 1000,
+  "leaseTtlMinutes": 240,
+  "stackMemoryMb": 2000,
+  "project": "eshop-teststack",
+  "stateDir": "artifacts/teststack",
+  "loaderConfig": "testing/teststack.json",
+  "imageTag": "teststack",
+  "ports": {
+    "webapp": { "base": 18080, "env": "WEBAPP_HOST_PORT" },
+    "identity": { "base": 18081, "env": "IDENTITY_API_HOST_PORT" },
+    "catalog": { "base": 18082, "env": "CATALOG_API_HOST_PORT" },
+    "basket": { "base": 18083, "env": "BASKET_API_HOST_PORT" },
+    "ordering": { "base": 18084, "env": "ORDERING_API_HOST_PORT" },
+    "webhooks": { "base": 18085, "env": "WEBHOOKS_API_HOST_PORT" },
+    "webhooksclient": { "base": 18086, "env": "WEBHOOKSCLIENT_HOST_PORT" },
+    "mobileBff": { "base": 18087, "env": "MOBILE_BFF_HOST_PORT" },
+    "dashboard": { "base": 18888, "env": "DASHBOARD_HOST_PORT" },
+    "postgres": { "base": 18432, "env": "POSTGRES_HOST_PORT" },
+    "redis": { "base": 18379, "env": "REDIS_HOST_PORT" },
+    "rabbitmq": { "base": 18672, "env": "EVENTBUS_HOST_PORT" }
+  },
+  "services": {
+    "identity-api": "src/Identity.API/Identity.API.csproj",
+    "basket-api": "src/Basket.API/Basket.API.csproj",
+    "catalog-api": "src/Catalog.API/Catalog.API.csproj",
+    "ordering-api": "src/Ordering.API/Ordering.API.csproj",
+    "order-processor": "src/OrderProcessor/OrderProcessor.csproj",
+    "payment-processor": "src/PaymentProcessor/PaymentProcessor.csproj",
+    "webhooks-api": "src/Webhooks.API/Webhooks.API.csproj",
+    "webhooksclient": "src/WebhookClient/WebhookClient.csproj",
+    "webapp": "src/WebApp/WebApp.csproj"
+  },
+  "rebuildAll": [
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Packages.props",
+    "global.json",
+    "nuget.config",
+    "src/Directory.Build.props",
+    "src/Directory.Build.targets",
+    "src/eShop.AppHost/",
+    "deploy/teststack/"
+  ]
+}
