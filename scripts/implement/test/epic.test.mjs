@@ -96,6 +96,7 @@ function fakeDeps(note, extra = {}) {
   const prs = [];
   const agentCalls = [];
   const checks = [];
+  const gates = [];
   const deps = {
     runAgent: async (config, opts) => {
       agentCalls.push(opts);
@@ -110,9 +111,10 @@ function fakeDeps(note, extra = {}) {
       prs.push({ title, body, branch: env.branch, base: env.prBase });
       return { url: `https://github.com/example/repo/pull/${100 + prs.length}` };
     },
+    reviewGate: (env, { pr, keys }) => gates.push({ pr, keys, worktree: env.worktree, base: env.prBase }),
     ...extra,
   };
-  return { deps, board, prs, agentCalls, checks };
+  return { deps, board, prs, agentCalls, checks, gates };
 }
 
 const featureNote = {
@@ -235,6 +237,7 @@ test('feature epic: plan note reaches every story, stories merge into the epic b
   for (const k of ['DEMO-1', 'DEMO-2', 'DEMO-3']) assert.ok(f.board.some((b) => b[0] === k && b[1] === 'review' && b.includes('--epic-branch') && b.includes('epic/shop')), `${k} review`);
   assert.ok(f.board.some((b) => b[1] === 'epic-pr' && b[2] === '10' && b.includes('https://github.com/example/repo/pull/101')));
   assert.equal(loadEpicRun(env.config, 'epic-shop').status, 'delivered');
+  assert.deepEqual(f.gates, [], 'feature epic PRs are not gated');
 });
 
 test('feature epic: stories whose owns overlap never run at the same time', async () => {
@@ -294,6 +297,8 @@ test('bug epic: the orchestrator groups the bugs; each group gets its branch, it
   const cartUrl = `https://github.com/example/repo/pull/${101 + f.prs.indexOf(cart)}`;
   for (const k of ['BUG-1', 'BUG-2']) assert.ok(f.board.some((b) => b[0] === k && b[1] === 'review' && b.includes('--pr') && b.includes(cartUrl)), `${k} review with the group PR`);
   assert.equal(f.board.filter((b) => b[1] === 'epic-pr' && b.includes('--group')).length, 2);
+  // Every published group PR goes through the review gate, from its group worktree.
+  assert.deepEqual(f.gates.map((g) => [g.keys.join(','), g.pr === cartUrl, g.base]).sort(), [['BUG-1,BUG-2', true, 'main'], ['BUG-3', false, 'main']]);
   // Decision log and per-group outcomes in this checkout's metrics.
   const decisions = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl'));
   const grouping = decisions.find((d) => d.decision === 'pr-groups');

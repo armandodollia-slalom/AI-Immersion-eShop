@@ -31,6 +31,7 @@ import { lspAdapter } from './lsp.mjs';
 import { waitForMemory } from './resources.mjs';
 import { agentSettings, createContext, runSelf } from './orchestrate.mjs';
 import { parsePlanOutput } from './plan.mjs';
+import { reviewGatePublish } from './post-publish.mjs';
 
 const QE_CLI = path.join(INSTALL_ROOT, 'scripts/qe/qe.mjs');
 const PR_CHECK_CLI = path.join(INSTALL_ROOT, 'scripts/pr-check/pr-check.mjs');
@@ -286,6 +287,8 @@ export const defaultDeps = (config, log) => ({
   epicQe,
   prCheck: prCheckUnit,
   openPr,
+  // A published group PR goes through the review gate (assessment, then auto-merge or review).
+  reviewGate: (env, { pr, keys }) => reviewGatePublish(env.worktree, { pr, keys, base: env.prBase }),
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -521,6 +524,7 @@ async function deliverUnit(env, unit, units, epicWt) {
   } else {
     for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r, opened.url);
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch, '--group', unit.id, '--title', unit.group.title, '--tickets', unit.keys.join(',')]);
+    await deps.reviewGate(uenv, { pr: opened.url, keys: results.filter((x) => DONE.has(x.outcome)).map((x) => x.key) });
   }
   log(`PR: ${opened.url}`);
   return finish('done', { pr: opened.url });

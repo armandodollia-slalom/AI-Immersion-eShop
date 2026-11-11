@@ -19,6 +19,8 @@ import { fetchCommand, migrateCommand, newCommand, publishCommand } from './lib/
 import { EVENTS, SETTLED, applyEvent, bugComment, cardFlow, claimComment, eventsForState, failStory, issueComments, owner, readFlow, testingComment } from './lib/flow.mjs';
 import { resolvedItems, syncBoard } from './lib/sync.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
+import { ensureFields } from '../review-gate/lib/fields.mjs';
+import { realGh } from '../review-gate/lib/github.mjs';
 
 setLogTag('board');
 const CONFIG_FILE = path.join(SCRIPTS_DIR, 'board', 'config.json');
@@ -117,6 +119,12 @@ async function main() {
           fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(file, null, 2)}\n`);
         },
       });
+      // The review gate's triage fields (Impact, Complexity, Fix risk, Severity, Confidence, Human reopens).
+      try {
+        ensureFields(config, realGh, { log: (m) => console.log(m) });
+      } catch (error) {
+        console.log(`triage fields not set up: ${error.message.split('\n')[0]}`);
+      }
       console.log(`Board: ${url}`);
       return 0;
     }

@@ -8,6 +8,7 @@ Agents take a user story from implementation to reviewed code with verified test
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 | `pr-check` | `scripts/pr-check/` | Adversarial critics, defender and judge score the work against its story (acceptance criteria, flow, UI design, style, video evidence). From the Stop hook, once QE has verified the tests, it reports and the agent fixes; on demand, a fixer loops it to 10/10 | [pr-check.md](pr-check.md) |
+| `review-gate` | `scripts/review-gate/` | After the pipeline publishes a bug-fix PR (single bug or bug-epic group): a read-only triage agent rates each ticket, the harness computes Severity and Confidence and records them on the issues and the board | [review-gate.md](review-gate.md) |
 | `board` | `scripts/board/` | Moves the story's card on the GitHub Project board as pipeline events happen (In Progress, Testing, back to In Progress on a product bug, Pending Review with evidence, Failed), keeps its epic's lane and evidence comment in step | [board.md](board.md) |
 
 Pull requests also get a generated section in their description, written in CI by `.github/workflows/pr-demo-video.yml` (`scripts/pr-video/`, [pr-demo-video.md](pr-demo-video.md)):
