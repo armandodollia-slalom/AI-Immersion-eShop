@@ -207,9 +207,7 @@ test.describe('Catalog.API admin writes', () => {
       );
     });
 
-    // BUG: a body id that differs from the route id is copied onto the tracked entity (key change),
-    // which EF rejects with an exception, so the API answers 500 instead of 400.
-    adminTest.fixme('v2 PUT with a body id different from the route id is 400', async ({ request }) => {
+    adminTest('v2 PUT with a body id different from the route id is 400', async ({ request }) => {
       await expectProblem(await request.put(`${API}/items/4?api-version=2.0`, { data: { ...newItem, id: 5 } }), 400);
     });
 

@@ -29,7 +29,6 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 | --- | --- | --- |
 | Negative `pageSize` or `pageIndex` reach Postgres | 500, `LIMIT must not be negative` | `catalog-api` "negative pageSize or pageIndex is rejected with 400" |
 | WebApp `?page=0` and `?page=-1` request `pageIndex` -1 | Skeleton stays, "An unhandled error has occurred." | `catalog-browse` "?page=0 shows the first page", "?page=-1 ..." |
-| v2 PUT body id differs from the route id | 500 | `catalog-admin` "v2 PUT with a body id different from the route id is 400" |
 | v1 PUT without an id | 404 "Item with id 0 not found." (the null check on an `int` is dead code) | `catalog-admin` "v1 PUT without an id in the body is 400" |
 
 ## WebApp flows
