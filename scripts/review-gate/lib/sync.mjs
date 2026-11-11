@@ -90,7 +90,7 @@ export function regate(config, gh, pr, { prior, cwd = config.root, log = () => {
   const decision = decideGate(a, { settings: config.implement.reviewGate, autoMerge: config.implement.autoMerge, prior });
   const state = { ...gateState(a, decision, prior), ...extraState };
   const assignees = Object.fromEntries(a.tickets.map((t) => [t.key, t.issue ? safe(() => issueAssignees(gh, repo, t.issue.number), []) : []]));
-  const context = { assignees, codeowners: readCodeowners(cwd), author: a.view.author, currentLabels: a.view.labels ?? [] };
+  const context = { assignees, codeowners: readCodeowners(cwd, config.baseRef), author: a.view.author, currentLabels: a.view.labels ?? [] };
   if (decision.action === 'auto-merge') {
     const m = autoMergePr(config, gh, a, decision, state, context);
     log(`${pr}: ${m.merged ? 'checks green; auto-merge' : m.problems[0]}`);
