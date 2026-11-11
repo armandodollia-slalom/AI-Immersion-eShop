@@ -219,9 +219,11 @@ function prepare(config, { name, task, mode, model, cli, noSubagents, cwd, promp
   cli = cli || config.agent.cli;
   let prompt = buildPrompt(definition, task);
   // Copilot takes its prompt as a command-line argument (capped at 32K chars on Windows, and cmd.exe
-  // mangles newlines), so its prompt is written to a file and the agent is told to read it.
+  // mangles newlines), so its prompt is written to a file and the agent is told to read it. The file
+  // goes under the agent's own working directory: headless Copilot trusts only `cwd` and refuses to
+  // read a file outside it (a pair in a subtask worktree whose config.root is the story worktree).
   if (promptFile !== false && !config.agent.cmd && cli === 'copilot') {
-    const file = promptFile ?? path.join(config.root, config.stateDir, 'prompts', `${name}-${process.pid}-${Date.now()}.md`);
+    const file = promptFile ?? path.join(cwd, config.stateDir, 'prompts', `${name}-${process.pid}-${Date.now()}-${randomUUID().slice(0, 8)}.md`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, prompt);
     prompt = `Read the file ${path.relative(cwd, file).replace(/\\/g, '/')} and follow the instructions in it exactly; it is your complete task.`;
