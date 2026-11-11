@@ -104,6 +104,14 @@ worked on): symptom, root cause, fix, commit and impact.
   failed tickets keep their verified QE work in their worktrees and resume
   after `origin/main` (with the fix) is merged into their branches.
 
+## D5: verified plans with compact tables could never be committed
+
+- **Symptom:** after D4, BUG-4/BUG-7 would still fail the QE commit on MD060 (`|----|----|` delimiter rows in `_index.md`), because their plan was already verified and a resume goes straight to the commit; the D4 precheck only runs inside a plan round.
+- **Root cause:** agents write compact delimiter rows, which markdownlint's MD060 rejects and `markdownlint --fix` cannot repair. Any hand edit would change `plan-sha` and invalidate the verification.
+- **Fix:** `tidyPlan` (`scripts/qe/lib/plans.mjs`) normalizes delimiter rows to `| --- |` after each plan producer round and, through the new `qe tidy <story>`, right before the pipeline's QE commit. When the plan was verified it re-stamps `plan-sha` (and `automation-plan-sha` when the tests were verified against that plan), since only whitespace changed. A first version missed `automation-plan-sha`, caught in a pre-flight on the real worktrees before resuming.
+- **Commits:** `30d205d`, `856d226` (e2e test in `scripts/pipeline/test/e2e.test.mjs`).
+- **Impact:** without it every ticket whose plan agent wrote a compact table needed another plan round (tokens) or failed at the commit.
+
 ## Cosmetic
 
 - **Fixed (`1d9b9a2`):** `implement run --epic` on a bug epic printed
@@ -135,3 +143,4 @@ worked on): symptom, root cause, fix, commit and impact.
   prerequisite group, because resume reuses an existing worktree and only
   merges the extra branches. The operator removed the empty `token-audience`
   worktree before resuming so it is recreated stacked.
+- **O5: killing the batch leaves QE runs orphaned.** `qe.mjs automate` runs are spawned detached (by design, so QE survives an agent turn), so killing the batch and its workers leaves them and their agents running. The operator stopped them by hand; a resume would otherwise have found the automation lock held. Not changed (detaching is intended), but a `implement stop` command would make operator interventions safer.
