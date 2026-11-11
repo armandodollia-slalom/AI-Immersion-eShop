@@ -13,6 +13,12 @@ export const PLAN_STAGE = 'implement-plan';
 export const VERIFY_STAGE = 'implement-verify';
 export const SUBTASK_RUNS_FILE = 'subtask-runs.jsonl';
 export const OUTCOMES_FILE = 'decision-outcomes.jsonl';
+// The PR check's per-round records (scripts/pr-check/lib/loop.mjs CHECKS_FILE): upheld design findings
+// there are the ones the UI verifier did not catch.
+export const PR_CHECKS_FILE = 'pr-checks.jsonl';
+
+// Findings a UI verifier raised against the mockups.
+export const designCount = (findings) => (findings ?? []).filter((f) => f?.category === 'design').length;
 
 export const LABELS = ['over-provisioned', 'under-provisioned', 'bad-split', 'should-have-been-self', 'weak-verification', 'bad-grouping'];
 
@@ -88,7 +94,8 @@ export function planDecisionLog(rec, { blocked = false } = {}) {
 
 // A pair round's verdict as a shared decision-log entry. Findings from the harness's own checks (scope,
 // build, diagnostics) are included with their category, so the retro sees every reason a round failed.
-export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifier = null, ui = false }) {
+export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifier = null, ui = false, disputes = [], followUps = [] }) {
+  const ruling = new Map(disputes.map((d) => [d.id, d]));
   return {
     stage: VERIFY_STAGE,
     story: key,
@@ -100,7 +107,11 @@ export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifi
     reason: verdict.summary ?? null,
     decision_id: decisionId,
     subtask: st.id,
-    items: (verdict.findings ?? []).map((f) => ({ severity: f.severity ?? null, category: f.category ?? null, file: f.file ?? null, line: f.line ?? null, screenshot: f.screenshot ?? null, reason: f.issue ?? f.detail ?? null, fix: f.fix ?? null })),
+    design_findings: designCount(verdict.findings),
+    // The implementer's disputes of the last round's findings and how this verifier ruled on them.
+    disputes: disputes.map((d) => ({ finding: d.id, kind: d.kind, reason: d.reason ?? null, ruling: d.ruling, evidence: d.evidence ?? null })),
+    follow_ups: followUps.map((u) => ({ title: u.title, reason: u.reason ?? null })),
+    items: (verdict.findings ?? []).map((f) => ({ id: f.id ?? null, severity: f.severity ?? null, category: f.category ?? null, file: f.file ?? null, line: f.line ?? null, screenshot: f.screenshot ?? null, ...(f.category === 'design' ? { mockup: f.mockup ?? null, actual: f.actual ?? f.screenshot ?? null } : {}), ...(ruling.has(f.id) ? { dispute: { kind: ruling.get(f.id).kind, ruling: ruling.get(f.id).ruling } } : {}), reason: f.issue ?? f.detail ?? null, fix: f.fix ?? null })),
   };
 }
 
@@ -124,13 +135,16 @@ const bySeverityCategory = (findings) => {
 };
 
 // A round as recorded: its verdict and counts, never the findings' text.
-export const roundRecord = ({ round, verdict, findings = [], diagnostics = null, outOfOwns = [], crossFindings = 0 }) => ({
+const NO_DISPUTES = { nit: 0, outOfScope: 0, accepted: 0, reasserted: 0, overruled: 0, followUps: 0 };
+export const roundRecord = ({ round, verdict, findings = [], diagnostics = null, outOfOwns = [], crossFindings = 0, disputes = NO_DISPUTES }) => ({
   round,
   verdict,
   findings: bySeverityCategory(findings),
+  designFindings: designCount(findings),
   diagnostics: diagnostics?.available ? { errors: diagnostics.errors.length, warnings: diagnostics.warnings.length } : null,
   outOfOwnsEdits: outOfOwns.length,
   crossSubtaskFindings: crossFindings,
+  disputes,
 });
 
 // Findings in a subtask's rounds that point at files another subtask owns: a sign of a bad split.
@@ -148,6 +162,8 @@ export function subtaskRunRecord(r) {
     verify: r.verify ?? null,
     maxRounds: r.maxRounds,
     rounds: r.rounds ?? [],
+    designFindings: (r.rounds ?? []).reduce((n, x) => n + (x.designFindings ?? 0), 0),
+    followUps: r.followUps ?? [],
     approved: Boolean(r.approved),
     escalation: r.escalation ?? 'none',
     filesNeededOutsideOwns: r.filesNeededOutsideOwns ?? [],
@@ -194,6 +210,8 @@ export const storyOutcomeRecord = (r) => ({
   branch: r.branch ?? null,
   lspCalls: r.lspCalls ?? 0,
   signatureChangesWithoutReferences: Boolean(r.signatureChangesWithoutReferences),
+  // Real problems outside the ticket the pair implementers found: new tickets to file.
+  followUps: r.followUps ?? [],
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -204,8 +222,9 @@ export const DEFAULT_THRESHOLDS = { smallDiffLoc: 60, tinySubtaskLoc: 40, tinySu
 
 // Labels per subtask of each accepted decision. Returns rows { story, decisionId, mode, subtaskId, ...,
 // labels } plus one plan-level row per decision for should-have-been-self.
-export function labelDecisions({ decisions = [], runs = [], outcomes = [] }, thresholds = {}) {
+export function labelDecisions({ decisions = [], runs = [], outcomes = [], prChecks = [] }, thresholds = {}) {
   const t = { ...DEFAULT_THRESHOLDS, ...thresholds };
+  const late = prCheckDesignFindings(prChecks);
   const rows = [];
   for (const d of planDecisions(decisions).filter((x) => x.accepted && x.decisionId)) {
     const dRuns = runs.filter((r) => r.decisionId === d.decisionId);
@@ -237,6 +256,8 @@ export function labelDecisions({ decisions = [], runs = [], outcomes = [] }, thr
         expectedLoc: s.expectedLoc ?? null,
         actualLoc: run?.actual?.loc ?? null,
         outcome: story?.outcome ?? null,
+        designFindings: run ? (run.designFindings ?? (run.rounds ?? []).reduce((n, x) => n + (x.designFindings ?? 0), 0)) : null,
+        prCheckDesignFindings: late.get(d.story) ?? 0,
         labels,
       });
     }
@@ -245,7 +266,7 @@ export function labelDecisions({ decisions = [], runs = [], outcomes = [] }, thr
       const total = dRuns.reduce((n, r) => n + (r.actual?.loc ?? 0), 0);
       const runsUsed = dRuns.reduce((n, r) => n + (r.agentRuns ?? 0), 0);
       if (tiny && total <= t.selfMaxTotalLoc && runsUsed > t.selfOverheadRunsPerSubtask * dRuns.length)
-        rows.push({ story: d.story, decisionId: d.decisionId, mode: d.mode, subtaskId: '(plan)', modelClass: null, verify: null, rounds: null, approved: null, escalation: null, expectedLoc: null, actualLoc: total, outcome: story?.outcome ?? null, labels: ['should-have-been-self'] });
+        rows.push({ story: d.story, decisionId: d.decisionId, mode: d.mode, subtaskId: '(plan)', modelClass: null, verify: null, rounds: null, approved: null, escalation: null, expectedLoc: null, actualLoc: total, outcome: story?.outcome ?? null, designFindings: null, prCheckDesignFindings: late.get(d.story) ?? 0, labels: ['should-have-been-self'] });
     }
   }
   // Bug epics: one row per PR group (decision-outcomes type "pr-group", written by lib/epic.mjs).
@@ -262,9 +283,30 @@ export function groupRow(g) {
   return { story: g.epic ?? '-', decisionId: g.decisionId ?? null, mode: 'group', subtaskId: g.groupId, modelClass: null, verify: null, rounds: null, approved: Boolean(g.pr), escalation: null, expectedLoc: null, actualLoc: null, outcome: g.outcome ?? null, tickets: g.tickets ?? [], pr: g.pr ?? null, costUsd: g.cost_usd ?? null, labels };
 }
 
+// Upheld design findings of the PR check per story: each finding id once per check (a finding upheld again
+// after a fix round is the same finding). A check of several tickets (an epic) credits a finding to the
+// tickets it names, else to every ticket it covered.
+export function prCheckDesignFindings(records) {
+  const seen = new Set();
+  const out = new Map();
+  for (const r of records ?? []) {
+    const stories = Array.isArray(r.stories) && r.stories.length ? r.stories : [r.story];
+    for (const f of r.upheld ?? []) {
+      if (f.lens !== 'design') continue;
+      const id = `${r.target ?? r.story}\0${f.id}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const text = `${f.title ?? ''} ${f.requirement ?? ''} ${f.detail ?? ''}`.toUpperCase();
+      const named = stories.filter((k) => k && text.includes(String(k).toUpperCase()));
+      for (const k of named.length ? named : stories) if (k) out.set(k, (out.get(k) ?? 0) + 1);
+    }
+  }
+  return out;
+}
+
 export function formatDecisionReport(rows) {
   if (!rows.length) return 'No orchestrator decisions recorded.';
-  const head = `${'Story'.padEnd(10)} ${'Decision'.padEnd(9)} ${'Mode'.padEnd(8)} ${'Subtask'.padEnd(12)} ${'Model'.padEnd(7)} ${'Verify'.padEnd(6)} ${'Rnds'.padEnd(4)} ${'Esc'.padEnd(9)} ${'LOC exp/act'.padEnd(12)} Labels`;
+  const head = `${'Story'.padEnd(10)} ${'Decision'.padEnd(9)} ${'Mode'.padEnd(8)} ${'Subtask'.padEnd(12)} ${'Model'.padEnd(7)} ${'Verify'.padEnd(6)} ${'Rnds'.padEnd(4)} ${'Esc'.padEnd(9)} ${'LOC exp/act'.padEnd(12)} ${'Design e/pr'.padEnd(11)} Labels`;
   const lines = rows.map((r) =>
     [
       r.story.padEnd(10),
@@ -276,11 +318,16 @@ export function formatDecisionReport(rows) {
       String(r.rounds ?? '-').padEnd(4),
       String(r.escalation ?? '-').padEnd(9),
       `${r.expectedLoc ?? '-'}/${r.actualLoc ?? '-'}`.padEnd(12),
+      `${r.designFindings ?? '-'}/${r.prCheckDesignFindings ?? '-'}`.padEnd(11),
       r.labels.join(', ') || '-',
     ].join(' '),
   );
   const counts = Object.fromEntries(LABELS.map((l) => [l, rows.filter((r) => r.labels.includes(l)).length]));
-  return `${head}\n${lines.join('\n')}\n\n${LABELS.map((l) => `${l}: ${counts[l]}`).join('  ')}`;
+  // Design findings caught early (by the UI verifiers, every round) versus late (upheld at the PR check).
+  const stories = [...new Set(rows.map((r) => r.story))];
+  const early = stories.reduce((n, k) => n + rows.filter((r) => r.story === k).reduce((m, r) => m + (r.designFindings ?? 0), 0), 0);
+  const prCheck = stories.reduce((n, k) => n + (rows.find((r) => r.story === k)?.prCheckDesignFindings ?? 0), 0);
+  return `${head}\n${lines.join('\n')}\n\n${LABELS.map((l) => `${l}: ${counts[l]}`).join('  ')}\ndesign findings caught early (UI verifier rounds): ${early}  at PR check (upheld): ${prCheck}`;
 }
 
 // ---------------------------------------------------------------------------------------------

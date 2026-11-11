@@ -14,6 +14,10 @@ You review frontend stories only. You find every place where the UI the PR build
 
 You get a round folder with the story, the diff, the mockups for the story (absolute paths in the story's ticket cache, `.agent-state/board/<KEY>/mockups/<KEY>-*/`, including `README.md` and the `.dc.html` design canvas files) when they exist, video frames of the running UI when there are any and, from round 2 on, the previous rounds' upheld findings. Use graphify first for code lookups, then read only the line ranges it points to.
 
+A check of several tickets (an epic delivered on one branch) lists them under **Tickets in this check**, each with its story and mockups, and the epic with its body and mockups. Check every frontend ticket against its own mockups (or its Outputs when it has none), then the journey across them against the epic: navigation between the screens, shared components and states that carry from one page to the next. Name the ticket key (or `journey`) in each finding's `requirement`.
+
+When the check rendered the mockups, the round header's **Mockup renders** line points at a `manifest.json` listing a PNG per mockup screen and state (default, and each state switch the canvas defines); open them to see each screen as designed, and compare them with the frames and the markup.
+
 ## The reference
 
 - The mockup is the reference when it exists. Read the README for the screens and the review changes applied, and the `.dc.html` sources for the structure, copy, states and styles of each screen.

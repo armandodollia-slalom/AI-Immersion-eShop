@@ -16,9 +16,11 @@ import { runTags } from '../../pipeline/lib/run-tags.mjs';
 import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { SUBTASK_RUNS_FILE, crossFindings, decisionRecord, planDecisionLog, roundRecord, subtaskRunRecord, verdictDecisionLog } from './decisions.mjs';
 import { commitAll, commitEnv, createSubtaskWorktree, diffSince, discardChanges, filesChanged, headSha, mergeInProgress, removeWorktree, unmergedFiles } from './gitops.mjs';
+import { disputeCounts, formatDisputes, openDisputes, parseImplementerReport, ruleDisputes, withIds } from './disputes.mjs';
 import { diagnosticFindings, formatDiagnostics, lspAdapter, signatureChanges } from './lsp.mjs';
 import { isUiStory, parsePlanOutput, parseVerdict, resolveModelForRole, roleCli, scopeViolations, topoOrder, validatePlan, validateRewrite } from './plan.mjs';
 import { waitForMemory } from './resources.mjs';
+import { formatMockups, formatRenders, hasMockups, mockupFilesOf, renderMockups, storyMockups } from './mockups.mjs';
 import { acquire, semaphoreDir } from './semaphore.mjs';
 import { stackAdapter } from './stack.mjs';
 import { codeVerifierTask, conflictTask, escalationTask, pairImplementerTask, planTask, uiVerifierTask } from './tasks.mjs';
@@ -55,7 +57,7 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     plan: null,
     subtasks: new Map(), // id -> { status, branch, worktree, rounds }
     integrationNotes: [],
-    metrics: { agentRuns: 0, byRole: {}, pairRounds: 0, takeovers: 0, escalations: 0, limitHit: null, mode: null, lspCalls: 0, signatureChangesWithoutReferences: false, leaseWaitSec: 0, usage: null },
+    metrics: { agentRuns: 0, byRole: {}, pairRounds: 0, takeovers: 0, escalations: 0, limitHit: null, mode: null, lspCalls: 0, signatureChangesWithoutReferences: false, leaseWaitSec: 0, usage: null, followUps: [] },
   };
   ctx.deps = {
     runAgent: deps.runAgent ?? runAgentAsync,
@@ -63,6 +65,7 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     lsp: deps.lsp ?? lspAdapter(config, { log: ctx.log }),
     acquire: deps.acquire ?? ((label) => acquire(semaphoreDir(config.root), s.maxConcurrentAgents, { deadline: ctx.deadline, label })),
     memoryGate: deps.memoryGate ?? ((label) => waitForMemory(config, label)),
+    renderMockups: deps.renderMockups ?? renderMockups,
   };
   ctx.progress = () =>
     onProgress({
@@ -72,6 +75,7 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
         agentRuns: ctx.metrics.agentRuns,
         lspCalls: ctx.metrics.lspCalls,
         signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences,
+        followUps: ctx.metrics.followUps,
         subtasks: [...ctx.subtasks.entries()].map(([id, st]) => ({ id, ...st })),
       },
     });
@@ -79,6 +83,10 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
 }
 
 const record = (ctx, file, rec) => appendJsonl(metricsFile(ctx.config, file), { ...rec, ...runTags() });
+
+// The story's mockups (its own, and the epic's when the epic was handed to the run), found once.
+const mockupsOf = (ctx) => (ctx.mockups ??= storyMockups(ctx.config, ctx.storyFile));
+const mockupText = (ctx) => (hasMockups(mockupsOf(ctx)) ? formatMockups(mockupsOf(ctx)) : null);
 
 // Wall clock and agent-run budget for a story; throws LimitError when either is spent.
 export function checkBudget(ctx) {
@@ -116,7 +124,10 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
     ctx.metrics.byRole[role] = (ctx.metrics.byRole[role] ?? 0) + 1;
     const { cli, model, cliName } = agentSettings(ctx.config, role, modelClass, explicitModel);
     const t0 = Date.now();
-    const res = await ctx.deps.runAgent(ctx.config, { name, task, mode, model, cli, noSubagents: true, cwd, timeoutSec: Math.max(1, Math.min(timeoutSec, left)), signal: ctx.abort.signal, usage: { stage: USAGE_STAGE[role] ?? 'implement', story: ctx.key, step, round } });
+    // The story's own ticket (story and mockups) is open to every agent of its run, in whichever worktree
+    // it works (the story guard matches the key in any checkout's ticket cache); nothing else is added.
+    const extraEnv = { PIPELINE_STORY_SOURCES: [process.env.PIPELINE_STORY_SOURCES, ctx.key].filter(Boolean).join(path.delimiter) };
+    const res = await ctx.deps.runAgent(ctx.config, { name, task, mode, model, cli, noSubagents: true, cwd, timeoutSec: Math.max(1, Math.min(timeoutSec, left)), signal: ctx.abort.signal, extraEnv, usage: { stage: USAGE_STAGE[role] ?? 'implement', story: ctx.key, step, round } });
     if (ctx.abort.signal.aborted) throw new AbortedError('aborted');
     if (res.timedOut && Date.now() >= ctx.deadline) throw limit(ctx, 'limit-wall-clock', `the story ran past its ${ctx.s.storyWallClockSec}s wall clock while ${name} was running`);
     ctx.metrics.usage = addUsage(ctx.metrics.usage, res.usage ?? null);
@@ -172,7 +183,7 @@ export async function planStory(ctx) {
       round: attempt,
       cwd: ctx.worktree,
       timeoutSec: ctx.s.timeouts.plannerSec,
-      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits: limitsOf(ctx.s, ctx.config), errors, epicNote: ctx.epicNote }),
+      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits: limitsOf(ctx.s, ctx.config), errors, epicNote: ctx.epicNote, mockups: uiStory ? mockupText(ctx) : null }),
     });
     const raw = parsePlanOutput(res.output);
     const agent = { cli: res.cli, model: res.model, version: res.version };
@@ -207,7 +218,7 @@ export async function planStory(ctx) {
 // Verifier pairs
 // ---------------------------------------------------------------------------------------------
 
-const newRec = (st) => ({ st, rounds: [], implementer: null, verifier: null, agentRuns: 0, leaseWaitSec: 0, lspCalls: 0, sigNoRefs: false, outOfOwns: new Set(), neededOutside: [], escalation: 'none', mergeConflictFiles: [], usage: null, started: Date.now() });
+const newRec = (st) => ({ st, rounds: [], followUps: [], implementer: null, verifier: null, agentRuns: 0, leaseWaitSec: 0, lspCalls: 0, sigNoRefs: false, outOfOwns: new Set(), neededOutside: [], escalation: 'none', mergeConflictFiles: [], usage: null, started: Date.now() });
 
 async function agentFor(ctx, rec, slot, opts) {
   const res = await callAgent(ctx, { step: rec.st.id, round: rec.rounds.length + 1, ...opts });
@@ -220,8 +231,8 @@ async function agentFor(ctx, rec, slot, opts) {
 
 const PATHLIKE = /(?:^|[\s`'"(])((?:src|tests|testing|deploy|scripts|docs)\/[\w./-]+|[\w-]+\.(?:props|targets|json|slnx?|slnf))/g;
 
-async function verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec }) {
-  const task = codeVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText });
+async function verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) {
+  const task = codeVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, disputes });
   for (let attempt = 0; attempt <= ctx.config.agent.resultParseRetries; attempt++) {
     const res = await agentFor(ctx, rec, 'verifier', { role: 'verifier', name: 'pair-verifier', mode: 'read', modelClass: ctx.s.roles.verifier.modelClass, cwd: worktree, timeoutSec: ctx.s.timeouts.codeVerifierSec, task });
     discardChanges(worktree);
@@ -258,7 +269,7 @@ async function releaseUi(ctx, rec, worktree) {
   await ctx.deps.stack.release(lease.slot);
 }
 
-async function verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec }) {
+async function verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) {
   const shots = path.join(ctx.worktree, ctx.s.ui.screenshotsDir, ctx.key, st.id, `round-${round}`);
   fs.mkdirSync(shots, { recursive: true });
   const ui = await leaseUi(ctx, st, rec);
@@ -282,13 +293,22 @@ async function verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec 
       }
       if (step[0] === 'up') ui.up = true;
     }
-    const task = uiVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, webappUrl: lease.webappUrl, screenshotsDir: shots, worktree });
+    // The mockups, rendered to PNGs once per set of mockup files (cached by their sha) and copied into
+    // every round's mockup/ folder, so the verifier compares the app with the design each round.
+    let renders = null;
+    if (hasMockups(mockupsOf(ctx))) {
+      const r = await ctx.deps.renderMockups({ files: mockupFilesOf(mockupsOf(ctx)), outDir: path.join(shots, 'mockup'), cacheDir: path.join(ctx.worktree, ctx.s.ui.screenshotsDir, ctx.key, '.mockup-cache') });
+      if (!r.ok) ctx.log(`could not render the mockups for ${st.id} (${r.error}); the verifier reads the sources`);
+      renders = { ...r, text: formatRenders(r.entries) };
+    }
+    const mockupRenders = (renders?.entries ?? []).filter((e) => e.kind === 'screen' && e.png).map((e) => e.png);
+    const task = uiVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, webappUrl: lease.webappUrl, screenshotsDir: shots, worktree, mockups: mockupText(ctx), renders, implementerScreens: rec.mockupScreens ?? null, disputes });
     for (let attempt = 0; attempt <= ctx.config.agent.resultParseRetries; attempt++) {
       const res = await agentFor(ctx, rec, 'verifier', { role: 'uiVerifier', name: 'pair-ui-verifier', mode: 'verify', modelClass: ctx.s.roles.uiVerifier.modelClass, cwd: worktree, timeoutSec: ctx.s.timeouts.uiVerifierSec, task });
       const removed = discardChanges(worktree);
       if (removed.length) ctx.log(`discarded ${removed.length} file(s) the UI verifier left in ${path.basename(worktree)}`);
       const v = parseVerdict(res.output, { ui: true });
-      if (v) return { ...v, screenshots: fs.readdirSync(shots).map((f) => path.join(shots, f)) };
+      if (v) return { ...v, screenshots: fs.readdirSync(shots, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(shots, e.name)), mockupRenders };
     }
     return null;
   }
@@ -308,7 +328,12 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
   const all = [];
   let findings = [];
   let screenshots = [];
+  let mockupRenders = [];
   let diagText = null;
+  // Disputes: id -> { disputes, reasserts }; `pending` are the implementer's disputes for the next verifier.
+  const disputeState = new Map();
+  let pending = { open: [], overruled: [] };
+  let roundFollowUps = [];
   let skipImplementer = startAtVerify;
   const progress = (round, status) => {
     ctx.subtasks.set(st.id, { ...(ctx.subtasks.get(st.id) ?? {}), status, rounds: round, branch, worktree });
@@ -329,7 +354,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
         model: role === 'pairImplementer' ? st.model ?? null : null,
         cwd: worktree,
         timeoutSec: ctx.s.timeouts.pairImplementerSec,
-        task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self) }),
+        task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self), mockups: st.verify === 'ui' ? mockupText(ctx) : null, mockupRenders }),
       });
       commitAll(worktree, `${ctx.key}: ${st.id} (round ${round})`);
       if (ctx.deps.lsp.csharpRunning(worktree) && signatureChanges(git(worktree, ['diff', before, 'HEAD']).stdout).length && !res.referencesCalls) {
@@ -337,6 +362,14 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
         ctx.metrics.signatureChangesWithoutReferences = true;
       }
       const reported = extractResult(res.output);
+      if (Array.isArray(reported?.mockupScreens)) rec.mockupScreens = reported.mockupScreens.filter((x) => typeof x === 'string').slice(0, 20);
+      // Nits and out-of-scope requests the implementer disputed go to the next verifier to rule on;
+      // real problems outside the ticket are follow-ups for the story's run record.
+      const report = parseImplementerReport(reported, findings);
+      pending = openDisputes(report.disputes, disputeState);
+      roundFollowUps = report.followUps.map((u) => ({ ...u, subtask: st.id, round }));
+      rec.followUps.push(...roundFollowUps);
+      ctx.metrics.followUps.push(...roundFollowUps);
       if (reported?.status === 'blocked') {
         const reason = reported.reason ?? 'blocked';
         rec.neededOutside = [...new Set([...String(reason).matchAll(PATHLIKE)].map((m) => m[1]).filter((f) => !st.self && scopeViolations([f], st.owns).length))];
@@ -354,6 +387,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
     const outside = st.self ? [] : scopeViolations(files, st.owns);
     let diag = { available: false, errors: [], warnings: [] };
     let verdict;
+    let rulings = [];
     if (!files.length) {
       verdict = { verdict: 'CHANGES_REQUESTED', findings: [{ severity: 'blocking', category: 'scope', file: null, issue: 'no changes were committed for this subtask', fix: 'implement the subtask and commit it' }] };
     } else if (outside.length) {
@@ -369,7 +403,15 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
       if (!checks.ok) {
         verdict = { verdict: 'CHANGES_REQUESTED', findings: [...diagnosticFindings(diag), { severity: 'blocking', category: 'build', file: null, issue: 'the build or the existing unit tests failed', detail: checks.output }] };
       } else {
-        const v = st.verify === 'ui' ? await verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec }) : await verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec });
+        const disputes = formatDisputes(pending.open, pending.overruled) || null;
+        const raw = st.verify === 'ui' ? await verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) : await verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec, disputes });
+        let v = raw;
+        if (raw) {
+          const ruled = ruleDisputes({ ...raw, findings: withIds(raw.findings, { subtask: st.id, round }) }, pending.open, disputeState, pending.overruled);
+          v = ruled.verdict;
+          rulings = ruled.rulings;
+          pending = { open: [], overruled: [] };
+        }
         if (!v) {
           // No parsable verdict: the round is spent, and the next one verifies again without asking the implementer for changes.
           rec.rounds.push(roundRecord({ round, verdict: 'VERIFIER_ERROR', diagnostics: diag }));
@@ -380,10 +422,12 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
         verdict = blockingDiag.length ? { ...v, verdict: 'CHANGES_REQUESTED', findings: [...blockingDiag, ...v.findings] } : v;
       }
     }
+    verdict = { ...verdict, findings: withIds(verdict.findings, { subtask: st.id, round }) };
     const blocking = verdict.findings.filter((f) => f.severity !== 'minor');
-    rec.rounds.push(roundRecord({ round, verdict: verdict.verdict, findings: verdict.findings, diagnostics: diag, outOfOwns: outside, crossFindings: crossFindings(blocking, others) }));
+    rec.rounds.push(roundRecord({ round, verdict: verdict.verdict, findings: verdict.findings, diagnostics: diag, outOfOwns: outside, crossFindings: crossFindings(blocking, others), disputes: disputeCounts(rulings, roundFollowUps) }));
     // Why the pair verifier (or the harness's own checks) approved or sent the subtask back, for the retro.
-    logDecision(ctx.config, verdictDecisionLog({ key: ctx.key, decisionId: ctx.decisionId, st, round, verdict, verifier: rec.verifier, ui: st.verify === 'ui' }));
+    logDecision(ctx.config, verdictDecisionLog({ key: ctx.key, decisionId: ctx.decisionId, st, round, verdict, verifier: rec.verifier, ui: st.verify === 'ui', disputes: rulings, followUps: roundFollowUps }));
+    roundFollowUps = [];
     if (verdict.verdict === 'APPROVED') {
       progress(round, 'approved');
       return { status: 'approved', findings: all };
@@ -391,6 +435,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
     all.push(...blocking.map((f) => ({ ...f, subtask: st.id, round })));
     findings = blocking;
     screenshots = verdict.screenshots ?? [];
+    mockupRenders = verdict.mockupRenders ?? [];
   }
   progress(max, 'exhausted');
   return { status: 'exhausted', findings: all };
@@ -516,6 +561,7 @@ function writeSubtaskRun(ctx, rec) {
       lspCalls: rec.lspCalls,
       signatureChangesWithoutReferences: rec.sigNoRefs,
       usage: rec.usage,
+      followUps: rec.followUps,
     }),
   );
 }
