@@ -1,0 +1,5 @@
+description: >
+  BUG-11 (negative pageSize or pageIndex returns 500): catalog-pictures already has what the cases
+  need (17 items with ids 1-17 so a default page of 10 is full, names starting with "Edge", types
+  and brands 1-4), so this scenario only extends it.
+extends: catalog-pictures

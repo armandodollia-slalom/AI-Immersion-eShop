@@ -20,11 +20,13 @@ public static class CatalogApi
 
         // Routes for querying catalog items.
         v1.MapGet("/items", GetAllItemsV1)
+            .WithPaginationValidation()
             .WithName("ListItems")
             .WithSummary("List catalog items")
             .WithDescription("Get a paginated list of items in the catalog.")
             .WithTags("Items");
         v2.MapGet("/items", GetAllItems)
+            .WithPaginationValidation()
             .WithName("ListItems-V2")
             .WithSummary("List catalog items")
             .WithDescription("Get a paginated list of items in the catalog.")
@@ -40,6 +42,7 @@ public static class CatalogApi
             .WithDescription("Get an item from the catalog")
             .WithTags("Items");
         v1.MapGet("/items/by/{name:minlength(1)}", GetItemsByName)
+            .WithPaginationValidation()
             .WithName("GetItemsByName")
             .WithSummary("Get catalog items by name")
             .WithDescription("Get a paginated list of catalog items with the specified name.")
@@ -58,6 +61,7 @@ public static class CatalogApi
 
         // Routes for resolving catalog items using AI.
         v1.MapGet("/items/withsemanticrelevance/{text:minlength(1)}", GetItemsBySemanticRelevanceV1)
+            .WithPaginationValidation()
             .WithName("GetRelevantItems")
             .WithSummary("Search catalog for relevant items")
             .WithDescription("Search the catalog for items related to the specified text")
@@ -65,6 +69,7 @@ public static class CatalogApi
 
         // Routes for resolving catalog items using AI.
         v2.MapGet("/items/withsemanticrelevance", GetItemsBySemanticRelevance)
+            .WithPaginationValidation()
             .WithName("GetRelevantItems-V2")
             .WithSummary("Search catalog for relevant items")
             .WithDescription("Search the catalog for items related to the specified text")
@@ -72,11 +77,13 @@ public static class CatalogApi
 
         // Routes for resolving catalog items by type and brand.
         v1.MapGet("/items/type/{typeId}/brand/{brandId?}", GetItemsByBrandAndTypeId)
+            .WithPaginationValidation()
             .WithName("GetItemsByTypeAndBrand")
             .WithSummary("Get catalog items by type and brand")
             .WithDescription("Get catalog items of the specified type and brand")
             .WithTags("Types");
         v1.MapGet("/items/type/all/brand/{brandId:int?}", GetItemsByBrandId)
+            .WithPaginationValidation()
             .WithName("GetItemsByBrand")
             .WithSummary("List catalog items by brand")
             .WithDescription("Get a list of catalog items for the specified brand")
@@ -101,25 +108,28 @@ public static class CatalogApi
             .WithName("UpdateItem")
             .WithSummary("Create or replace a catalog item")
             .WithDescription("Create or replace a catalog item")
-            .WithTags("Items");
+            .WithTags("Items")
+            .RequireAuthorization("CatalogAdmin");
         v2.MapPut("/items/{id:int}", UpdateItem)
             .WithName("UpdateItem-V2")
             .WithSummary("Create or replace a catalog item")
             .WithDescription("Create or replace a catalog item")
-            .WithTags("Items");
+            .WithTags("Items")
+            .RequireAuthorization("CatalogAdmin");
         api.MapPost("/items", CreateItem)
             .WithName("CreateItem")
             .WithSummary("Create a catalog item")
-            .WithDescription("Create a new item in the catalog");
+            .WithDescription("Create a new item in the catalog")
+            .RequireAuthorization("CatalogAdmin");
         api.MapDelete("/items/{id:int}", DeleteItemById)
             .WithName("DeleteItem")
             .WithSummary("Delete catalog item")
-            .WithDescription("Delete the specified catalog item");
+            .WithDescription("Delete the specified catalog item")
+            .RequireAuthorization("CatalogAdmin");
 
         return app;
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Ok<PaginatedItems<CatalogItem>>> GetAllItemsV1(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services)
@@ -127,7 +137,6 @@ public static class CatalogApi
         return await GetAllItems(paginationRequest, services, null, null, null);
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Ok<PaginatedItems<CatalogItem>>> GetAllItems(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services,
@@ -237,7 +246,6 @@ public static class CatalogApi
         return TypedResults.Ok(item);
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Ok<PaginatedItems<CatalogItem>>> GetItemsByName(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services,
@@ -273,7 +281,6 @@ public static class CatalogApi
         return TypedResults.File(picture.CreateReadStream(), mimetype, lastModified: picture.LastModified);
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Results<Ok<PaginatedItems<CatalogItem>>, RedirectToRouteHttpResult>> GetItemsBySemanticRelevanceV1(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services,
@@ -283,7 +290,6 @@ public static class CatalogApi
         return await GetItemsBySemanticRelevance(paginationRequest, services, text);
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Results<Ok<PaginatedItems<CatalogItem>>, RedirectToRouteHttpResult>> GetItemsBySemanticRelevance(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services,
@@ -338,7 +344,6 @@ public static class CatalogApi
         return TypedResults.Ok(new PaginatedItems<CatalogItem>(pageIndex, pageSize, totalItems, itemsOnPage));
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Ok<PaginatedItems<CatalogItem>>> GetItemsByBrandAndTypeId(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services,
@@ -348,7 +353,6 @@ public static class CatalogApi
         return await GetAllItems(paginationRequest, services, null, [typeId], brandId is null ? null : [brandId.Value]);
     }
 
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Ok<PaginatedItems<CatalogItem>>> GetItemsByBrandId(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services,

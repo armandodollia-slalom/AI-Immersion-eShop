@@ -185,11 +185,9 @@ test.describe('catalog browsing (UI)', () => {
     await expect(page.locator('.catalog-product')).toHaveCount(0);
   });
 
-  // BUG: page=0 and negative pages are passed to Catalog.API as pageIndex -1 / -2, which answers 500
-  // ("OFFSET must not be negative"); the catalog then never leaves the loading skeleton and Blazor
-  // shows "An unhandled error has occurred." The page should clamp to page 1 (or return 404).
+  // BUG-12: page=0 and negative pages are clamped to page 1 before calling Catalog.API.
   for (const pageParam of ['0', '-1']) {
-    test.fixme(`?page=${pageParam} shows the first page`, async ({ page }) => {
+    test(`?page=${pageParam} shows the first page`, async ({ page }) => {
       await page.goto(`/?page=${pageParam}`);
       await expect(count(page)).toHaveText('14 products');
       await expect(names(page).first()).toHaveText('Edge 01 Penny Boot');

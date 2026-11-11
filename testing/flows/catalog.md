@@ -27,15 +27,12 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 
 | Bug | Observed | Test |
 | --- | --- | --- |
-| Negative `pageSize` or `pageIndex` reach Postgres | 500, `LIMIT must not be negative` | `catalog-api` "negative pageSize or pageIndex is rejected with 400" |
-| WebApp `?page=0` and `?page=-1` request `pageIndex` -1 | Skeleton stays, "An unhandled error has occurred." | `catalog-browse` "?page=0 shows the first page", "?page=-1 ..." |
 | Create without `name` | 500 (NOT NULL violation) | `catalog-admin` "a body without a name is rejected with 400" |
 | Create with an empty name or a negative price | 201, stored | `catalog-admin` "an empty name or a negative price is rejected with 400" |
 | Create with an existing id | 500 (primary key violation) | `catalog-admin` "creating an item with an existing id is rejected with 409" |
 | Create or update with an unknown brand or type id | 500 (foreign key violation) | `catalog-admin` "unknown brand or type ids ...", "v2 PUT with an unknown type id is 400" |
 | v2 PUT body id differs from the route id | 500 | `catalog-admin` "v2 PUT with a body id different from the route id is 400" |
 | v1 PUT without an id | 404 "Item with id 0 not found." (the null check on an `int` is dead code) | `catalog-admin` "v1 PUT without an id in the body is 400" |
-| Write endpoints have no authorization | Anonymous POST, PUT and DELETE succeed | `catalog-admin` "anonymous callers cannot create, update or delete items" |
 
 ## WebApp flows
 
@@ -58,7 +55,7 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 - **Negative and edge cases:**
   - Page beyond the last: the count still shows, with no cards and no empty state (`catalog-browse` "a page beyond the last one lists no products"; `catalog-edge` uses `?page=3`).
   - `?page=abc`: 404 not-found page (`catalog-browse` "non-numeric query ?page=abc ...").
-  - `?page=0` and `?page=-1`: unhandled error (bug, `catalog-browse` fixme tests).
+  - `?page=0` and `?page=-1`: treated as page 1, the first page shows with no Previous link (`catalog-browse` "?page=0 shows the first page", "?page=-1 shows the first page").
 
 ### Filter by brand and type
 
@@ -129,7 +126,7 @@ Base URL `http://localhost:18082/api/catalog`. Every request needs `?api-version
   - v1 silently ignores `name`, `type` and `brand` (`catalog-api` "v1 ignores the v2-only ...").
   - Unknown, unused or negative filter ids return an empty page (`catalog-api` "unknown or unused brand and type ids ...").
   - Non-integer paging or filter values return 400 (`catalog-api` "non-numeric paging parameters ...", "non-integer filter ids ...").
-  - Negative paging returns 500 (bug, `catalog-api` fixme).
+  - Negative `pageSize` or `pageIndex`, or `pageSize` above 100, return a 400 validation problem naming the field, on every paginated endpoint (`catalog-api` "negative pageSize or pageIndex is rejected with 400").
 
 ### Get one item
 
@@ -209,7 +206,8 @@ There is no authentication on these endpoints (bug, see above). A price change o
   - Malformed, empty, array and wrongly typed bodies return 400 with nothing stored (`catalog-admin` "malformed, empty, wrongly typed ...").
   - `text/plain` returns 415 (`catalog-admin` "a non-JSON content type is 415").
   - A missing or unsupported version returns 400 (`catalog-admin` "a missing or unsupported API version is 400").
-  - Missing name, empty name, negative price, duplicate id, unknown brand or type, anonymous caller: bugs, `catalog-admin` fixme tests.
+  - Missing name, empty name, negative price, duplicate id, unknown brand or type: bugs, `catalog-admin` fixme tests.
+  - Anonymous callers get 401 on POST, PUT and DELETE; writes need an access token with the `Admin` role (`catalog-admin` "anonymous callers cannot create, update or delete items").
 
 ### Update an item
 

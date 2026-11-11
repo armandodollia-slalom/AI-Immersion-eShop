@@ -79,9 +79,8 @@ test.describe('Catalog.API read endpoints', () => {
       await expectProblem(await request.get(`${API}/items?api-version=1.0&pageIndex=1.5`), 400);
     });
 
-    // BUG: negative paging values reach Postgres unchecked ("LIMIT/OFFSET must not be negative") and the
-    // API answers 500 with an empty body. They should be rejected as a 400 validation problem.
-    test.fixme('negative pageSize or pageIndex is rejected with 400', async ({ request }) => {
+    // Negative paging values are rejected as a 400 validation problem instead of reaching Postgres.
+    test('negative pageSize or pageIndex is rejected with 400', async ({ request }) => {
       await expectProblem(await request.get(`${API}/items?api-version=1.0&pageSize=-1`), 400);
       await expectProblem(await request.get(`${API}/items?api-version=1.0&pageIndex=-1`), 400);
     });

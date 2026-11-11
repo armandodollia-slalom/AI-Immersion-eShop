@@ -91,7 +91,7 @@
 
             @{
                 var totalPages = (int)Math.Ceiling(1.0 * catalogResult.Count / PageSize);
-                var current = Page.GetValueOrDefault(1);
+                var current = CurrentPage;
             }
             @if (totalPages > 1)
             {
@@ -153,6 +153,9 @@
     [SupplyParameterFromQuery]
     public int? Page { get; set; }
 
+    // ?page=0 and negative pages mean the first page (BUG-12).
+    int CurrentPage => Math.Max(1, Page.GetValueOrDefault(1));
+
     [SupplyParameterFromQuery(Name = "brand")]
     public int[]? BrandIds { get; set; }
 
@@ -196,7 +199,7 @@
     protected override async Task OnInitializedAsync()
     {
         catalogResult = await CatalogService.GetCatalogItems(
-            Page.GetValueOrDefault(1) - 1,
+            CurrentPage - 1,
             PageSize,
             BrandIds,
             TypeIds);

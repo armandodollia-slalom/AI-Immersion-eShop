@@ -169,8 +169,17 @@
           },
           "404": {
             "description": "Not Found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          { }
+        ]
       }
     },
     "/api/catalog/items/{id}/pic": {
@@ -489,8 +498,17 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          { }
+        ]
       },
       "get": {
         "tags": [
@@ -503,7 +521,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -517,7 +535,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -557,7 +575,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -618,8 +636,17 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          { }
+        ]
       }
     },
     "/api/catalog/items/by/{name}": {
@@ -634,7 +661,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -648,7 +675,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -698,7 +725,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -718,7 +745,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -732,7 +759,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -782,7 +809,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -802,7 +829,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -816,7 +843,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -884,7 +911,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -904,7 +931,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -918,7 +945,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -972,7 +999,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -1187,6 +1214,53 @@
           }
         }
       },
+      "HttpValidationProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
       "PaginatedItemsOfCatalogItem": {
         "required": [
           "pageIndex",
@@ -1263,6 +1337,20 @@
               "null",
               "string"
             ]
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "implicit": {
+            "authorizationUrl": "http://localhost/connect/authorize",
+            "tokenUrl": "http://localhost/connect/token",
+            "scopes": {
+              "catalog": "Catalog API"
+            }
           }
         }
       }
