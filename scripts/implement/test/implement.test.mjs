@@ -48,6 +48,7 @@ before(() => {
   write(repo, 'scripts/qe/config.json', JSON.stringify(qeConfig, null, 2));
   const implConfig = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/implement/config.json'), 'utf8'));
   implConfig.implement.qePollSec = 0.1;
+  implConfig.implement.parallel = 1; // the scripted agent answers in call order: one story at a time
   // This test covers the single-agent path; the orchestrated one is in orchestrate-e2e.test.mjs.
   implConfig.implement.orchestrate = false;
   write(repo, 'scripts/implement/config.json', JSON.stringify(implConfig, null, 2));

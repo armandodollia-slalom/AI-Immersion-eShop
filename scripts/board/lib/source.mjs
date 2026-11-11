@@ -12,6 +12,7 @@
 // a ticket that is neither cached nor on the board is a clear error.
 import fs from 'node:fs';
 import path from 'node:path';
+import { boardDisabled } from '../../pipeline/lib/run-tags.mjs';
 import { readJson, writeJson, sha, nowIso } from '../../pipeline/lib/util.mjs';
 import { downloadAssets, exec, readAsset } from './assets.mjs';
 import { legacyRoot, legacyTicket } from './legacy.mjs';
@@ -48,7 +49,7 @@ const defaultGh = (args, opts = {}) => exec('gh', args, opts);
 // The board is reachable for this checkout: tickets.repo is origin, and nobody switched it off.
 let availableMemo = null;
 export function boardAvailable(config, { run = exec } = {}) {
-  if (process.env.PIPELINE_BOARD === '0' || process.env.PIPELINE_TICKETS_OFFLINE === '1' || !config.tickets?.repo) return false;
+  if (boardDisabled() || process.env.PIPELINE_TICKETS_OFFLINE === '1' || !config.tickets?.repo) return false;
   if (availableMemo?.root === config.root) return availableMemo.value;
   const url = run('git', ['remote', 'get-url', 'origin'], { cwd: config.root }).stdout.trim().replace(/\.git$/, '').toLowerCase();
   const repo = config.tickets.repo.toLowerCase();

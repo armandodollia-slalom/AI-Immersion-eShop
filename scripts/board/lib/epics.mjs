@@ -22,9 +22,12 @@ export function parseEpicEvidence(body) {
 
 // Merges one story's (or the epic's) evidence into the comment data. Empty values never erase what a
 // section already has, so a later status update keeps the PR and video links.
-export function mergeEpicEvidence(data, { key, story = {}, epic = {} } = {}) {
+// A bug epic delivers its tickets as several PR groups: `group` ({ id, pr, branch, title, tickets })
+// adds or updates one group's PR under epic.groups.
+export function mergeEpicEvidence(data, { key, story = {}, epic = {}, group = null } = {}) {
   const keep = (old, patch) => ({ ...old, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null && !(Array.isArray(v) && !v.length))) });
   const out = { epic: keep(data?.epic ?? {}, epic), stories: { ...(data?.stories ?? {}) } };
+  if (group?.id) out.epic.groups = { ...(out.epic.groups ?? {}), [group.id]: keep(out.epic.groups?.[group.id] ?? {}, group) };
   if (key) out.stories[key] = keep(out.stories[key] ?? {}, story);
   return out;
 }
@@ -35,6 +38,12 @@ export function renderEpicEvidence(config, data, { maxChars = MAX_CHARS } = {}) 
   const lane = (c) => config.board.columns[c] ?? c ?? '-';
   const head = ['## Pipeline evidence', '', '_Updated by the AI pipeline as its stories move; one section per story. Large evidence is linked from the story issue._', ''];
   if (data.epic.pr || data.epic.video) head.push(`**Epic delivery:** ${[link('pull request', data.epic.pr), data.epic.branch ? `branch \`${data.epic.branch}\`` : null, link('video', data.epic.video)].filter(Boolean).join(' · ')}`, '');
+  const groups = Object.entries(data.epic.groups ?? {});
+  if (groups.length) {
+    head.push('**PR groups:**', '');
+    for (const [id, g] of groups.sort(([a], [b]) => a.localeCompare(b))) head.push(`- \`${id}\`${g.title ? ` ${g.title}` : ''}${g.tickets?.length ? ` (${g.tickets.join(', ')})` : ''}: ${[link('pull request', g.pr), g.branch ? `branch \`${g.branch}\`` : null].filter(Boolean).join(' · ')}`);
+    head.push('');
+  }
   const keys = Object.keys(data.stories).sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
   const full = (key) => {
     const s = data.stories[key];
@@ -75,11 +84,11 @@ export function readEpicEvidence(config, epicNumber) {
 
 // Creates or edits the epic's evidence comment. `storyNumber` finds the epic (its parent) when
 // `epicNumber` is not given. Returns { epic, url, created } or null when the story has no epic.
-export function upsertEpicEvidence(config, { storyNumber = null, epicNumber = null, key = null, story = {}, epic = {} }) {
+export function upsertEpicEvidence(config, { storyNumber = null, epicNumber = null, key = null, story = {}, epic = {}, group = null }) {
   const number = epicNumber ?? (storyNumber ? parentOf(config, storyNumber)?.number : null);
   if (!number) return null;
   const existing = issueComments(config, number).find((c) => DATA.test(c.body ?? ''));
-  const data = mergeEpicEvidence(parseEpicEvidence(existing?.body), { key, story: key ? { ...story, ...(storyNumber ? { number: storyNumber } : {}), updatedAt: new Date().toISOString() } : {}, epic });
+  const data = mergeEpicEvidence(parseEpicEvidence(existing?.body), { key, story: key ? { ...story, ...(storyNumber ? { number: storyNumber } : {}), updatedAt: new Date().toISOString() } : {}, epic, group });
   const body = renderEpicEvidence(config, data);
   if (existing && commentId(existing)) {
     gh(['api', '-X', 'PATCH', `repos/${config.board.repo}/issues/comments/${commentId(existing)}`, '--input', '-'], { input: JSON.stringify({ body }) });

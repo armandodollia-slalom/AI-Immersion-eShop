@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // QE stage of the AI pipeline: verified test plans and automated tests. See docs/ai-pipeline/qe.md.
+import { lessonsDisabled } from '../pipeline/lib/run-tags.mjs';
 import { parseArgs as parse, readPayload, readStdin, requireStory, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { changedFiles, fsReader, git, gitReader, mergeBase, revExists } from '../pipeline/lib/git.mjs';
@@ -262,7 +263,7 @@ async function main() {
       // Stories are board issues, not committed files, so a commit never starts a plan: `qe plan <KEY>`
       // does (or `board fetch`, which plans changed stories in the background with qe.autoPlan true).
       if (isDisabled()) return 0;
-      if (event === 'post-merge' && git(config.root, ['config', '--bool', 'qe.autoLessons']).stdout.trim() === 'true') {
+      if (event === 'post-merge' && !lessonsDisabled() && git(config.root, ['config', '--bool', 'qe.autoLessons']).stdout.trim() === 'true') {
         spawnQe(config, 'lessons', 'lessons', ['lessons', '--if-due']);
       }
       return 0;

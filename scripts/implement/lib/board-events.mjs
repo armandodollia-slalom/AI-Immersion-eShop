@@ -5,18 +5,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { INSTALL_ROOT } from '../../pipeline/lib/config.mjs';
+import { boardDisabled } from '../../pipeline/lib/run-tags.mjs';
 import { log, run } from '../../pipeline/lib/util.mjs';
 
 const BOARD_CLI = path.join(INSTALL_ROOT, 'scripts/board/board.mjs');
 
 export function board(root, args, { input = '' } = {}) {
+  // Experiments (and anyone with PIPELINE_BOARD=0/off) leave the board alone: nothing is spawned.
+  if (boardDisabled()) return { status: 0, stdout: '', stderr: '', skipped: true };
   if (!fs.existsSync(BOARD_CLI)) return { status: 0, stdout: '', stderr: '' };
   const env = { ...process.env, PIPELINE_ROOT: root };
   delete env.PIPELINE_CHILD;
   return run(process.execPath, [BOARD_CLI, ...args], { cwd: root, input, env, timeoutSec: 600 });
 }
 
-const lastLine = (r) => (r.status === 0 ? r.stdout : r.stderr).trim().split('\n').at(-1) || `exit ${r.status}`;
+const lastLine = (r) => (r.skipped ? 'off (PIPELINE_BOARD)' : (r.status === 0 ? r.stdout : r.stderr).trim().split('\n').at(-1) || `exit ${r.status}`);
 
 // Reports one event for a story from its worktree; logs the board's answer.
 export function boardEvent(root, key, args, opts) {

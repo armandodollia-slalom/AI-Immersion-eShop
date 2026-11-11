@@ -9,6 +9,7 @@ import { automationVerifierTaskFor, planVerifierTaskFor, spawnQe } from './workf
 import { RECOVERY_DONE, nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { clearEscalation, escalate, logFile, stateDir } from '../../pipeline/lib/state.mjs';
 import { listStories } from '../../pipeline/lib/stories.mjs';
+import { lessonsDisabled } from '../../pipeline/lib/run-tags.mjs';
 import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, readJson, releaseLock, run, selfProcess, writeJson } from '../../pipeline/lib/util.mjs';
 import { digestIsEmpty, retroDigest, retroSince } from './retro.mjs';
 import { VERIFIER, metricsFile, runVerifier } from './verify.mjs';
@@ -237,6 +238,11 @@ function publish(config, { branch, push, title, body }) {
 }
 
 export async function lessonsCommand(config, { dryRun = false, local = false, ifDue = false, push = true, resume = false } = {}) {
+  // Experiments must not teach the agents mid-run: no lessons files, no retro, no lessons branch.
+  if (lessonsDisabled()) {
+    log('lessons: disabled (PIPELINE_LESSONS=off); nothing written.');
+    return { status: 'disabled' };
+  }
   const lock = lessonsLock(config);
   if (!acquireLock(lock)) {
     log(`lessons: another lessons run (pid ${lockHolder(lock)}) is in progress.`);
@@ -366,6 +372,7 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
 // Resumes a lessons run that died, in the background, with the shared backoff; escalates after
 // recovery.maxAttempts. `force` restarts one escalated as crashed.
 export function recoverLessons(config, { force = false } = {}) {
+  if (lessonsDisabled()) return null;
   let runRec = readRun(config);
   if (!runRec) return null;
   if (runRec.status === 'crashed') {

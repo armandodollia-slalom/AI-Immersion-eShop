@@ -46,7 +46,7 @@ before(() => {
   qeConfig.precheck.runTests = false;
   write(repo, 'scripts/qe/config.json', JSON.stringify(qeConfig, null, 2));
   const implConfig = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/implement/config.json'), 'utf8'));
-  Object.assign(implConfig.implement, { qePollSec: 0.1, checks: [], unitTests: null, prepareCmd: null });
+  Object.assign(implConfig.implement, { qePollSec: 0.1, checks: [], unitTests: null, prepareCmd: null, parallel: 1 });
   write(repo, 'scripts/implement/config.json', JSON.stringify(implConfig, null, 2));
   write(repo, '.gitignore', '.agent-state/\nartifacts/\n');
   write(repo, 'src/Catalog.API/Api.cs', '// catalog\n');

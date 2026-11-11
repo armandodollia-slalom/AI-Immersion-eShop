@@ -12,6 +12,7 @@
 // - measured is false when the CLI reported no usage (timeout, crash, custom command without a report).
 import fs from 'node:fs';
 import path from 'node:path';
+import { runTags } from './run-tags.mjs';
 import { metricsFile } from './state.mjs';
 import { activeStory, epicOf } from './stories.mjs';
 import { appendJsonl, log, nowIso, readJson, readJsonl } from './util.mjs';
@@ -185,6 +186,7 @@ export function usageRecords(config, { ctx = {}, agent, agentVer = null, mode, c
     seconds,
     ok,
     timed_out: Boolean(timedOut),
+    ...runTags(),
   };
   if (!models.length) {
     return [{ ...common, model: normalizeModel(modelId ?? alias), measured: false, tokens: null, requests: null, cache_hit: null, cache_hit_rate: null, cost_usd: null, pricing: null, cli_cost_usd: null, premium_requests: null, nano_aiu: null }];

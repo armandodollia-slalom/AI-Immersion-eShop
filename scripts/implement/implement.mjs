@@ -15,7 +15,10 @@ import { collectStories } from './lib/batch.mjs';
 import { DECISIONS_FILE, OUTCOMES_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
 import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
 import { boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
-import { batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
+import { epicBranchFor, epicToJoin, formatEpicStatus, listEpicRuns, runEpic } from './lib/epic.mjs';
+import { GROUPINGS, deliveryShape } from './lib/epic-plan.mjs';
+import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
+import { parallelFor } from './lib/resources.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
 
 setLogTag('implement');
@@ -23,19 +26,25 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
-  run <KEY...> | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
+  run <KEY...> | --epic <EPIC> [--delivery epic|story] [--grouping auto|epic|ticket] [--standalone]
+        [--parallel N|auto] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
         implement the given board tickets (fetched into .agent-state/board/; a cached story.md or a
         <KEY>-<title>.md file works too), or every story of an epic in Blocked-by order: each gets a
         worktree and branch, the implementer agent, the review loop and verified tests. Stories "Blocked
         by" another story in the batch run after it, stacked on its branch. The run syncs the board and
         claims each story's card first; a card another machine holds is skipped unless --takeover.
         --force runs stories again that are already implemented (or whose card is in Pending Review or Done).
+        Delivery (implement.delivery, default epic): with --epic, the epic is planned once (design note),
+        its stories run from one epic branch and merge into it, and the epic gets ONE PR (a bug epic: one
+        PR per group of bugs the orchestrator chose; --grouping). --delivery story keeps a branch and PR
+        per story. A single ticket of an epic with an epic run in progress joins that epic's branch
+        unless --standalone.
   resume [KEY] [--parallel N] [--pr] [--background]
                                  continue the last run that did not finish: stories it finished are
                                  kept, interrupted ones resume in their worktree, the rest run.
                                  --background (used by \`pipeline resume\`) starts it detached, and
                                  only if it was interrupted (and includes KEY, if given)
-  status [story]                 progress of the latest run, with each story's subtasks
+  status [story]                 progress of the latest run, with each story's subtasks and each epic run
   cleanup [story...]             remove the subtask worktrees and branches a failed run left behind
                                  (all stories when none given); stops their language servers
   metrics [--json] [--since <iso-date>]
@@ -48,7 +57,11 @@ Hooks (called by scripts/pipeline/pipeline.mjs)
   hook session-start             says so when the last implement run was interrupted
 
 Internal
-  story <KEY> --file <path> --base <ref> --branch <name> --worktree <dir> --result <file> [--merge b1,b2] [--pr] [--resume]`;
+  story <KEY> --file <path> --base <ref> --branch <name> --worktree <dir> --result <file> [--merge b1,b2] [--pr] [--resume]
+        [--epic-note <file>] [--epic-branch <branch>]`;
+
+// The epic as the epic runner needs it: key, title, issue number and URL, and its cached ticket.
+const epicInfo = (ticket, key) => (ticket ? { ...ticket, number: ticket.issue?.number ?? null, url: ticket.issue?.url ?? null } : { key: String(key).startsWith('epic-') ? key : `epic-${key}`, title: key, number: null, url: null, file: null });
 
 // The batch is saved so `resume` can repeat it after a crash; finishedAt marks a run that completed.
 const interruptedBatch = (config) => {
@@ -56,7 +69,9 @@ const interruptedBatch = (config) => {
   return batch && !batch.finishedAt && !isProcessAlive(batch.pid, batch.boot) ? batch : null;
 };
 
-async function runStories(config, inputs, { base, force = false, takeover = false, parallel, pr = false, dryRun = false, extraSources = [] }) {
+async function runStories(config, inputs, { base, force = false, takeover = false, parallel, pr = false, dryRun = false, extraSources = [], epicRun = null, delivery = 'story' }) {
+  // Every record this run writes (usage, decisions, outcomes) says how it was delivered.
+  process.env.PIPELINE_DELIVERY = delivery;
   const stories = plan(config, inputs, { base, force });
   if (!dryRun) {
     // The board: closed stories to Done and epics in step, then this machine claims the cards it runs.
@@ -64,20 +79,34 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
     const claims = claimStories(config.root, stories.filter((s) => !s.skip).map((s) => s.key), { force, takeover });
     for (const key of skipRefused(stories, claims)) log(`${key}: ${stories.find((s) => s.key === key).skip}; skipped.`);
   }
-  console.log(describePlan(stories));
+  if (epicRun) {
+    const { epic, only } = epicRun;
+    const join = only ? ` (joining the in-progress run of ${epic.key})` : '';
+    console.log(`Delivery: epic${join}. ${epicRun.groups ? 'Bug epic: the orchestrator groups the tickets into PRs.' : `One branch ${epicBranchFor(config, epic.key)} and one PR for ${epic.key}.`}`);
+    console.log(stories.map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- the epic's branch`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`).join('\n'));
+  } else console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
   // Agents may read only the tickets handed to this run (scripts/pipeline/lib/story-guard.mjs): a cached
   // ticket's whole folder (story and its own mockups), or the files and folders given.
   // An epic run also hands over the epic's own ticket (its body and mockups).
   process.env.PIPELINE_STORY_SOURCES = [...inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))), ...extraSources].join(path.delimiter);
-  const batch = { inputs: inputs.map((p) => path.resolve(p)), extraSources, base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
+  const batch = { inputs: inputs.map((p) => path.resolve(p)), extraSources, base, parallel, pr, delivery, epic: epicRun ? { key: epicRun.epic.key, only: epicRun.only ?? null, grouping: epicRun.grouping ?? null } : null, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
   writeJson(batchFile(config), batch);
-  const results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
+  let results;
+  let epicSummary = null;
+  if (epicRun) {
+    const r = await runEpic(config, { ...epicRun, inputs, base, parallel, pr, force, script: SCRIPT });
+    results = r.results;
+    epicSummary = r.epic;
+  } else results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
   // Every story that did not finish goes to Failed with its outcome, reason and findings.
-  for (const r of failedResults(results, { pr })) boardEvent(config.root, r.key, ['fail', r.key]);
+  // (Epic delivery has no PR per story, so a done story is never failed for a missing PR.)
+  for (const r of failedResults(results, { pr: pr && !epicRun })) boardEvent(config.root, r.key, ['fail', r.key]);
   console.log(`\n${formatSummary(results)}`);
-  return results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done') ? 0 : 1;
+  if (epicSummary) console.log(`\n${epicSummary.key}: ${epicSummary.outcome}${epicSummary.prs?.length ? `  ${epicSummary.prs.join(' ')}` : ''}${epicSummary.reason ? `\n           ${epicSummary.reason}` : ''}`);
+  const storiesOk = results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done');
+  return storiesOk && (!epicSummary || ['done', 'joined'].includes(epicSummary.outcome)) ? 0 : 1;
 }
 
 // `pipeline resume` fans out to every stage and waits for each, so the batch restarts detached.
@@ -101,17 +130,28 @@ function resumeInBackground(config, key) {
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'base', 'since', 'file', 'branch', 'worktree', 'result', 'merge', 'story', 'epic']));
+  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'base', 'since', 'file', 'branch', 'worktree', 'result', 'merge', 'story', 'epic', 'delivery', 'grouping', 'epic-note', 'epic-branch']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
   }
-  const config = loadConfig('implement');
+  const config = applyEnv(loadConfig('implement'));
 
   switch (command) {
     case 'run': {
       // --epic <EPIC> stands for the epic's stories on the board (its sub-issues), fetched into the cache.
       let epicDir = null;
+      const delivery = String(flags.delivery ?? config.implement.delivery ?? 'epic');
+      if (!['epic', 'story'].includes(delivery)) {
+        console.error(`--delivery must be epic or story, not "${delivery}".`);
+        return 2;
+      }
+      const grouping = typeof flags.grouping === 'string' ? flags.grouping : null;
+      if (grouping && !GROUPINGS.includes(grouping)) {
+        console.error(`--grouping must be one of ${GROUPINGS.join(', ')}.`);
+        return 2;
+      }
+      let epicRun = null;
       if (typeof flags.epic === 'string') {
         const stories = epicTickets(config, flags.epic);
         if (!stories.length) {
@@ -122,6 +162,7 @@ async function main() {
         if (epic) epicDir = config.abs(epic.dir);
         console.log(`Epic ${epic?.key ?? flags.epic}${epic ? ` (${epic.title})` : ''}: ${stories.map((s) => s.key).join(', ')}`);
         positional.push(...stories.map((s) => s.key).filter((k) => !positional.includes(k)));
+        if (delivery === 'epic') epicRun = { epic: epicInfo(epic, stories[0].epic ?? flags.epic), tickets: stories, grouping, groups: deliveryShape(stories, grouping ?? config.implement.epic?.grouping ?? 'auto').kind === 'groups' };
       }
       if (!positional.length) {
         console.error(`Give story keys, --epic <EPIC>, or story files.\n\n${USAGE}`);
@@ -129,6 +170,7 @@ async function main() {
       }
       // A story key (PROMO-3) stands for its ticket, fetched from the board into the cache (re-checked
       // when already cached, so the run works from the issue's current text).
+      const given = [];
       for (const [i, arg] of positional.entries()) {
         if (/^[A-Z][A-Z0-9]*-\d+$/i.test(arg) && !fs.existsSync(arg)) {
           const story = loadTicket(config, arg.toUpperCase(), { update: true });
@@ -137,11 +179,22 @@ async function main() {
             return 2;
           }
           positional[i] = config.abs(story.file);
+          given.push(story);
+        }
+      }
+      // A single ticket (or a few) of an epic whose epic run is in progress joins that epic's branch
+      // (or its PR group's branch) instead of getting a branch and PR of its own, unless --standalone.
+      if (!epicRun && delivery === 'epic' && given.length === positional.length) {
+        const join = epicToJoin(config, given, { standalone: Boolean(flags.standalone) });
+        if (join) {
+          const epic = loadTicket(config, join.state.epic, { fetch: false });
+          if (epic) epicDir = config.abs(epic.dir);
+          epicRun = { epic: epicInfo(epic, join.state.epic), tickets: given, only: given.map((t) => t.key) };
         }
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
-      const parallel = Math.max(1, Number(flags.parallel ?? config.implement.parallel) || 1);
-      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), takeover: Boolean(flags.takeover), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']), extraSources: epicDir ? [epicDir] : [] });
+      const parallel = parallelFor(config, flags.parallel, { dryRun: Boolean(flags['dry-run']) });
+      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), takeover: Boolean(flags.takeover), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']), extraSources: epicDir ? [epicDir] : [], epicRun, delivery: epicRun ? 'epic' : delivery });
     }
 
     case 'resume': {
@@ -160,8 +213,15 @@ async function main() {
         console.error(`The stories of the last run are gone: ${batch.inputs.join(', ')}.`);
         return 1;
       }
-      const parallel = Math.max(1, Number(flags.parallel ?? batch.parallel) || 1);
-      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [] });
+      const parallel = parallelFor(config, flags.parallel ?? batch.parallel);
+      // An epic run resumes from its epic state: the plan, foundation and merged stories are kept.
+      let epicRun = null;
+      if (batch.epic?.key) {
+        const epic = loadTicket(config, batch.epic.key, { fetch: false });
+        const tickets = collectStories(inputs).map((s) => loadTicket(config, s.key, { fetch: false })).filter(Boolean);
+        epicRun = { epic: epicInfo(epic, batch.epic.key), tickets, only: batch.epic.only ?? null, grouping: batch.epic.grouping ?? null };
+      }
+      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [], epicRun, delivery: batch.delivery ?? 'story' });
     }
 
     case 'hook': {
@@ -179,6 +239,8 @@ async function main() {
         branch: flags.branch,
         worktree: flags.worktree,
         merge: flags.merge ? String(flags.merge).split(',') : [],
+        epicNote: typeof flags['epic-note'] === 'string' ? flags['epic-note'] : null,
+        epicBranch: typeof flags['epic-branch'] === 'string' ? flags['epic-branch'] : null,
         pr: Boolean(flags.pr),
         resume: Boolean(flags.resume),
       }).catch((error) => ({ key, outcome: 'error', reason: error.message }));
@@ -189,7 +251,7 @@ async function main() {
     case 'status': {
       const dir = runsDir(config);
       const keys = positional.length ? positional : fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^[A-Z][A-Z0-9]*-\d+\.json$/.test(f)).map((f) => f.slice(0, -5)) : [];
-      if (!keys.length) console.log('No implement runs.');
+      if (!keys.length && !listEpicRuns(config).length) console.log('No implement runs.');
       if (interruptedBatch(config)) console.log('The last implement run was interrupted. Continue it with `node scripts/pipeline/pipeline.mjs implement resume`.');
       for (const key of keys) {
         const r = loadRun(config, key);
@@ -201,6 +263,7 @@ async function main() {
           for (const st of o.subtasks ?? []) console.log(`             ${st.id.padEnd(12)} ${String(st.status).padEnd(12)} round ${st.rounds ?? 0}${st.worktree && st.status !== 'merged' ? `  ${st.worktree}` : ''}`);
         }
       }
+      if (!positional.length) for (const e of listEpicRuns(config)) console.log(formatEpicStatus(e));
       const left = listSubtaskWorktrees(config.root, config.implement.branchPrefix, positional[0] ?? null);
       if (left.length) console.log(`\nSubtask worktrees still on disk (implement cleanup removes them):\n${left.map((w) => `  ${w.key.padEnd(10)} ${w.id.padEnd(12)} ${w.path}`).join('\n')}`);
       return 0;

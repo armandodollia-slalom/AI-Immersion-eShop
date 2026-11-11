@@ -12,11 +12,13 @@ import { git } from '../../pipeline/lib/git.mjs';
 import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { appendJsonl, extractResult, log as defaultLog, nowIso, runAsync, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
+import { runTags } from '../../pipeline/lib/run-tags.mjs';
 import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { SUBTASK_RUNS_FILE, crossFindings, decisionRecord, planDecisionLog, roundRecord, subtaskRunRecord, verdictDecisionLog } from './decisions.mjs';
 import { commitAll, commitEnv, createSubtaskWorktree, diffSince, discardChanges, filesChanged, headSha, mergeInProgress, removeWorktree, unmergedFiles } from './gitops.mjs';
 import { diagnosticFindings, formatDiagnostics, lspAdapter, signatureChanges } from './lsp.mjs';
 import { isUiStory, parsePlanOutput, parseVerdict, resolveModelForRole, roleCli, scopeViolations, topoOrder, validatePlan, validateRewrite } from './plan.mjs';
+import { waitForMemory } from './resources.mjs';
 import { acquire, semaphoreDir } from './semaphore.mjs';
 import { stackAdapter } from './stack.mjs';
 import { codeVerifierTask, conflictTask, escalationTask, pairImplementerTask, planTask, uiVerifierTask } from './tasks.mjs';
@@ -30,7 +32,7 @@ export class LimitError extends Error {
 }
 class AbortedError extends Error {}
 
-export function createContext({ config, key, storyFile, branch, worktree, base, deps = {}, onProgress = () => {}, log = defaultLog }) {
+export function createContext({ config, key, storyFile, branch, worktree, base, epicNote = null, deps = {}, onProgress = () => {}, log = defaultLog }) {
   const s = config.implement;
   const started = Date.now();
   const ctx = {
@@ -39,6 +41,8 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     key,
     storyFile,
     storyText: fs.readFileSync(storyFile, 'utf8'),
+    // Epic delivery: the epic design note, handed to the planner.
+    epicNote,
     branch,
     worktree,
     base,
@@ -58,6 +62,7 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     stack: deps.stack ?? stackAdapter(config),
     lsp: deps.lsp ?? lspAdapter(config, { log: ctx.log }),
     acquire: deps.acquire ?? ((label) => acquire(semaphoreDir(config.root), s.maxConcurrentAgents, { deadline: ctx.deadline, label })),
+    memoryGate: deps.memoryGate ?? ((label) => waitForMemory(config, label)),
   };
   ctx.progress = () =>
     onProgress({
@@ -73,7 +78,7 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
   return ctx;
 }
 
-const record = (ctx, file, rec) => appendJsonl(metricsFile(ctx.config, file), rec);
+const record = (ctx, file, rec) => appendJsonl(metricsFile(ctx.config, file), { ...rec, ...runTags() });
 
 // Wall clock and agent-run budget for a story; throws LimitError when either is spent.
 export function checkBudget(ctx) {
@@ -164,7 +169,7 @@ export async function planStory(ctx) {
       round: attempt,
       cwd: ctx.worktree,
       timeoutSec: ctx.s.timeouts.plannerSec,
-      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits: limitsOf(ctx.s), errors }),
+      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits: limitsOf(ctx.s), errors, epicNote: ctx.epicNote }),
     });
     const raw = parsePlanOutput(res.output);
     const agent = { cli: res.cli, model: res.model, version: res.version };
@@ -419,6 +424,8 @@ function numstat(cwd, base) {
 
 // One subtask from worktree to approval, with at most one escalation. Returns { status, st, wt, rec, findings, reason }.
 export async function runSubtask(ctx, st, others) {
+  // Back-pressure (auto sizing): a new pair waits while free memory is below the reserve.
+  await ctx.deps.memoryGate(`${ctx.key}--${st.id}`);
   const rec = newRec(st);
   let wt = await openWorktree(ctx, st);
   let r = await runPair(ctx, st, { worktree: wt.path, branch: wt.branch, base: wt.base, rec, others });
@@ -561,7 +568,8 @@ export async function orchestrate(ctx) {
   }
 }
 
-async function runSelf(ctx, plan) {
+// Also the epic foundation unit (lib/epic.mjs): one verifier pair the orchestrator implements itself.
+export async function runSelf(ctx, plan) {
   const st = plan.subtasks[0];
   const rec = newRec(st);
   const base = headSha(ctx.worktree);

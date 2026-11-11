@@ -54,8 +54,9 @@ Cards
   review <story> [--pr <url>] [--epic-branch <branch>] [--id <id>]
                                 move to Pending Review and attach the evidence (API requests and
                                 responses, or the UI video) to the issue and to its epic
-  epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]
-                                record an epic delivered as one branch on the epic's evidence comment
+  epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>] [--group <id> [--title <text>] [--tickets K1,K2]]
+                                record an epic delivered as one branch (or, with --group, one PR group
+                                of a bug epic) on the epic's evidence comment
   status [story]
   sync-epic <issue>             give an epic's open stories the epic's assignees (run by the
                                 board-epic-assign workflow when an epic is assigned or unassigned)
@@ -68,7 +69,7 @@ The pipeline is started by hand (\`pipeline implement run <KEY>\` or \`--epic <E
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch', 'epic', 'type', 'key', 'mockups']));
+  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch', 'epic', 'type', 'key', 'mockups', 'group', 'title', 'tickets']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -218,10 +219,11 @@ async function main() {
       requireActive(config);
       const number = Number(String(positional[0] ?? '').replace(/^#/, ''));
       if (!number || !str(flags.pr)) {
-        console.error('Usage: board epic-pr <epic issue number> --pr <url> [--branch <name>] [--video <url>]');
+        console.error('Usage: board epic-pr <epic issue number> --pr <url> [--branch <name>] [--video <url>] [--group <id> [--title <text>] [--tickets K1,K2]]');
         return 2;
       }
-      const r = upsertEpicEvidence(config, { epicNumber: number, epic: { pr: str(flags.pr), branch: str(flags.branch), video: str(flags.video) } });
+      const group = str(flags.group) ? { id: str(flags.group), pr: str(flags.pr), branch: str(flags.branch), title: str(flags.title), tickets: str(flags.tickets)?.split(',').filter(Boolean) ?? null } : null;
+      const r = upsertEpicEvidence(config, group ? { epicNumber: number, group } : { epicNumber: number, epic: { pr: str(flags.pr), branch: str(flags.branch), video: str(flags.video) } });
       console.log(`Epic #${number}: evidence comment ${r.created ? 'posted' : 'updated'} (${r.url}).`);
       return 0;
     }

@@ -14,7 +14,7 @@ export const VERIFY_STAGE = 'implement-verify';
 export const SUBTASK_RUNS_FILE = 'subtask-runs.jsonl';
 export const OUTCOMES_FILE = 'decision-outcomes.jsonl';
 
-export const LABELS = ['over-provisioned', 'under-provisioned', 'bad-split', 'should-have-been-self', 'weak-verification'];
+export const LABELS = ['over-provisioned', 'under-provisioned', 'bad-split', 'should-have-been-self', 'weak-verification', 'bad-grouping'];
 
 // Acceptance criteria counted from the story's "Acceptance Criteria" section: list items, table rows
 // or Given/When/Then scenarios.
@@ -248,7 +248,18 @@ export function labelDecisions({ decisions = [], runs = [], outcomes = [] }, thr
         rows.push({ story: d.story, decisionId: d.decisionId, mode: d.mode, subtaskId: '(plan)', modelClass: null, verify: null, rounds: null, approved: null, escalation: null, expectedLoc: null, actualLoc: total, outcome: story?.outcome ?? null, labels: ['should-have-been-self'] });
     }
   }
+  // Bug epics: one row per PR group (decision-outcomes type "pr-group", written by lib/epic.mjs).
+  for (const g of outcomes.filter((o) => o.type === 'pr-group')) rows.push(groupRow(g));
   return rows;
+}
+
+// A PR group is badly grouped when some of its tickets verified and others did not: the failed ticket
+// held back the group PR of the ones that were ready (or merging them into the group branch conflicted).
+export function groupRow(g) {
+  const verified = g.verified ?? 0;
+  const failed = (g.tickets?.length ?? 0) - verified;
+  const labels = (verified > 0 && failed > 0) || g.mergeConflicts > 0 ? ['bad-grouping'] : [];
+  return { story: g.epic ?? '-', decisionId: g.decisionId ?? null, mode: 'group', subtaskId: g.groupId, modelClass: null, verify: null, rounds: null, approved: Boolean(g.pr), escalation: null, expectedLoc: null, actualLoc: null, outcome: g.outcome ?? null, tickets: g.tickets ?? [], pr: g.pr ?? null, costUsd: g.cost_usd ?? null, labels };
 }
 
 export function formatDecisionReport(rows) {

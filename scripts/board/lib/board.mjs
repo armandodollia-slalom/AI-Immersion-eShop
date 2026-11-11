@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { git } from '../../pipeline/lib/git.mjs';
+import { boardDisabled } from '../../pipeline/lib/run-tags.mjs';
 import { readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { gh, ghJson, graphql } from './github.mjs';
 
@@ -35,11 +36,11 @@ const loadCache = (config) => ({ issues: {}, epics: {}, ...readJson(cacheFile(co
 const saveCache = (config, cache) => writeJson(cacheFile(config), cache);
 
 let activeMemo = null;
-// The board is live only when configured, not opted out (PIPELINE_BOARD=0) and the checkout's origin is
+// The board is live only when configured, not opted out (PIPELINE_BOARD=0 or off) and the checkout's origin is
 // the configured repo, so throwaway test repos and forks never touch the real board.
 export function isActive(config) {
   if (activeMemo?.root === config.root) return activeMemo.active;
-  let active = Boolean(config.board?.projectNumber) && process.env.PIPELINE_BOARD !== '0';
+  let active = Boolean(config.board?.projectNumber) && !boardDisabled();
   if (active) {
     const url = git(config.root, ['remote', 'get-url', 'origin']).stdout.trim().replace(/\.git$/, '');
     active = url.toLowerCase().endsWith(`/${config.board.repo.toLowerCase()}`) || url.toLowerCase().endsWith(`:${config.board.repo.toLowerCase()}`);

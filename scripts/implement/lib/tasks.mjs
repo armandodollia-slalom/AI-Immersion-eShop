@@ -46,7 +46,7 @@ export const planSchema = `{
 }`;
 
 
-export function planTask({ key, storyFile, worktree, uiStory, limits, errors = null }) {
+export function planTask({ key, storyFile, worktree, uiStory, limits, errors = null, epicNote = null }) {
   const lines = [
     `Plan story ${key}: ${path.relative(worktree, storyFile)}`,
     '',
@@ -70,8 +70,20 @@ export function planTask({ key, storyFile, worktree, uiStory, limits, errors = n
     '',
     fence(planSchema, 'jsonc'),
   ];
+  if (epicNote) lines.push('', epicNoteBlock(epicNote));
   if (errors?.length) lines.push('', 'Your previous plan was rejected. Fix these problems and return the whole plan again:', '', ...errors.map((e) => `- ${e}`));
   return lines.join('\n');
+}
+
+// The epic design note (epic delivery): shared contracts and decisions every story of the epic builds on.
+export function epicNoteBlock(note) {
+  return [
+    '### Epic design note',
+    '',
+    'This story is one of an epic delivered as one branch. The epic plan below fixed the contracts, migrations, components and events the stories share, and what the epic foundation already built. Follow it: reuse what it names instead of inventing a second version, keep to the contracts, and stay inside this story\'s part of the build order. If the story cannot follow the note, say why in `notes`.',
+    '',
+    fence(String(note).trim(), 'markdown'),
+  ].join('\n');
 }
 
 export function pairImplementerTask({ key, storyFile, st, worktree, branch, base, round, maxRounds, findings, screenshots, diagnostics, self = false }) {

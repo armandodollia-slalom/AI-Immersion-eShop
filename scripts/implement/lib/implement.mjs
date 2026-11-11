@@ -6,6 +6,7 @@ import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { formatBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
 import { ticketFile, writeTicket } from '../../board/lib/source.mjs';
@@ -17,7 +18,8 @@ import { OUTCOMES_FILE, attributeEscaped, storyOutcomeRecord } from './decisions
 import { commitAll, commitEnv, filesChanged, headSha, listSubtaskWorktrees, mustGit, removeWorktree } from './gitops.mjs';
 import { formatDiagnostics, lspAdapter } from './lsp.mjs';
 import { LimitError, agentSettings, checkBudget, createContext, orchestrate } from './orchestrate.mjs';
-import { integrationTask } from './tasks.mjs';
+import { applyResources, resourcesFromEnv, waitForMemory } from './resources.mjs';
+import { epicNoteBlock, integrationTask } from './tasks.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
 const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
@@ -103,7 +105,8 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
         log(`${s.key}: ${result.reason}; skipped.`);
       } else if (running.size < parallel && ready(s)) {
         pending.splice(i--, 1);
-        running.set(s.key, startWorker(config, s, { pr, script }).then((r) => [s, r]));
+        // Back-pressure: a new story waits while free memory is below the reserve (auto sizing).
+        running.set(s.key, waitForMemory(config, s.key).then(() => startWorker(config, s, { pr, script })).then((r) => [s, r]));
       }
     }
     if (!running.size) continue;
@@ -123,13 +126,17 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
   return stories.map((s) => ({ ...s, ...outcome.get(s.key) }));
 }
 
-function startWorker(config, story, { pr, script }) {
+export function startWorker(config, story, { pr, script }) {
   const resultFile = path.join(runsDir(config), `${story.key}.result.json`);
   const logPath = path.join(config.root, config.stateDir, 'logs', `implement-${story.key}-${nowIso().replace(/[:.]/g, '-')}.log`);
   fs.rmSync(resultFile, { force: true });
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const args = ['story', story.key, '--file', story.file, '--base', story.base, '--branch', story.branch, '--worktree', story.worktree, '--result', resultFile];
-  if (story.merge.length) args.push('--merge', story.merge.join(','));
+  if (story.merge?.length) args.push('--merge', story.merge.join(','));
+  // Epic delivery: the story gets the epic design note, and the runner merges it into the epic branch
+  // and moves its card after the worker ends.
+  if (story.epicNote) args.push('--epic-note', story.epicNote);
+  if (story.epicBranch) args.push('--epic-branch', story.epicBranch);
   if (pr) args.push('--pr');
   if (story.resume) args.push('--resume');
   saveRun(config, story.key, { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) });
@@ -196,7 +203,7 @@ function pipeline(worktree, base, args, input = '') {
   return run(process.execPath, [PIPELINE_CLI, ...args], { cwd: worktree, input, env });
 }
 
-function implementerTask({ key, storyFile, branch, worktree, base, feedback }) {
+function implementerTask({ key, storyFile, branch, worktree, base, feedback, epicNote = null }) {
   const lines = [
     `Implement story ${key}: ${path.relative(worktree, storyFile)}`,
     '',
@@ -209,6 +216,7 @@ function implementerTask({ key, storyFile, branch, worktree, base, feedback }) {
     'End your reply with exactly one line:',
     'AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>"}',
   ];
+  if (epicNote) lines.push('', epicNoteBlock(epicNote));
   if (feedback) lines.push('', 'Address this feedback, then finish again:', '', feedback);
   return lines.join('\n');
 }
@@ -238,6 +246,13 @@ async function waitForQe(config, key, { timeoutSec, pollSec, recover }) {
 export function applyEnv(config) {
   const s = config.implement;
   if (process.env.IMPLEMENT_ORCHESTRATE === '0') s.orchestrate = false;
+  // Experiments give every arm its own branch names (scripts/pipeline/lib/experiment.mjs).
+  if (process.env.IMPLEMENT_BRANCH_PREFIX) s.branchPrefix = process.env.IMPLEMENT_BRANCH_PREFIX;
+  s.epic = { ...(s.epic ?? {}) };
+  if (process.env.IMPLEMENT_EPIC_BRANCH_PREFIX) s.epic.branchPrefix = process.env.IMPLEMENT_EPIC_BRANCH_PREFIX;
+  if (process.env.IMPLEMENT_BUGFIX_BRANCH_PREFIX) s.epic.bugfixPrefix = process.env.IMPLEMENT_BUGFIX_BRANCH_PREFIX;
+  if (process.env.IMPLEMENT_WORKTREE_DIR) s.worktreeDir = process.env.IMPLEMENT_WORKTREE_DIR;
+  applyResources(config);
   if (process.env.PIPELINE_VERIFIER_CLI) for (const r of ['verifier', 'uiVerifier']) s.roles[r] = { ...s.roles[r], cli: process.env.PIPELINE_VERIFIER_CLI };
   return config;
 }
@@ -291,10 +306,12 @@ async function implementStoryInner(config, opts, holder) {
           signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences,
         }
       : {};
-  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extraMetrics(), ...extra });
+  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extraMetrics(), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)), ...extra });
 
   const prep = prepareWorktree(config, opts);
   if (prep.error) return finish('blocked', prep.error);
+  // Epic delivery: the epic design note (written by the epic plan) goes to the orchestrator's plan.
+  const epicNote = opts.epicNote && fs.existsSync(opts.epicNote) ? fs.readFileSync(opts.epicNote, 'utf8') : null;
   const wt = applyEnv(prep.config);
   // Resuming a story whose review already approved the code on disk goes straight to QE; otherwise the
   // implementer continues from the work left in the worktree.
@@ -323,13 +340,13 @@ async function implementStoryInner(config, opts, holder) {
   if (opts.resume && wt.implement.orchestrate !== false) await cleanupSubtasks(wt, key);
   const recordOutcome = (outcome, reason) => {
     const m = extraMetrics();
-    appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: Math.round((Date.now() - started) / 600) / 100, prompt_version: metrics.promptVersion, ...(ctx ? { mode: m.mode, decision_id: m.decisionId, subtasks: m.subtasks, agent_runs: m.agentRuns, pair_rounds: m.pairRounds, takeovers: m.takeovers, escalations: m.escalations, limit_hit: m.limitHit, lsp_calls: m.lspCalls, signature_changes_without_references: m.signatureChangesWithoutReferences } : {}), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)) }]);
-    if (ctx) appendJsonl(metricsFile(wt, OUTCOMES_FILE), [storyOutcomeRecord({ ts: nowIso(), key, decisionId: ctx.decisionId, mode: ctx.metrics.mode, outcome, reason, wallClockSec: Math.round((Date.now() - started) / 1000), agentRuns: ctx.metrics.agentRuns, reviewBlocks: metrics.reviewBlocks, bugFixCycles: metrics.bugFixCycles, limitHit: ctx.metrics.limitHit, branch, lspCalls: ctx.metrics.lspCalls, signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences, usage: addUsage(ctx.metrics.usage, storyUsage) })]);
+    appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: Math.round((Date.now() - started) / 600) / 100, prompt_version: metrics.promptVersion, ...(ctx ? { mode: m.mode, decision_id: m.decisionId, subtasks: m.subtasks, agent_runs: m.agentRuns, pair_rounds: m.pairRounds, takeovers: m.takeovers, escalations: m.escalations, limit_hit: m.limitHit, lsp_calls: m.lspCalls, signature_changes_without_references: m.signatureChangesWithoutReferences } : {}), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)), ...(resourcesFromEnv() ? { resources: resourcesFromEnv() } : {}), ...runTags() }]);
+    if (ctx) appendJsonl(metricsFile(wt, OUTCOMES_FILE), [{ ...storyOutcomeRecord({ ts: nowIso(), key, decisionId: ctx.decisionId, mode: ctx.metrics.mode, outcome, reason, wallClockSec: Math.round((Date.now() - started) / 1000), agentRuns: ctx.metrics.agentRuns, reviewBlocks: metrics.reviewBlocks, bugFixCycles: metrics.bugFixCycles, limitHit: ctx.metrics.limitHit, branch, lspCalls: ctx.metrics.lspCalls, signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences, usage: addUsage(ctx.metrics.usage, storyUsage) }), ...runTags() }]);
   };
   const recordEscaped = (source, findings, files) => {
     if (!ctx?.plan) return;
     const recs = attributeEscaped({ ts: nowIso(), key, decisionId: ctx.decisionId, subtasks: ctx.plan.subtasks, source, findings, files });
-    if (recs.length) appendJsonl(metricsFile(wt, OUTCOMES_FILE), recs);
+    if (recs.length) appendJsonl(metricsFile(wt, OUTCOMES_FILE), recs.map((r) => ({ ...r, ...runTags() })));
   };
   // A story that stops before the review loop still records (and commits) its metrics.
   const stop = (outcome, reason, extra = {}) => {
@@ -341,7 +358,7 @@ async function implementStoryInner(config, opts, holder) {
   let skipNextRun = false;
   let integration = null;
   if (orchestrated && !skipImplementer) {
-    ctx = createContext({ config: wt, key, storyFile: prep.story, branch, worktree, base, onProgress: (patch) => saveRun(config, key, patch) });
+    ctx = createContext({ config: wt, key, storyFile: prep.story, branch, worktree, base, epicNote, onProgress: (patch) => saveRun(config, key, patch) });
     holder.ctx = ctx;
     await ctx.deps.lsp.start(worktree);
     const o = await orchestrate(ctx);
@@ -378,7 +395,7 @@ async function implementStoryInner(config, opts, holder) {
         }
         metrics.implementerRuns++;
         const before = headSha(worktree);
-        const task = integration ?? implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback });
+        const task = integration ?? implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback, epicNote: ctx ? null : epicNote });
         integration = null;
         const { cli, model } = agentSettings(wt, 'orchestrator');
         let res;
@@ -452,7 +469,10 @@ async function implementStoryInner(config, opts, holder) {
   commitAll(worktree, `${key}: Add verified test plan and automated tests`);
   result.finalSha = headSha(worktree);
 
-  if (pr && outcome === 'done') {
+  // Epic delivery: no PR per story. The epic runner merges the story into the epic branch, publishes
+  // the ticket and moves the card to Pending Review (board review --epic-branch) once it has merged.
+  if (opts.epicBranch) return result;
+  if (pr && outcome === 'done' && !prsDisabled()) {
     const push = git(worktree, ['push', '-u', 'origin', branch]);
     if (push.status !== 0) return { ...result, reason: `push failed: ${tail(push.stderr, 300)}` };
     const baseBranch = base.replace(/^origin\//, '');
@@ -475,7 +495,7 @@ async function implementStoryInner(config, opts, holder) {
 
 // The implementer appends its Implementation Notes to the ticket's cached story; the issue is the source
 // of truth, so the finished story's text goes back to it (no-op when unchanged or the board is off).
-function publishTicket(worktree, key) {
+export function publishTicket(worktree, key) {
   boardEvent(worktree, key, ['publish', key]);
 }
 
