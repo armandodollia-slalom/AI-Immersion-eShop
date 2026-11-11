@@ -1,0 +1,4 @@
+description: >
+  BUG-12 (catalog ?page=0 / ?page=-1 never loads): catalog-edge already has what the cases need
+  (14 "Edge 01..14" items sorted by name, 9 per page, so exactly 2 pages), so this scenario only extends it.
+extends: catalog-edge
