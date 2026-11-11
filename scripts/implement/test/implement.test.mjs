@@ -175,3 +175,14 @@ test('implement run --epic: epic delivery by default (one epic branch), --delive
   assert.match(perStory.stdout, /2\. DEMO-8 +feat\/demo-8-promo-page <- feat\/demo-7-banner/);
   assert.equal(pipeline(['implement', 'run', '--epic', 'promos', '--delivery', 'nope', '--dry-run']).status, 2);
 });
+
+test('implement run --epic on a bug epic: the dry run names group delivery, not the epic branch', () => {
+  seedTicket(repo, { key: 'epic-fixes', type: 'epic', text: '# Epic: Fixes\n' });
+  seedTicket(repo, { key: 'BUG-71', slug: 'BUG-71-paging', type: 'bug', parent: 'epic-fixes', text: '# BUG-71 Paging\n\nRule.\n' });
+  seedTicket(repo, { key: 'BUG-72', slug: 'BUG-72-auth', type: 'bug', parent: 'epic-fixes', text: '# BUG-72 Auth\n\nRule.\n' });
+  const r = pipeline(['implement', 'run', '--epic', 'fixes', '--dry-run', '--parallel', '1']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Delivery: bug groups\. Bug epic: the orchestrator groups the tickets into PRs\./);
+  assert.match(r.stdout, /BUG-71 +feat\/bug-71-paging <- its group branch/);
+  assert.doesNotMatch(r.stdout, /the epic's branch/);
+});

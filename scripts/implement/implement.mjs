@@ -84,8 +84,8 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
   if (epicRun) {
     const { epic, only } = epicRun;
     const join = only ? ` (joining the in-progress run of ${epic.key})` : '';
-    console.log(`Delivery: epic${join}. ${epicRun.groups ? 'Bug epic: the orchestrator groups the tickets into PRs.' : `One branch ${epicBranchFor(config, epic.key)} and one PR for ${epic.key}.`}`);
-    console.log(stories.map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- the epic's branch`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`).join('\n'));
+    console.log(`Delivery: ${epicRun.groups ? 'bug groups' : 'epic'}${join}. ${epicRun.groups ? 'Bug epic: the orchestrator groups the tickets into PRs.' : `One branch ${epicBranchFor(config, epic.key)} and one PR for ${epic.key}.`}`);
+    console.log(stories.map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${epicRun.groups ? 'its group branch' : "the epic's branch"}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`).join('\n'));
   } else console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
   // Agents may read only the tickets handed to this run (scripts/pipeline/lib/story-guard.mjs): a cached
