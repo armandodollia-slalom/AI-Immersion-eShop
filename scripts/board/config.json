@@ -1,4 +1,9 @@
 {
+  "agent": {
+    "models": {
+      "escalationQuestions": "sonnet"
+    }
+  },
   "board": {
     "owner": "armandodollia-slalom",
     "ownerType": "user",
@@ -17,6 +22,12 @@
     },
     "storyLabel": "story",
     "blockedLabel": "needs-human",
+    "resolvedLabel": "escalation-resolved",
+    "questions": {
+      "maxQuestions": 3,
+      "timeoutSec": 300,
+      "logTailChars": 4000
+    },
     "epicLabel": "epic",
     "spikeLabel": "spike",
     "evidence": {

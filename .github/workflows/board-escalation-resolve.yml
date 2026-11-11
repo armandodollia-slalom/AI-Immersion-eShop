@@ -1,0 +1,45 @@
+name: Board escalation resolve
+
+# A ticket the pipeline moved to Failed gets a comment with questions and a **Resolved** checkbox
+# (`board fail`). Ticking it edits the comment; this workflow checks the answers and either unticks it
+# with what is missing, or swaps `needs-human` for `escalation-resolved` and records the answers under
+# `## Decisions` in the issue body. A human adding `escalation-resolved` by hand counts too. The card goes
+# back to Ready at the next `board sync` on a pipeline machine, so no project token is needed here.
+# See docs/ai-pipeline/escalations.md.
+on:
+  issue_comment:
+    types: [created, edited]
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: board-escalation-${{ github.event.issue.number }}
+
+jobs:
+  resolve:
+    # Comments: the failure comment itself (edited) or a `Qn:` reply (created), never a bot's own.
+    # Labels: a human adding escalation-resolved.
+    if: >-
+      !endsWith(github.event.sender.login, '[bot]') && (
+        (github.event_name == 'issue_comment' && !github.event.issue.pull_request &&
+          (contains(github.event.comment.body, 'pipeline-escalation:') || startsWith(github.event.comment.body, 'Q'))) ||
+        (github.event_name == 'issues' && github.event.label.name == 'escalation-resolved')
+      )
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+    - name: Check the answers
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ISSUE: ${{ github.event.issue.number }}
+        ACTOR: ${{ github.event.sender.login }}
+        COMMENT: ${{ github.event_name == 'issue_comment' && contains(github.event.comment.body, 'pipeline-escalation:') && github.event.comment.id || '' }}
+        VIA_LABEL: ${{ github.event_name == 'issues' && '--label' || '' }}
+      run: node scripts/board/board.mjs resolve-check "$ISSUE" --actor "$ACTOR" ${COMMENT:+--comment "$COMMENT"} $VIA_LABEL
