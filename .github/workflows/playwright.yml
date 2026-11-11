@@ -9,7 +9,6 @@ on:
       - '.github/workflows/pr-validation-maui.yml'
       - 'docs/**'
       - 'img/**'
-      - 'product-research/**'
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -19,7 +18,6 @@ on:
       - '.github/workflows/pr-validation-maui.yml'
       - 'docs/**'
       - 'img/**'
-      - 'product-research/**'
 jobs:
   test:
     timeout-minutes: 60

@@ -10,8 +10,6 @@ deploy/
 artifacts/
 testing/scenarios/
 
-# Legacy story folder: stories now live on the board (removed by board migrate --delete-local)
-product-research/
 
 # App images, icons and fonts (product photos, UI assets)
 src/Catalog.API/Pics/

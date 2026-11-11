@@ -3,7 +3,6 @@
     "dir": ".agent-state/board",
     "repo": "armandodollia-slalom/AI-Immersion-eShop",
     "assetsBranch": "board-assets",
-    "legacyDir": "product-research",
     "spikeEpic": { "key": "epic-targeted-advertising", "title": "Targeted Advertising" }
   },
   "stateDir": ".agent-state",
@@ -12,7 +11,7 @@
   "lessonsDir": ".github/agents/lessons",
   "baseRef": "origin/main",
   "storyGuard": {
-    "folders": [".agent-state/board", "product-research"]
+    "folders": [".agent-state/board"]
   },
   "agent": {
     "cli": "claude",
@@ -36,7 +35,6 @@
     "tests",
     "e2e",
     "testing/scenarios",
-    "product-research",
     ".agent-metrics",
     ".agent-state",
     "graphify-out",

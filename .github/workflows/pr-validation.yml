@@ -9,7 +9,6 @@ on:
       - '.github/workflows/pr-validation-maui.yml'
       - 'docs/**'
       - 'img/**'
-      - 'product-research/**'
   push:
     branches:
       - main
@@ -20,7 +19,6 @@ on:
       - '.github/workflows/pr-validation-maui.yml'
       - 'docs/**'
       - 'img/**'
-      - 'product-research/**'
 
 jobs:  
   test:
