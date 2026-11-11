@@ -122,13 +122,15 @@ public static class OrdersApi
         [AsParameters] OrderServices services)
     {
 
-        //mask the credit card number
+        // The buyer is always the signed-in user; userId and userName in the body are ignored.
+        var userId = services.IdentityService.GetUserIdentity();
+        var userName = services.IdentityService.GetUserName();
 
         services.Logger.LogInformation(
             "Sending command: {CommandName} - {IdProperty}: {CommandId}",
             request.GetGenericTypeName(),
-            nameof(request.UserId),
-            request.UserId); //don't log the request as it has CC number
+            "UserId",
+            userId); //don't log the request as it has CC number
 
         if (requestId == Guid.Empty)
         {
@@ -139,7 +141,7 @@ public static class OrdersApi
         using (services.Logger.BeginScope(new List<KeyValuePair<string, object>> { new("IdentifiedCommandId", requestId) }))
         {
             var maskedCCNumber = request.CardNumber.Substring(request.CardNumber.Length - 4).PadLeft(request.CardNumber.Length, 'X');
-            var createOrderCommand = new CreateOrderCommand(request.Items, request.UserId, request.UserName, request.City, request.Street,
+            var createOrderCommand = new CreateOrderCommand(request.Items, userId, userName, request.City, request.Street,
                 request.State, request.Country, request.ZipCode,
                 maskedCCNumber, request.CardHolderName, request.CardExpiration,
                 request.CardSecurityNumber, request.CardTypeId);

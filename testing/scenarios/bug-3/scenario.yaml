@@ -1,0 +1,5 @@
+description: >
+  BUG-3 (create order must be placed for the token's buyer, not the userId in the body): ordering-two-buyers
+  already has what the cases need (alice, identity a11ce000-..., owns orders 1-6; bob, identity b0b00000-...,
+  owns orders 7-8), so this scenario only extends it.
+extends: ordering-two-buyers
