@@ -5,6 +5,7 @@ import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/
 import { isDisabled, loadConfig } from './lib/config.mjs';
 import { epicReport, findEpic, formatEpic, formatOverview, formatStory, overviewReport, storyReport } from './lib/costs.mjs';
 import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, runStage, sessionStartOutput } from './lib/dispatch.mjs';
+import { experimentReport, formatReport, gradeExperiment, runExperiment } from './lib/experiment.mjs';
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
@@ -35,6 +36,14 @@ Pipeline
   implement cleanup [story...]  remove subtask worktrees a failed run left behind
   implement decisions [--story KEY] [--json]
                                 orchestrator decisions and how they turned out
+  experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential] [--base <ref>]
+                 [--parallel N|auto] [--no-grade]
+                                run the epic once per delivery mode (and repeat), each arm in its own
+                                worktree from the same base, board/lessons/PRs off, then grade the arms
+                                (pooled epic e2e tests, PR check without fixer); docs/ai-pipeline/experiments.md
+  experiment grade <id>         grade (again) the arms of an experiment
+  experiment report <id> [--json]
+                                cost, tokens, wall clock, overhead, rework, shared tests, findings per arm
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
   costs [story] [--epic <epic>] [--since <iso-date>] [--json] [--markdown]
@@ -48,7 +57,7 @@ Hooks (called by agent tool configs and .githooks)
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -122,6 +131,37 @@ async function main() {
       } else if (positional[0]) [report, format] = [storyReport(config, requireStory(config, positional[0]).key, opts), formatStory];
       else [report, format] = [overviewReport(config, opts), formatOverview];
       console.log(flags.json ? JSON.stringify(report, null, 2) : format(report, { markdown: Boolean(flags.markdown) }));
+      return 0;
+    }
+
+    case 'experiment': {
+      const [sub, id] = positional;
+      if (sub === 'run') {
+        if (typeof flags.epic !== 'string') {
+          console.error('Usage: pipeline experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential]');
+          return 2;
+        }
+        const implConfig = loadConfig('implement');
+        const exp = await runExperiment(implConfig, {
+          epic: flags.epic,
+          modes: String(flags.modes ?? 'epic,story').split(',').filter(Boolean),
+          repeat: Math.max(1, Number(flags.repeat ?? 1) || 1),
+          sequential: Boolean(flags.sequential),
+          base: typeof flags.base === 'string' ? flags.base : implConfig.baseRef,
+          parallel: flags.parallel ?? 'auto',
+          grade: !flags['no-grade'],
+        });
+        console.log(formatReport(experimentReport(implConfig, exp.id)));
+        return 0;
+      }
+      if (!id || !['grade', 'report'].includes(sub)) {
+        console.error('Usage: pipeline experiment run --epic <EPIC> ... | grade <id> | report <id> [--json]');
+        return 2;
+      }
+      const implConfig = loadConfig('implement');
+      if (sub === 'grade') await gradeExperiment(implConfig, id);
+      const report = experimentReport(implConfig, id);
+      console.log(flags.json ? JSON.stringify(report, null, 2) : formatReport(report));
       return 0;
     }
 
