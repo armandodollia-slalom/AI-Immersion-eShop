@@ -9,6 +9,11 @@ flowchart LR
   P[implement run opens a fix PR] --> A[bug-triage agent<br/>Impact, Complexity, Fix risk per ticket]
   A --> H[harness: systems touched, Severity,<br/>Confidence from pipeline records]
   H --> R[(issue ## Triage, board fields,<br/>bug-triage decision)]
+  H --> G{gate}
+  G -->|PR Low, every ticket high confidence,<br/>no reopens, checks green| M[auto-merge<br/>gh pr merge --auto --squash]
+  G -->|checks still running| W[wait; board sync checks again]
+  G -->|anything else| V[approvals:N + needs-human,<br/>reviewers, notice; card stays in Pending Review]
+  V --> Q[review-quorum check<br/>counts distinct approvals on the latest push]
 ```
 
 ## Assessment
@@ -35,6 +40,36 @@ Right after the runner opens the PR, it runs `node scripts/review-gate/review-ga
 
 The agent's usage is recorded like every other run (stage `bug-triage` in `token-usage.jsonl`, see [costs](costs.md)).
 
+## The gate
+
+`lib/gate.mjs` decides from the assessment, then applies the decision to the PR.
+
+| Decision | When | What happens |
+| --- | --- | --- |
+| **auto-merge** | the PR severity is **Low**, every ticket has **high confidence**, no ticket has a **human reopen**, the PR's **checks pass**, and `implement.autoMerge.enabled` | until the gate's auto-merge step lands, reviewed like any other PR |
+| **wait** | everything qualifies but the checks are still running (or none reported yet) | the notice says so |
+| **review** | anything else: Medium, High or Severe, low confidence, a human reopen, failing checks, a ticket that was not assessed, auto-merge switched off | **1 required approval** (the [approvals policy](#approvals-policy) table; never fewer than 1), the labels `approvals:N` and `needs-human`, review requests, and the notice. The card stays in Pending Review |
+
+Reviewers are requested from each ticket's **assignees**, or, for a ticket without one, the **CODEOWNERS** of the files it touches (`.github/CODEOWNERS`); never the PR's author. CODEOWNERS stay optional reviewers on every PR, and the team can bring in more reviewers themselves: the gate only sets the **number** of required approvals.
+
+The **review notice** is one PR comment, edited in place. It has a row per ticket (the three fields, Severity, Confidence, systems), each ticket's reasoning and confidence signals collapsed, the PR severity with its explanation, and says exactly what triggered review, for example "**What triggered review:** BUG-7 is Medium (Identity.API; Impact Medium, Fix risk Low → Medium). BUG-3 and BUG-9 would have auto-merged." Its hidden marker (`<!-- review-gate:{...} -->`) carries the gate's state on the PR: the decision, the approvals, the triggers, the head it was assessed on and the "changes requested" reviews already counted as reopens.
+
+A PR that needed people stays that way: later evaluations never auto-merge it, even if the trigger went away.
+
+### Enforcement: the review-quorum check
+
+GitHub rulesets set one approval count per branch, not per PR, so `.github/workflows/review-quorum.yml` enforces the count per PR. It runs on `pull_request` (opened, pushed, labeled, ...) and `pull_request_review` (submitted, edited, dismissed), and passes when approvals from **distinct people**, not the author, given on the **latest push** (an approval from before it is stale), reach the PR's `approvals:N` label. Each reviewer's latest approving or "changes requested" review counts; a comment does not change a verdict. A PR without the label, or with `approvals:0`, passes. The check runs `scripts/review-gate/quorum.mjs` from the **base branch**, so a PR cannot change how its own approvals are counted; changes to `.github/workflows/`, `.github/CODEOWNERS` and `scripts/review-gate/` are severity floor paths for the same reason.
+
+**Making it required is a repository setting**, armando's call: Settings → Rules → Rulesets → the ruleset for `main` → "Require status checks to pass" → add `review-quorum`. Until then it is a visible check that nothing blocks on. `main` has no branch protection and no required approvals today; the gate does not change any repository setting.
+
+## Approvals policy
+
+`implement.reviewGate.approvals` maps a PR class to its required approvals: the entry for the class (`High+shared`), else for its severity (`High`), else `default`. Today every class needs **1**. A PR that does not auto-merge never needs fewer than 1, whatever the table says.
+
+```json
+"approvals": { "default": 1, "Low": 1, "Medium": 1, "High": 1, "Severe": 1 }
+```
+
 ## Switches
 
 | Switch | Effect |
@@ -48,5 +83,6 @@ The agent's usage is recorded like every other run (stage `bug-triage` in `token
 ```bash
 node scripts/review-gate/review-gate.mjs publish --pr <url> --tickets BUG-1,BUG-2 --base origin/main   # run by implement run
 node scripts/review-gate/review-gate.mjs status [--pr <url>]
+node scripts/review-gate/quorum.mjs <pr number> --repo owner/name    # what the review-quorum check runs
 node scripts/board/board.mjs setup        # creates the triage fields on the board
 ```

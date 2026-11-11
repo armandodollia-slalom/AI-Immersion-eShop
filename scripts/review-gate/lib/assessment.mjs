@@ -89,6 +89,7 @@ export function assessTicket({ ticket, rating, files, systemsSettings, signals, 
     signals,
     systems: systemsTouched(files, systemsSettings).names,
     files: files.length,
+    paths: files.slice(0, 200),
     reopens,
   };
 }

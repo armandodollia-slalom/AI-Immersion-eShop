@@ -2,7 +2,7 @@
 // Post-publish review gate for bug-fix PRs. See docs/ai-pipeline/review-gate.md.
 //
 //   publish --pr <url> --tickets K1,K2 --base <ref>   run by the implement runner right after it opens a
-//                                                     fix PR, in the PR's worktree: assess and record it
+//                                                     fix PR, in the PR's worktree: assess, record, gate
 //   status [--pr <url>]                               the gate state recorded on this machine
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,8 +44,8 @@ async function main() {
         return 0;
       }
       const r = publishGate(config, { pr: flags.pr, keys, base: flags.base }, deps);
-      if (flags.json) console.log(JSON.stringify({ pr: flags.pr, severity: r.assessment.severity.level, class: r.assessment.class, problems: r.problems }));
-      else console.log(`${flags.pr}: severity ${r.assessment.severity.level ?? 'unknown'}.`);
+      if (flags.json) console.log(JSON.stringify({ pr: flags.pr, severity: r.assessment.severity.level, class: r.assessment.class, action: r.decision.action, approvals: r.decision.approvals, problems: r.problems }));
+      else console.log(`${flags.pr}: severity ${r.assessment.severity.level ?? 'unknown'}, ${r.decision.action}${r.decision.action === 'review' ? ` (${r.decision.approvals} approval(s))` : ''}.`);
       return 0;
     }
 

@@ -249,7 +249,10 @@
         "paths": [
           "src/Identity.API/**",
           "src/PaymentProcessor/**",
-          "**/Migrations/**"
+          "**/Migrations/**",
+          ".github/workflows/**",
+          ".github/CODEOWNERS",
+          "scripts/review-gate/**"
         ],
         "categories": [
           "auth",
