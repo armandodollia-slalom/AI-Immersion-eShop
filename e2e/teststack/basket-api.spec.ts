@@ -46,7 +46,8 @@ test.describe('basket-edge scenario: Basket gRPC API', () => {
 
   test('a token with a tampered signature cannot update a basket', async () => {
     const [header, payload] = aliceToken.split('.');
-    const forged = `${header}.${payload}.${Buffer.from('forged-signature').toString('base64url')}`;
+    // base64url of 'forged-signature'
+    const forged = `${header}.${payload}.Zm9yZ2VkLXNpZ25hdHVyZQ`;
     const res = await basketCall('UpdateBasket', encodeItems([{ productId: 7, quantity: 1 }]), forged);
     expect(res.grpcStatus).toBe(UNAUTHENTICATED);
     expect(redisBasket(USER_IDS.alice)).toBeNull();
@@ -81,9 +82,7 @@ test.describe('basket-edge scenario: Basket gRPC API', () => {
     await basketCall('DeleteBasket', undefined, aliceToken);
   });
 
-  // BUG: Basket.API's BasketItem declares Quantity < 1 invalid (IValidatableObject), but the gRPC
-  // UpdateBasket never validates, so quantities of 0 or -3 are stored in Redis and returned as-is.
-  test.fixme('UpdateBasket rejects zero or negative quantities', async () => {
+  test('UpdateBasket rejects zero or negative quantities', async () => {
     const res = await basketCall('UpdateBasket', encodeItems([{ productId: 7, quantity: -3 }, { productId: 6, quantity: 0 }]), aliceToken);
     expect(res.grpcStatus).toBe(INVALID_ARGUMENT);
     expect(redisBasket(USER_IDS.alice)).toBeNull();
