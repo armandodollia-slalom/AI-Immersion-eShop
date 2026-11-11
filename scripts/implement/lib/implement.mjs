@@ -10,6 +10,7 @@ import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
 import { appendJsonl, extractResult, isProcessAlive, log, nowIso, readJson, readJsonl, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { branchFor, collectStories, orderStories, worktreeFor } from './batch.mjs';
+import { boardEvent } from './board-events.mjs';
 import { OUTCOMES_FILE, attributeEscaped, storyOutcomeRecord } from './decisions.mjs';
 import { commitAll, commitEnv, filesChanged, headSha, listSubtaskWorktrees, mustGit, removeWorktree } from './gitops.mjs';
 import { formatDiagnostics, lspAdapter } from './lsp.mjs';
@@ -17,7 +18,6 @@ import { LimitError, agentSettings, checkBudget, createContext, orchestrate } fr
 import { integrationTask } from './tasks.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
-const BOARD_CLI = path.join(INSTALL_ROOT, 'scripts/board/board.mjs');
 const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
 // Outcomes from a run that died rather than finished: the next run resumes them, and the batch retries
 // them itself a few times.
@@ -422,11 +422,16 @@ async function implementStoryInner(config, opts, holder) {
       approved = true;
     }
 
+    // The review approved this code and QE is testing it: the card moves to Testing.
+    const approvedHash = loadState(wt, key).review.approvedHash;
+    boardEvent(worktree, key, ['event', key, 'testing', ...(approvedHash ? ['--id', `testing:${approvedHash}`] : [])]);
     // QE writes and verifies the tests in the background; wait for its verdict.
     qe = await waitForQe(wt, key, { timeoutSec: settings.qeTimeoutSec, pollSec: settings.qePollSec, recover: () => pipeline(worktree, base, ['resume', key]) });
     if (qe.status !== 'product-bug') break;
     if (metrics.bugFixCycles >= settings.maxBugFixCycles) break;
     metrics.bugFixCycles++;
+    // Back to the implementer: the card returns to In Progress with the bugs.
+    boardEvent(worktree, key, ['event', key, 'product-bug', ...(qe.finishedAt ? ['--id', `bug:${qe.finishedAt}`] : [])], { input: JSON.stringify({ bugs: qe.bugs ?? [], cycle: metrics.bugFixCycles }) });
     fixingBugs = true;
     feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${formatBugs(qe.bugs)}`;
   }
@@ -458,11 +463,8 @@ async function implementStoryInner(config, opts, holder) {
 // Moves the story's card to Pending Review with its evidence. The board is informational, so a failure
 // is logged and never changes the outcome.
 function reportToBoard(worktree, key, prUrl) {
-  if (!fs.existsSync(BOARD_CLI)) return;
-  const env = { ...process.env, PIPELINE_ROOT: worktree };
-  delete env.PIPELINE_CHILD;
-  const r = run(process.execPath, [BOARD_CLI, 'review', key, ...(prUrl ? ['--pr', prUrl] : [])], { cwd: worktree, env });
-  log(`${key}: board: ${(r.status === 0 ? r.stdout : r.stderr).trim().split('\n').at(-1) || `exit ${r.status}`}`);
+  const verifiedHash = loadState(loadConfig('implement', worktree), key).automation.verifiedHash;
+  boardEvent(worktree, key, ['review', key, ...(prUrl ? ['--pr', prUrl] : []), ...(verifiedHash ? ['--id', `verified:${verifiedHash}`] : [])]);
 }
 
 export function formatSummary(results) {

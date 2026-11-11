@@ -9,11 +9,13 @@ import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
+import { findEpic } from '../pipeline/lib/costs.mjs';
 import { resolveStory } from '../pipeline/lib/stories.mjs';
 import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { collectStories } from './lib/batch.mjs';
 import { DECISIONS_FILE, OUTCOMES_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
 import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
+import { boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
 import { batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
 
@@ -22,10 +24,11 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
-  run <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
-        implement every <KEY>-<title>.md story given: each gets a worktree and branch, the implementer
-        agent, the review loop and verified tests. Stories "Blocked by" another story in the batch run
-        after it, stacked on its branch.
+  run <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+        implement every <KEY>-<title>.md story given (or every story of an epic): each gets a worktree
+        and branch, the implementer agent, the review loop and verified tests. Stories "Blocked by"
+        another story in the batch run after it, stacked on its branch. The run syncs the board and
+        claims each story's card first; a card another machine holds is skipped unless --force.
   resume [KEY] [--parallel N] [--pr] [--background]
                                  continue the last run that did not finish: stories it finished are
                                  kept, interrupted ones resume in their worktree, the rest run.
@@ -54,6 +57,12 @@ const interruptedBatch = (config) => {
 
 async function runStories(config, inputs, { base, force = false, parallel, pr = false, dryRun = false }) {
   const stories = plan(config, inputs, { base, force });
+  if (!dryRun) {
+    // The board: closed stories to Done and epics in step, then this machine claims the cards it runs.
+    syncBoard(config.root);
+    const claims = claimStories(config.root, stories.filter((s) => !s.skip).map((s) => s.key), { force });
+    for (const key of skipRefused(stories, claims)) log(`${key}: ${stories.find((s) => s.key === key).skip}; skipped.`);
+  }
   console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
   // Agents may read only the stories handed to this run (scripts/pipeline/lib/story-guard.mjs).
@@ -62,6 +71,8 @@ async function runStories(config, inputs, { base, force = false, parallel, pr = 
   writeJson(batchFile(config), batch);
   const results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
+  // Every story that did not finish goes to Failed with its outcome, reason and findings.
+  for (const r of failedResults(results, { pr })) boardEvent(config.root, r.key, ['fail', r.key]);
   console.log(`\n${formatSummary(results)}`);
   return results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done') ? 0 : 1;
 }
@@ -87,7 +98,7 @@ function resumeInBackground(config, key) {
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'base', 'since', 'file', 'branch', 'worktree', 'result', 'merge', 'story']));
+  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'base', 'since', 'file', 'branch', 'worktree', 'result', 'merge', 'story', 'epic']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -96,8 +107,23 @@ async function main() {
 
   switch (command) {
     case 'run': {
+      // --epic <EPIC> stands for every story the epic file names that has a story file.
+      if (typeof flags.epic === 'string') {
+        const epic = findEpic(config, flags.epic);
+        if (!epic) {
+          console.error(`Unknown epic "${flags.epic}".`);
+          return 2;
+        }
+        const keys = [...epic.stories].filter((k) => resolveStory(config, k));
+        if (!keys.length) {
+          console.error(`Epic ${epic.key} names no story with a file in ${config.storiesDir}.`);
+          return 2;
+        }
+        console.log(`Epic ${epic.key} (${epic.title}): ${keys.join(', ')}`);
+        positional.push(...keys.filter((k) => !positional.includes(k)));
+      }
       if (!positional.length) {
-        console.error(`Give a stories directory or story files.\n\n${USAGE}`);
+        console.error(`Give a story key, a stories directory, story files, or --epic <EPIC>.\n\n${USAGE}`);
         return 2;
       }
       // A story key (PROMO-3) stands for its file in the stories folder.

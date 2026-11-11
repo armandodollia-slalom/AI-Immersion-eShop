@@ -10,6 +10,7 @@
       "backlog": "Backlog",
       "ready": "Ready",
       "inProgress": "In Progress",
+      "testing": "Testing",
       "review": "Pending Review",
       "failed": "Failed",
       "done": "Done"
@@ -19,8 +20,6 @@
     "epicLabel": "epic",
     "epicsDir": "product-research",
     "mockupsDir": "product-research/mockups",
-    "pollSec": 120,
-    "parallel": 1,
     "evidence": {
       "playwright": [
         "npx",

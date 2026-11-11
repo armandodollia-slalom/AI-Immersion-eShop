@@ -25,8 +25,9 @@ Implementation agent
                                 escalated after crashing repeatedly
 
 Pipeline
-  implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
-                                implement every story given, each on its own worktree and branch
+  implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+                                implement every story given (or of an epic), each on its own worktree
+                                and branch; claims each story's board card (--force takes it over)
   implement resume [--parallel N] [--pr]
                                 continue the last implement run that did not finish
   implement status [story]      progress of the latest implement run
