@@ -12,3 +12,4 @@
 {"ts":"2026-11-11T14:46:31.745Z","stage":"plan","story":"BUG-19","round":2,"agent_prompt_ver":"c3934e11","verifier_ver":"456099fb","cli":"copilot","score":9,"passed":true,"gaps":2}
 {"ts":"2026-11-11T14:54:39.094Z","stage":"automation","story":"BUG-19","round":1,"agent_prompt_ver":"09b47565","verifier_ver":"3158c4fc","cli":"copilot","score":9,"passed":true,"gaps":1}
 {"ts":"2026-11-11T15:40:45.641Z","stage":"plan","story":"BUG-18","round":1,"agent_prompt_ver":"c3934e11","verifier_ver":"456099fb","cli":"claude","score":9,"passed":true,"gaps":1}
+{"ts":"2026-11-11T15:57:50.446Z","stage":"automation","story":"BUG-18","round":1,"agent_prompt_ver":"09b47565","verifier_ver":"3158c4fc","cli":"claude","score":10,"passed":true,"gaps":0}

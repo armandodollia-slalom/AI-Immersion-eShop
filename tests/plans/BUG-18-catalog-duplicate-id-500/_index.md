@@ -6,6 +6,10 @@ plan-sha: cae165459703
 verified-score: 9
 verified-at: "2026-11-11T15:40:45.653Z"
 verified-by: qe-plan@c3934e11/456099fb
+automation-sha: e68bda8d773d
+automation-plan-sha: cae165459703
+automation-score: 10
+automation-verified-at: "2026-11-11T15:57:50.498Z"
 ---
 # Test plan: BUG-18 Creating a catalog item with an existing id returns 500
 
