@@ -19,8 +19,17 @@
             if (user == null)
                 throw new ArgumentException("Invalid subject identifier");
 
-            var claims = GetClaimsFromUser(user);
-            context.IssuedClaims = claims.ToList();
+            var claims = GetClaimsFromUser(user).ToList();
+
+            if (_userManager.SupportsUserRole)
+            {
+                // Roles go out as 'role' claims in access and id tokens; Promotions.API and the WebApp
+                // authorize admins on role 'admin' (see Config.AdminRole).
+                var roles = await _userManager.GetRolesAsync(user);
+                claims.AddRange(roles.Select(role => new Claim(JwtClaimTypes.Role, role)));
+            }
+
+            context.IssuedClaims = claims;
         }
 
         public async Task IsActiveAsync(IsActiveContext context)

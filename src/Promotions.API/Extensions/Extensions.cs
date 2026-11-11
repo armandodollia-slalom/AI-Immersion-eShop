@@ -4,6 +4,8 @@
     {
         builder.AddDefaultAuthentication();
 
+        builder.Services.AddAuthorizationBuilder().AddPromotionsPolicies();
+
         builder.AddRabbitMqEventBus("eventbus");
 
         builder.AddNpgsqlDbContext<PromotionsContext>("promotionsdb");

@@ -1,6 +1,7 @@
 description: >
   The data the built-in seeders used to create: the full catalog (101 items) and the users
-  alice and bob (password Pass123$) with fixed IDs. No orders, empty baskets.
+  alice and bob (password Pass123$) with fixed IDs; alice is in the 'admin' role, bob has no role.
+  No orders, empty baskets.
 postgres:
   catalogdb:
     - sql: catalog.sql
@@ -59,3 +60,13 @@ postgres:
           State: WA
           Country: U.S.
           ZipCode: "98052"
+    - table: AspNetRoles
+      rows:
+        - Id: ad000000-0000-4000-8000-000000000001
+          Name: admin
+          NormalizedName: ADMIN
+          ConcurrencyStamp: adminrole0000000000000000000001
+    - table: AspNetUserRoles
+      rows:
+        - UserId: a11ce000-0000-4000-8000-000000000001
+          RoleId: ad000000-0000-4000-8000-000000000001

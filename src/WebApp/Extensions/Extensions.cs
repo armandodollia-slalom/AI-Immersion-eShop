@@ -1,6 +1,7 @@
 ﻿using eShop.Basket.API.Grpc;
 using eShop.WebApp.Services.OrderStatus.IntegrationEvents;
 using eShop.WebAppComponents.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -10,6 +11,12 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 public static class Extensions
 {
+    /// <summary>Authorization policy for store administrators (role 'admin' issued by Identity.API).</summary>
+    public const string AdminPolicy = "Admin";
+
+    private const string AdminRole = "admin";
+    private const string RoleClaimType = "role";
+
     public static void AddApplicationServices(this IHostApplicationBuilder builder)
     {
         builder.AddAuthenticationServices();
@@ -56,19 +63,33 @@ public static class Extensions
         var services = builder.Services;
 
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Remove("sub");
+        // Keep Identity.API's 'role' claim as 'role' (it is the RoleClaimType below) instead of
+        // mapping it to ClaimTypes.Role.
+        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Remove(RoleClaimType);
 
         var identityUrl = configuration.GetRequiredValue("IdentityUrl");
         var callBackUrl = configuration.GetRequiredValue("CallBackUrl");
         var sessionCookieLifetime = configuration.GetValue("SessionCookieLifetimeMinutes", 60);
 
         // Add Authentication services
-        services.AddAuthorization();
+        services.AddAuthorizationBuilder()
+            .AddPolicy(AdminPolicy, policy => policy.RequireAuthenticatedUser().RequireRole(AdminRole));
         services.AddAuthentication(options =>
         {
             options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
         })
-        .AddCookie(options => options.ExpireTimeSpan = TimeSpan.FromMinutes(sessionCookieLifetime))
+        .AddCookie(options =>
+        {
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(sessionCookieLifetime);
+            // Signed in but not allowed (e.g. a non-admin on an Admin page): answer 403 instead of
+            // redirecting to the non-existent /Account/AccessDenied page.
+            options.Events.OnRedirectToAccessDenied = context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return Task.CompletedTask;
+            };
+        })
         .AddOpenIdConnect(options =>
         {
             options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -85,6 +106,8 @@ public static class Extensions
             options.Scope.Add("orders");
             options.Scope.Add("basket");
             options.Scope.Add("promotions");
+            options.TokenValidationParameters.RoleClaimType = RoleClaimType;
+            options.ClaimActions.MapUniqueJsonKey(RoleClaimType, RoleClaimType);
         });
 
         // Blazor auth services
