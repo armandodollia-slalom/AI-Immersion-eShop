@@ -20,7 +20,7 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | Token cost (list price) | **$75.63**: Copilot $38.08, Claude Code $37.56 |
 | Cost by model | Opus 5.5 $46.79, Sonnet 5.5 $28.81, Haiku 5.5 $0.03 (CLI background), Sol 6.1 $0 |
 | Copilot premium requests | 1,037 (Opus 930, Sonnet 107), then the monthly quota ran out |
-| Pipeline defects found and fixed | **23** (D1–D23, plus D13b); D16 superseded by main's fix (#99) |
+| Pipeline defects found and fixed | **24** (D1–D24, plus D13b); D16 superseded by main's fix (#99) |
 | Cache hit rate | 87% |
 
 ## Escalation questions (PR #101, merged at 12:00)
@@ -31,7 +31,10 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | First new-style failure comment | [BUG-2 #42](https://github.com/armandodollia-slalom/AI-Immersion-eShop/issues/42#issuecomment-6803834756), 12:20 (blocked ticket, D22) |
 | First comment with questions | [BUG-1 #31](https://github.com/armandodollia-slalom/AI-Immersion-eShop/issues/31#issuecomment-6804680354), 13:00: one question, 3 options + Other, A recommended (remove the fixme, drop the nested-run test) |
 | Hand-labeled re-run | BUG-1 labeled `escalation-resolved` without answers: a 30-minute opus re-run to the same escalation |
-| `implement requeue` | 13:02: nothing to requeue |
+| `implement requeue` | 13:02: nothing to requeue; 14:59: BUG-1 re-queued after Armando's answer |
+| Human decision | 14:58: Q1 → **C** (not the recommended A): drop the nested-run test, manual PR check for the fixme removal |
+| Resolve → re-run | the first resolved re-run hit D24 (QE state not reset); fixed and re-run at 15:09 |
+| Environment | GitHub Actions outage 14:22–14:58; #115 cut the resolve Action's runs (124 of the last 200 Actions runs) |
 | Comments posted in run 10 | 5 (BUG-2, 3, 9, 10, 15), all for tickets blocked behind BUG-1 |
 | Defect found in the new flow | D22: blocked tickets described as "no result" / mechanical, re-posted every run |
 | Waiting for a human | BUG-1: answer Q1 on #31 and tick Resolved |

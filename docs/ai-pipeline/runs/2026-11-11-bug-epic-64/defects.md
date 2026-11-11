@@ -498,3 +498,31 @@ before the PR (and the group's QE specs when the stack is available).
   `0917392`.
 - **Impact:** none in this run (no group PR opened since the gate merged);
   it would have under-rated the next group PR to finish across restarts.
+
+## D24: a resolved re-run never re-ran the escalated QE stage
+
+- **Symptom:** after Armando answered BUG-1's question (Q1 → C: drop the
+  nested-run test) and ticked Resolved, `implement requeue` re-ran BUG-1, but
+  it ended `qe-escalated` again within five minutes and no QE automation log
+  was written. The round-2 failure comment said "No decision is needed".
+- **Root cause:** the resolved re-run (from #101) clears the escalation notes
+  but not the QE stage state. Automation stayed `escalated` with `workingHash`
+  equal to the review's approved hash: a decision about the tests leads to no
+  code change, so the QE stop hook (`automationUpToDate`) treated the
+  escalated run as current, and the implement worker read its status back.
+  Same family as D18 (blocked-on-plan).
+- **Fix:** `resetEscalatedQe()` resets escalated automation and plan stages in
+  the ticket worktree when a resolved ticket re-runs. Test in
+  `batch.test.mjs`. Commit `b7f2e35`. The operator applied it to BUG-1 by hand
+  and re-ran it.
+- **Impact:** one wasted resolved re-run (two opus agents) and a misleading
+  failure comment on #31.
+
+## Observation O10: a requeue runs only the resolved ticket
+
+`implement requeue` runs the resolved ticket alone; it joins its in-progress
+epic run, and its dependents (BUG-2/3 in its group, and the
+`ordering-error-handling` group stacked on it) run only when the epic run
+continues (`implement run --epic` or `implement resume`). That is how
+`epicToJoin` is documented; an operator (or the requeue) has to continue the
+epic afterwards.
