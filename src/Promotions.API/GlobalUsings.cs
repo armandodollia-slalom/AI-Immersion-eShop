@@ -1,9 +1,9 @@
-﻿global using eShop.IntegrationEventLogEF;
-global using Asp.Versioning.Builder;
-global using Microsoft.Extensions.DependencyInjection.Extensions;
+﻿global using Asp.Versioning.Builder;
 global using eShop.EventBus.Abstractions;
+global using eShop.IntegrationEventLogEF;
 global using eShop.ServiceDefaults;
 global using Microsoft.EntityFrameworkCore;
+global using Microsoft.Extensions.DependencyInjection.Extensions;
 global using Promotions.API;
 global using Promotions.API.Infrastructure;
 global using Promotions.API.Model;
