@@ -54,6 +54,11 @@
   },
   "precheck": {
     "runTests": true,
+    "fix": {
+      ".md": ["node_modules/.bin/markdownlint", "--fix", "{files}"],
+      ".ts": ["node_modules/.bin/eslint", "--fix", "--no-warn-ignored", "{files}"],
+      ".cs": ["dotnet", "format", "whitespace", "--folder", "--include", "{files}"]
+    },
     "lint": {
       ".md": [
         "node_modules/.bin/markdownlint",
