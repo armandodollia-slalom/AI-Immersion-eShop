@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { blockersOf, collectStories, orderStories } from '../lib/batch.mjs';
+import { blockersOf, collectStories, orderStories, worktreeFor } from '../lib/batch.mjs';
 import { plan } from '../lib/implement.mjs';
 
 function storiesDir(stories) {
@@ -52,6 +52,12 @@ test('a later run resumes the stories an interrupted run left part-way, in their
   const by = Object.fromEntries(plan(config, [dir]).map((s) => [s.key, s]));
   assert.deepEqual([by['B-1'].resume, by['B-2'].resume, by['B-3'].resume], [true, true, false]);
   assert.equal(plan(config, [dir], { force: true })[0].resume, false, '--force starts over');
+  // A record that never got its worktree resumes in the story's own worktree path.
+  const wt = worktreeFor(config, { key: 'B-1' });
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(runs, 'B-1.json'), JSON.stringify({ key: 'B-1', status: 'finished', outcome: 'error' }));
+  assert.equal(plan(config, [dir])[0].resume, true);
+  fs.rmSync(wt, { recursive: true, force: true });
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

@@ -52,7 +52,10 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
       s.skip = `done in a previous run (--force to redo)`;
       s.doneBefore = true;
     }
-    s.resume = Boolean(prev && !s.doneBefore && (prev.status === 'running' || INTERRUPTED.has(prev.outcome)) && prev.worktree && fs.existsSync(prev.worktree));
+    // A record without a worktree (an epic run's story that died before reporting one) resumes in the
+    // story's own worktree path.
+    const prevWorktree = prev?.worktree ?? (prev ? worktreeFor(config, s) : null);
+    s.resume = Boolean(prev && !s.doneBefore && (prev.status === 'running' || INTERRUPTED.has(prev.outcome)) && prevWorktree && fs.existsSync(prevWorktree));
   }
   // Blockers already implemented are on the base branch, so only the ones built in this run (or kept
   // from an earlier one, still on their branch) count.
