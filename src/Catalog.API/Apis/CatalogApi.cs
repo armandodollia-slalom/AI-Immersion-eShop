@@ -361,7 +361,7 @@ public static class CatalogApi
         return await GetAllItems(paginationRequest, services, null, null, brandId is null ? null : [brandId.Value]);
     }
 
-    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> UpdateItemV1(
+    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>, ValidationProblem>> UpdateItemV1(
         HttpContext httpContext,
         [AsParameters] CatalogServices services,
         CatalogItem productToUpdate)
@@ -376,12 +376,18 @@ public static class CatalogApi
         return await UpdateItem(httpContext, productToUpdate.Id, services, productToUpdate);
     }
 
-    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> UpdateItem(
+    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>, ValidationProblem>> UpdateItem(
         HttpContext httpContext,
         [Description("The id of the catalog item to delete")] int id,
         [AsParameters] CatalogServices services,
         CatalogItem productToUpdate)
     {
+        var errors = CatalogItemValidation.Validate(productToUpdate);
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
         var catalogItem = await services.Context.CatalogItems.SingleOrDefaultAsync(i => i.Id == id);
 
         if (catalogItem == null)
