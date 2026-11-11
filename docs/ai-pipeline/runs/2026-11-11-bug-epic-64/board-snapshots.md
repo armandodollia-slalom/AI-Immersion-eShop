@@ -34,3 +34,32 @@ All 22 cards (epic + 21 bugs) in **Ready**.
 | BUG-21 | #44 | In Progress | - |
 
 Lane counts: In Progress: 22
+
+## 04:50 (BUG-4, BUG-5, BUG-7 in QE)
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | In Progress | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | Testing | - |
+| BUG-5 | #47 | Testing | - |
+| BUG-6 | #48 | In Progress | - |
+| BUG-7 | #49 | Testing | - |
+| BUG-8 | #50 | In Progress | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | In Progress | - |
+| BUG-17 | #39 | In Progress | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 19, Testing: 3

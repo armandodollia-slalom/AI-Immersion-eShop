@@ -58,12 +58,54 @@ worked on): symptom, root cause, fix, commit and impact.
   `catalog-write-auth`, and `ordering-error-handling` waits for
   `ordering-ownership`. Their PRs stack on the prerequisite group's branch.
 
-## Cosmetic (not fixed)
+## D3: a fresh restart kept the previous attempt's findings and metrics
 
-- `implement run --epic` on a bug epic prints `Delivery: epic.` and labels every
-  ticket `<- the epic's branch`, although each group gets its own `bugfix/…`
-  branch. The next line ("Bug epic: the orchestrator groups the tickets into
-  PRs") is correct.
-- `board status` without a ticket key prints only the board URL. This is by
-  design, but it is not useful for a lane overview, so the operator used
-  `gh project item-list` for the board snapshots.
+- **Symptom:** after BUG-4 restarted fresh (its first attempt was
+  pair-exhausted by D1), `implement status` reported 9 agent runs, and the run
+  record `.agent-state/implement/BUG-4.json` still listed the first attempt's
+  findings for the old subtask `identity-admin-role`, with `pairRounds` 6 and 2
+  escalations.
+- **Root cause:** `saveRun` merges every patch into the existing record, and a
+  worker start only reset `status`, `outcome` and `reason`. A successful result
+  carries no `findings`, so the old ones would survive even after the story is
+  done. `board fail` builds the card's failure comment from this record, so a
+  failed restart could quote the earlier attempt's findings.
+- **Fix:** a fresh (non-resume) start writes a new record (key, branch,
+  worktree, base, run fields). A resume still keeps the record. The e2e
+  implement test now seeds stale fields and checks that they are gone.
+- **Commit:** `c55ed59`.
+- **Impact on this run:** the batch already running keeps the old code. BUG-4's
+  record keeps the stale fields until the run is restarted, and the per-story
+  metrics in `.agent-metrics/implement-runs.jsonl` are not affected.
+
+## Cosmetic
+
+- **Fixed (`1d9b9a2`):** `implement run --epic` on a bug epic printed
+  `Delivery: epic.` and labelled every ticket `<- the epic's branch`, although
+  each group gets its own `bugfix/…` branch. It now says `Delivery: bug groups`
+  and `<- its group branch`.
+- **Not fixed:** `board status` without a ticket key prints only the board URL.
+  This is by design, but it is not useful for a lane overview, so the operator
+  used `gh project item-list` for the board snapshots.
+- **Not fixed:** after a run is killed, `implement status` keeps showing the
+  killed run's units (`token-audience` "running", BUG-6 "error", its subtask
+  "verifying") until they run again.
+
+## Observations (not changed)
+
+- **O1, lspd leak on kill.** The implement runner has no signal handlers, so
+  killing a run leaves its language-server daemons up until their 15-minute
+  idle timeout. One held a C# slot, and BUG-4 started without C# LSP. The idle
+  timeout is the designed safety net; the operator stopped it by hand.
+- **O2, zero LSP calls.** Several stories report 0 LSP calls. The `lsp` MCP
+  works from a fresh worktree under Copilot (checked by hand), so this is how
+  the agents chose to work, not a broken handoff. `implement status` flags
+  "signature changed without find-references" where it matters.
+- **O3, re-plan on resume.** BUG-5 (self mode) was planned again on resume
+  (new decision `1d5bf6b2`). This is documented: only orchestrated stories with
+  a saved plan skip re-planning. It cost one opus read run.
+- **O4, group worktrees are reused as-is on resume.** A group worktree created
+  before D2 was fixed would stay based on `main` instead of stacking on its
+  prerequisite group, because resume reuses an existing worktree and only
+  merges the extra branches. The operator removed the empty `token-audience`
+  worktree before resuming so it is recreated stacked.
