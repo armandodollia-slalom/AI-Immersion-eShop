@@ -15,6 +15,7 @@
     <Project Path="src/PaymentProcessor/PaymentProcessor.csproj" />
     <Project Path="src/WebApp/WebApp.csproj" />
     <Project Path="src/WebhookClient/WebhookClient.csproj" />
+    <Project Path="src/Promotions.API/Promotions.API.csproj" />
     <Project Path="src/Webhooks.API/Webhooks.API.csproj" />
     <Project Path="src/WebAppComponents/WebAppComponents.csproj" />
     <Project Path="src/HybridApp/HybridApp.csproj" />
