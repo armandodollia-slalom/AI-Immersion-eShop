@@ -54,6 +54,26 @@
   },
   "precheck": {
     "runTests": true,
+    "lint": {
+      ".md": [
+        "node_modules/.bin/markdownlint",
+        "{files}"
+      ],
+      ".ts": [
+        "node_modules/.bin/eslint",
+        "--no-warn-ignored",
+        "{files}"
+      ],
+      ".cs": [
+        "dotnet",
+        "format",
+        "whitespace",
+        "--folder",
+        "--verify-no-changes",
+        "--include",
+        "{files}"
+      ]
+    },
     "validateScenario": [
       "testing/teststack",
       "validate",
