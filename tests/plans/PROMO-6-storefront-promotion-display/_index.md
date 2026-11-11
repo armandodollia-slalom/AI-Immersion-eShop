@@ -6,10 +6,10 @@ plan-sha: 33122faf08b9
 verified-score: 9
 verified-at: "2026-11-11T19:53:38.988Z"
 verified-by: qe-plan@c3934e11/73ba1657
-automation-sha: 413e3874c51c
+automation-sha: 993287ca913b
 automation-plan-sha: 33122faf08b9
-automation-score: 10
-automation-verified-at: "2026-11-11T20:10:16.984Z"
+automation-score: 9
+automation-verified-at: "2026-11-11T20:39:53.382Z"
 ---
 # Test plan: PROMO-6 [FE - WebApp, WebAppComponents] - Storefront promotion display
 
