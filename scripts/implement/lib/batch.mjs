@@ -56,6 +56,8 @@ export function collectStories(inputs, cwd = process.cwd()) {
       // The cached text is the truth (an edited issue may have new blockers since migration).
       blockedBy: blockersOf(text, key),
       implemented: /^##\s+Implementation Notes\b/m.test(text),
+      // The issue's labels when the ticket was last fetched (escalation-resolved lets plan() re-run it).
+      labels: meta?.issue?.labels ?? [],
     });
   }
   return [...byKey.values()].sort((a, b) => keyOrder(a.key, b.key));

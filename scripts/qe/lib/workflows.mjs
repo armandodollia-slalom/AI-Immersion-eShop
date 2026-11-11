@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { agentDefinition, runAgent } from '../../pipeline/lib/agents.mjs';
 import { spawnBackground } from '../../pipeline/lib/background.mjs';
 import { formatBugs, logDecision, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
+import { decisionsBlock, readDecisions } from '../../pipeline/lib/human-decisions.mjs';
 import { git, implChanges } from '../../pipeline/lib/git.mjs';
 import { readEvidence, formatEvidence } from './evidence.mjs';
 import { onLeasedSlot } from './slots.mjs';
@@ -91,6 +92,9 @@ export function storyDiffSince(config, story, oldSha, { version = storyVersion }
 // Workflow 1: story -> integration test plan, verified by a fresh verifier until it scores 10/10
 // ---------------------------------------------------------------------------------------------
 
+// A human's answers to an earlier run's escalation questions (decisions.md next to the cached story).
+const humanDecisions = (config, story) => readDecisions(path.join(config.root, story.file));
+
 function planTask(config, story, { mode, reasons, storyDiff, feedback }) {
   const lines = [
     `Story: ${story.key} (${story.file})`,
@@ -102,6 +106,7 @@ function planTask(config, story, { mode, reasons, storyDiff, feedback }) {
     '### Story',
     '',
     fence(readRel(config, story.file), 'markdown'),
+    ...decisionsBlock(humanDecisions(config, story), 'qe'),
   ];
   if (mode === 'update') {
     lines.push('', '### What changed in the story since the plan was written', '');
@@ -122,6 +127,7 @@ function planVerifierTask(config, story, plan) {
     '### Story',
     '',
     fence(readRel(config, story.file), 'markdown'),
+    ...decisionsBlock(humanDecisions(config, story), 'verify'),
     '',
     `### Plan index (${story.planDir}/${INDEX})`,
     '',
@@ -394,6 +400,7 @@ function automationTask(config, story, { mode, feedback, implFiles }) {
     '### Implementation files changed for this story',
     '',
     implFiles.length ? implFiles.map((f) => `- ${f}`).join('\n') : '- (none detected; read the code the plan exercises)',
+    ...decisionsBlock(humanDecisions(config, story), 'qe'),
   ];
   if (mode === 'update') {
     lines.push('', 'Tests for this story already exist. Update them in place so they match the current plan and implementation; do not duplicate tests.');
@@ -414,6 +421,7 @@ function automationVerifierTask(config, story, tests, evidence = []) {
     '### Test cases (the specification the tests must match)',
   ];
   for (const c of plan.cases) lines.push('', `#### ${c.file}`, '', fence(c.text, 'markdown'));
+  lines.push(...decisionsBlock(humanDecisions(config, story), 'verify'));
   lines.push('', '### Automated tests');
   for (const [file, ids] of tests) lines.push('', `#### ${file} (references ${[...ids].join(', ')})`, '', fence(readRel(config, file), langFor(file)));
   lines.push('', `### Scenario data (${config.scenariosDir}/${story.scenario})`);
