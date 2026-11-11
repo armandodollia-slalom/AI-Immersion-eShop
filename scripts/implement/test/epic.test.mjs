@@ -115,7 +115,7 @@ function fakeDeps(note, extra = {}) {
     prCheck: async (env, keys) => (checks.push(keys), { verdict: 'PASS', score: 10, openFindings: [] }),
     openPr: (env, { title, body, existing }) => {
       prs.push({ title, body, branch: env.branch, base: env.prBase, existing });
-      return { url: existing ?? `https://github.com/example/repo/pull/${100 + prs.length}` };
+      return { url: existing ?? `https://github.com/example/repo/pull/${100 + prs.length}`, existing: Boolean(existing) };
     },
     reviewGate: (env, { pr, keys }) => gates.push({ pr, keys, worktree: env.worktree, base: env.prBase }),
     ...extra,
@@ -461,6 +461,23 @@ test('bug epic: a merge into the group is not blocked by metrics an earlier agen
   assert.deepEqual(f.prs.map((p) => p.branch).sort(), ['bugfix/shop/auth', 'bugfix/shop/cart']);
 });
 
+test('bug epic: a group PR opened by a later run is gated with every ticket merged into the group, not only that run\'s', async () => {
+  const env = makeRepo({ bugs: true });
+  const note = { stories: [], prGroups: [{ id: 'all', title: 'All', tickets: ['BUG-1', 'BUG-2', 'BUG-3'] }] };
+  // Run 1: BUG-1 merges, BUG-2 fails, so the group gets no PR; run 2 finishes the group.
+  const w1 = fakeWorker({ outcomes: { 'BUG-2': 'pair-exhausted' } });
+  const first = fakeDeps(note, { startWorker: w1.startWorker });
+  await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: first.deps, log: () => {} });
+  assert.deepEqual(first.gates, []);
+  const bug2 = w1.calls.find((c) => c.key === 'BUG-2');
+  git(env.repo, 'worktree', 'remove', '--force', path.join(env.tmp, 'shop-worktrees', 'bug-2'));
+  git(env.repo, 'branch', '-D', bug2.branch);
+  const second = fakeDeps(note, { startWorker: fakeWorker().startWorker });
+  await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: second.deps, log: () => {} });
+  assert.equal(second.prs.length, 1);
+  assert.deepEqual(second.gates.map((g) => [...g.keys].sort()), [['BUG-1', 'BUG-2', 'BUG-3']], 'BUG-1, merged by run 1, is rated too');
+});
+
 test('bug epic: a stacked group gets the tickets of the groups below it synced before its PR check and push', async () => {
   const env = makeRepo({ bugs: true });
   const worker = fakeWorker({ notes: true });
@@ -488,6 +505,8 @@ test('bug epic: a group re-delivered by a later run keeps the PR it already has'
   const r2 = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: second.deps, log: () => {} });
   assert.deepEqual(second.prs.map((p) => p.existing), r1.epic.prs, 'the second run hands the existing PR to openPr');
   assert.deepEqual(r2.epic.prs, r1.epic.prs);
+  assert.equal(first.gates.length, 1, 'the new group PR is gated');
+  assert.deepEqual(second.gates, [], 'a re-delivered PR that already existed is not gated again');
   // The tickets merged by the first run still get their cards moved with the PR.
   for (const k of ['BUG-1', 'BUG-2', 'BUG-3']) assert.ok(second.board.some((b) => b[0] === k && b[1] === 'review' && b.includes(r1.epic.prs[0])), `${k} review with the group PR`);
 });

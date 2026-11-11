@@ -319,7 +319,7 @@ function openPr(env, { title, body, existing = null }) {
   const prior = existing ?? (run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url'], { cwd: worktree }).stdout ?? '').trim();
   if (prior) {
     run('gh', ['pr', 'edit', prior, '--body', body], { cwd: worktree });
-    return { url: prior };
+    return { url: prior, existing: true };
   }
   const created = run('gh', ['pr', 'create', '--base', prBase.replace(/^origin\//, ''), '--head', branch, '--title', title, '--body', body], { cwd: worktree });
   return created.status === 0 ? { url: created.stdout.trim() } : { url: null, reason: `gh pr create failed: ${tail(created.stderr, 300)}` };
@@ -618,7 +618,11 @@ async function deliverUnit(env, unit, units, epicWt) {
   } else {
     for (const r of delivered) reportStory(uenv, r, opened.url);
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch, '--group', unit.id, '--title', unit.group.title, '--tickets', unit.keys.join(',')]);
-    await deps.reviewGate(uenv, { pr: opened.url, keys: results.filter((x) => DONE.has(x.outcome)).map((x) => x.key) });
+    // The gate rates every ticket on the PR, including those merged into the group by an earlier run (a
+    // group can finish across restarts), or a Low rating could auto-merge fixes it never saw. A PR that
+    // already existed is not re-gated when a later run re-delivers its group: it was gated when it
+    // opened, or predates the gate.
+    if (!opened.existing) await deps.reviewGate(uenv, { pr: opened.url, keys: delivered.map((x) => x.key) });
   }
   log(`PR: ${opened.url}`);
   return finish('done', { pr: opened.url });

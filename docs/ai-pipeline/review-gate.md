@@ -2,6 +2,8 @@
 
 Part of the [AI development pipeline](README.md). The gate starts only **after the pipeline publishes a fix PR**: a single-ticket bug PR (`implement run BUG-7 --pr`) or a bug-epic group PR ([PR groups](implement.md#bug-epics-pr-groups)). Implementation, verifier pairs, architecture review, QE, the PR check and the grouping of bugs run exactly as before; feature stories and feature epics are never gated.
 
+A group PR is gated once, by the run that opens it, with **every ticket merged into the group**, including tickets an earlier run merged (a group can finish across restarts). A later run that re-delivers the group with its existing PR does not gate it again; a reopened ticket joining the open PR re-gates it with all the group's tickets.
+
 The code is in `scripts/review-gate/`; its settings are `implement.reviewGate` and `implement.autoMerge` in `scripts/implement/config.json`, and the board field names are `board.fields` in `scripts/board/config.json`.
 
 ```mermaid
