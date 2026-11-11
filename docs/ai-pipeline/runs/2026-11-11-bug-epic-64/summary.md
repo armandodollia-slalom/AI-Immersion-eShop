@@ -37,6 +37,21 @@ ordering groups, D13b).
 \#71, #97 and #100); fix the MD012 blank lines in BUG-13's plan files (#100); make
 `TC_BUG_14_06` not depend on the other tickets' rows (#102).
 
+## After the run: escalation questions (#101)
+
+PR #101 (questions and a **Resolved** checkbox on Failed tickets, and
+`implement requeue`) was merged to main at 12:00 and into this branch at
+12:02 (9 conflicted files, resolved so that an `escalation-resolved` label
+bypasses a standing escalation like `--force`). The first new-style failure
+comments came at 12:20 for the tickets blocked behind BUG-1, and showed D22
+(fixed). BUG-1 was labeled `escalation-resolved` by hand
+without answers and re-ran to the same escalation (30 minutes of opus); its
+new failure comment asks the one decision that matters
+([#31](https://github.com/armandodollia-slalom/AI-Immersion-eShop/issues/31#issuecomment-6804680354):
+remove the `test.fixme` and drop the nested-run test TC-BUG-1-07, recommended).
+Answer it and tick **Resolved**; `implement requeue` then runs BUG-1 with the
+decision and the 5 tickets behind it.
+
 ## Totals
 
 | Metric | Value |
@@ -51,7 +66,7 @@ ordering groups, D13b).
 | By stage | PR checks $26.37 (87 runs), implementation $25.02 (71), QE automation + verify $11.82 (60), QE plan + verify $8.15 (61), review $2.58 (23), pairs $0.93, epic plan $0.77 |
 | Copilot premium requests | 1,037 (Opus 930, Sonnet 107), then the monthly quota ran out |
 | Cache hit rate | 87% |
-| Pipeline flow defects found and fixed | **21** (D1–D21, plus D13b), all with tests |
+| Pipeline flow defects found and fixed | **22** (D1–D22, plus D13b), all with tests; D16 was superseded by main's own fix (#99) at the merge |
 | Observations recorded | 9 (O1–O9) |
 
 ## What worked
@@ -80,7 +95,7 @@ ordering groups, D13b).
 | Group (bug epic) delivery | D2 `dependsOn` ignored, D7/D7b stale tickets at push, D8 duplicate PR checks, D9 existing PR, D17 shared spec files, D19 dirty metrics blocked a merge |
 | Gates that did not gate | D4/D5 QE commit failed lint, D15 no drift check, D16 unit tests never matched (no ticket ran Basket/Ordering/Application tests) |
 | Provider and environment | D1 Copilot prompt file outside cwd, D10 QE on the user's slot-0 stack, D12 quota outage read as ticket failures, O6 host sleep, O7 hidden background model |
-| Board | D18 blocked-on-plan never restarted (QE), D20 Failed → Pending Review, D21 earlier-merged tickets' cards |
+| Board | D18 blocked-on-plan never restarted (QE), D20 Failed → Pending Review, D21 earlier-merged tickets' cards, D22 blocked tickets' failure comments (escalation questions, #101) |
 | Monitoring | D11 live cost invisible |
 
 ## Lessons

@@ -460,3 +460,20 @@ runs, so cross-ticket breakage reaches CI: on #102, BUG-14's test counts the
 rows of a doc table that BUG-7 and BUG-8 also edited. Follow-up: run the
 harness checks and the touched services' unit tests in the unit worktree
 before the PR (and the group's QE specs when the stack is available).
+
+## D22: tickets skipped for a blocker got a misleading failure comment
+
+- **Symptom:** the first questions-style failure comments (run 10, after
+  merging #101) on BUG-2, 3, 9, 10 and 15 read "The pipeline stopped: **no
+  result**. This looks like a mechanical failure (crash, timeout or agent
+  outage)", although they were skipped because BUG-1 is escalated.
+- **Root cause:** in epic delivery a ticket skipped for a failed blocker never
+  runs, so it has no `.agent-state/implement/<KEY>.json`. `board fail` read an
+  empty result (no outcome, so "mechanical"), and its event id fell back to
+  the current time, so every run would post another comment.
+- **Fix:** `recordUnrun()` records the outcome of a ticket the batch never ran
+  (keeping its first finish time, and never touching a record of a story that
+  ran); the comment names the blocker and says to resolve it first. Tests in
+  `batch.test.mjs` and `escalation.test.mjs`; `escalations.md`. Commit
+  `e28c656`.
+- **Impact:** five confusing comments on the board, one per run.
