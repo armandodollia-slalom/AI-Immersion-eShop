@@ -598,7 +598,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -612,7 +612,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -692,7 +692,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -712,7 +712,7 @@
           {
             "name": "PageSize",
             "in": "query",
-            "description": "Number of items to return in a single page of results",
+            "description": "Number of items to return in a single page of results (0 to 100)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -726,7 +726,7 @@
           {
             "name": "PageIndex",
             "in": "query",
-            "description": "The index of the page of results to return",
+            "description": "The index of the page of results to return (0 or greater)",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
               "type": [
@@ -776,7 +776,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -988,6 +988,53 @@
           },
           "type": {
             "type": "string"
+          }
+        }
+      },
+      "HttpValidationProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         }
       },
