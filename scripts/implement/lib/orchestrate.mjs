@@ -404,7 +404,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
       diagText = formatDiagnostics(diag);
       const checks = await runChecks(ctx, worktree, files);
       if (!checks.ok) {
-        verdict = { verdict: 'CHANGES_REQUESTED', findings: [...diagnosticFindings(diag), { severity: 'blocking', category: 'build', file: null, issue: 'the build or the existing unit tests failed', detail: checks.output }] };
+        verdict = { verdict: 'CHANGES_REQUESTED', findings: [...diagnosticFindings(diag), { severity: 'blocking', category: 'build', file: null, issue: 'a harness check (the build, or the generated test stack drift check) or the existing unit tests failed', detail: checks.output }] };
       } else {
         const disputes = formatDisputes(pending.open, pending.overruled) || null;
         const raw = st.verify === 'ui' ? await verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) : await verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec, disputes });
