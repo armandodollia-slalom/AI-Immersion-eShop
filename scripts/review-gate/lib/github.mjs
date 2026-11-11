@@ -115,7 +115,9 @@ export const prCommits = (gh, repo, pr) => ghLines(gh, ['api', `repos/${repo}/pu
 //   gh-user  the gh CLI's logged-in user (today; works while main requires no approvals from people)
 //   app      a GitHub App with a ruleset bypass, once approvals are required: its installation token
 //            in the environment variable `appTokenEnv` (REVIEW_GATE_APP_TOKEN) becomes GH_TOKEN
-export function mergeIdentity(settings, env = process.env) {
+//   bot      the pipeline's PR bot (dev-bot-<login>, scripts/pipeline/lib/bot.mjs): `bot()` returns
+//            its { GH_TOKEN }, or null when it is not set up (then the merge is refused)
+export function mergeIdentity(settings, env = process.env, { bot } = {}) {
   const identity = settings?.identity ?? 'gh-user';
   if (identity === 'gh-user') return { identity, env: undefined };
   if (identity === 'app') {
@@ -123,13 +125,18 @@ export function mergeIdentity(settings, env = process.env) {
     if (!env[name]) throw new Error(`implement.autoMerge.identity is "app" but ${name} is not set (the GitHub App's installation token)`);
     return { identity, env: { ...env, GH_TOKEN: env[name] } };
   }
-  throw new Error(`implement.autoMerge.identity must be "gh-user" or "app", not "${identity}"`);
+  if (identity === 'bot') {
+    const token = bot?.()?.GH_TOKEN;
+    if (!token) throw new Error('implement.autoMerge.identity is "bot" but the pipeline\'s PR bot has no token (run `node scripts/pipeline/pipeline.mjs bot status`)');
+    return { identity, env: { ...env, GH_TOKEN: token } };
+  }
+  throw new Error(`implement.autoMerge.identity must be "gh-user", "app" or "bot", not "${identity}"`);
 }
 
 // `gh pr merge --auto --squash`: GitHub merges once its own requirements are met (at once when there
-// are none). Throws when the merge is refused.
-export function mergePr(gh, repo, pr, settings) {
-  const { identity, env } = mergeIdentity(settings);
+// are none). Throws when the merge is refused. `bot`: see mergeIdentity.
+export function mergePr(gh, repo, pr, settings, { bot } = {}) {
+  const { identity, env } = mergeIdentity(settings, process.env, { bot });
   const method = settings?.method ?? 'squash';
   ghOk(gh, ['pr', 'merge', String(pr), '-R', repo, '--auto', `--${method}`], { env });
   return { identity, method };

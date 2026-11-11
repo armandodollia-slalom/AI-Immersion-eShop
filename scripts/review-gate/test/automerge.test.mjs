@@ -25,7 +25,9 @@ test('merge identity: gh-user uses the gh login; app needs its installation toke
   assert.deepEqual(mergeIdentity({ identity: 'gh-user' }), { identity: 'gh-user', env: undefined });
   assert.equal(mergeIdentity({ identity: 'app', appTokenEnv: 'X_TOKEN' }, { X_TOKEN: 't0k' }).env.GH_TOKEN, 't0k');
   assert.throws(() => mergeIdentity({ identity: 'app' }, {}), /REVIEW_GATE_APP_TOKEN is not set/);
-  assert.throws(() => mergeIdentity({ identity: 'bot' }), /must be "gh-user" or "app"/);
+  assert.equal(mergeIdentity({ identity: 'bot' }, {}, { bot: () => ({ GH_TOKEN: 'b0t' }) }).env.GH_TOKEN, 'b0t', 'bot merges with the PR bot token');
+  assert.throws(() => mergeIdentity({ identity: 'bot' }, {}, { bot: () => null }), /"bot" but the pipeline's PR bot has no token/);
+  assert.throws(() => mergeIdentity({ identity: 'robot' }), /must be "gh-user", "app" or "bot"/);
   const gh = fakeGh();
   gh.addPr(1);
   mergePr(gh.gh, 'acme/shop', 1, { identity: 'app', appTokenEnv: 'PATH' });

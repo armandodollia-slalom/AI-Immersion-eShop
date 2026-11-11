@@ -1,10 +1,11 @@
 // Auto-merge of a PR the gate cleared (PR severity Low, every ticket high confidence, no human reopens,
 // checks green, `implement.autoMerge.enabled`). Every merge goes through mergePr (github.mjs), which
 // picks the identity (`implement.autoMerge.identity`: gh-user today, a GitHub App with a ruleset bypass
-// once approvals from people are required). The PR is labeled `auto-merged`; its cards reach Done
+// once approvals from people are required, or the pipeline's PR bot). The PR is labeled `auto-merged`; its cards reach Done
 // through the existing `closed` event of `board sync` once GitHub closes the issues.
 import { MARKER, applyReview, approvalsLabel, renderNotice } from './gate.mjs';
 import { editPrLabels, mergePr, upsertComment } from './github.mjs';
+import { botEnvSync } from '../../pipeline/lib/bot.mjs';
 
 // Merges and records it, or, when GitHub refuses, sends the PR to review with the reason.
 // Returns { decision, state, merged, problems }.
@@ -12,7 +13,7 @@ export function autoMergePr(config, gh, a, decision, state, reviewContext) {
   const s = config.implement.reviewGate;
   const repo = config.board.repo;
   try {
-    const how = mergePr(gh, repo, a.pr, config.implement.autoMerge);
+    const how = mergePr(gh, repo, a.pr, config.implement.autoMerge, { bot: () => botEnvSync(config) });
     const merged = { ...state, action: 'auto-merge', merge: { identity: how.identity, method: how.method } };
     const problems = [];
     try {

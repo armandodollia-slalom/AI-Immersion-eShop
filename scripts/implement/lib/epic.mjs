@@ -15,6 +15,7 @@ import path from 'node:path';
 import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
+import { openPullRequest, prPublisher } from '../../pipeline/lib/bot.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
@@ -273,12 +274,13 @@ export async function prCheckUnit(env, keys, { fix = false } = {}) {
   }
 }
 
-function openPr(env, { title, body }) {
+// A unit's PR (a bug-epic group or the feature epic), pushed and opened as the pipeline's PR bot
+// (dev-bot-<login>, lib/bot.mjs), or as the developer's gh login when the bot is not set up.
+export async function openPr(env, { title, body }, deps = {}) {
   const { worktree, branch, prBase } = env;
-  const push = git(worktree, ['push', '-u', 'origin', branch]);
-  if (push.status !== 0) return { url: null, reason: `push failed: ${tail(push.stderr, 300)}` };
-  const created = run('gh', ['pr', 'create', '--base', prBase.replace(/^origin\//, ''), '--head', branch, '--title', title, '--body', body], { cwd: worktree });
-  return created.status === 0 ? { url: created.stdout.trim() } : { url: null, reason: `gh pr create failed: ${tail(created.stderr, 300)}` };
+  const publisher = deps.publisher ?? (await prPublisher(env.wtConfig ?? env.config));
+  const opened = openPullRequest(publisher, { cwd: worktree, branch, base: prBase.replace(/^origin\//, ''), title, body }, { run: deps.run });
+  return opened.url ? { url: opened.url } : { url: null, reason: opened.reason };
 }
 
 export const defaultDeps = (config, log) => ({
@@ -473,7 +475,8 @@ async function deliverUnit(env, unit, units, epicWt) {
     // PR through the review gate again.
     const merged = results.filter((x) => DONE.has(x.outcome) && loadEpicRun(config, epic.key).stories?.[x.key]?.merged);
     if (merged.length) {
-      const push = git(unit.worktree, ['push', 'origin', unit.branch]);
+      // As the PR's author (the PR bot when it is set up).
+      const push = (await prPublisher(wtConfig)).push(unit.worktree, unit.branch, { upstream: false });
       if (push.status !== 0) log(`push of ${unit.branch} failed: ${tail(push.stderr, 300)}`);
       else {
         for (const r of merged) reportStory(uenv, r, openPr);
@@ -535,7 +538,7 @@ async function deliverUnit(env, unit, units, epicWt) {
     return finish('done', { prBody: body });
   }
   const title = feature ? `Epic: ${(epic.title ?? epic.key).replace(/^Epic:\s*/i, '')}` : `Fix ${unit.keys.join(', ')}: ${unit.group.title}`;
-  const opened = deps.openPr(uenv, { title, body });
+  const opened = await deps.openPr(uenv, { title, body });
   if (!opened.url) {
     if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
     return finish('done', { reason: opened.reason });
