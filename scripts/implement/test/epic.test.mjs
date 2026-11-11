@@ -95,6 +95,7 @@ function fakeDeps(note, extra = {}) {
   const board = [];
   const prs = [];
   const agentCalls = [];
+  const checks = [];
   const deps = {
     runAgent: async (config, opts) => {
       agentCalls.push(opts);
@@ -104,14 +105,14 @@ function fakeDeps(note, extra = {}) {
     lsp: fakeLsp(),
     board: (root, key, args) => board.push([key, ...args]),
     epicQe: async (env, { key }) => ({ status: 'verified', key }),
-    prCheck: async () => ({ verdict: 'PASS', score: 10, openFindings: [] }),
+    prCheck: async (env, keys) => (checks.push(keys), { verdict: 'PASS', score: 10, openFindings: [] }),
     openPr: (env, { title, body }) => {
       prs.push({ title, body, branch: env.branch, base: env.prBase });
       return { url: `https://github.com/example/repo/pull/${100 + prs.length}` };
     },
     ...extra,
   };
-  return { deps, board, prs, agentCalls };
+  return { deps, board, prs, agentCalls, checks };
 }
 
 const featureNote = {
@@ -227,6 +228,7 @@ test('feature epic: plan note reaches every story, stories merge into the epic b
   assert.ok(merges.indexOf('DEMO-1: Merge into epic/shop') < merges.indexOf('DEMO-2: Merge into epic/shop'));
   assert.ok(fs.existsSync(path.join(wt, 'src/DEMO-2.cs')) && fs.existsSync(path.join(wt, 'src/DEMO-3.cs')));
   // One PR, every Closes line; board: review with the epic branch per story, then epic-pr.
+  assert.deepEqual(f.checks, [['DEMO-1', 'DEMO-2', 'DEMO-3', 'EPIC-10']], 'one PR check over every story and the journeys');
   assert.equal(f.prs.length, 1);
   assert.equal(f.prs[0].title, 'Epic: Shop');
   assert.match(f.prs[0].body, /Closes #11\nCloses #12\nCloses #13/);

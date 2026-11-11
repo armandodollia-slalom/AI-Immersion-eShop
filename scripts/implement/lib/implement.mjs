@@ -192,6 +192,15 @@ export function prepareWorktree(config, { key, file, base, branch, worktree, mer
       writeTicket(wtConfig, key, { content: text, meta: metaFor({ key, type: 'story', title: /^#\s+(.+)$/m.exec(text)?.[1] ?? key, slug, source: null }, text), origin: 'file' });
     }
   }
+  // The epic's ticket (body and mockups) goes along when the run handed it over (`--epic`, or epic
+  // delivery), so the story's mockups-from-the-epic are found in the worktree too.
+  const parent = readJson(path.join(path.dirname(file), 'meta.json'), {})?.parent;
+  const epicDir = parent ? path.join(path.dirname(path.dirname(file)), parent) : null;
+  const handed = (process.env.PIPELINE_STORY_SOURCES ?? '').split(path.delimiter).filter(Boolean).map((p) => path.resolve(p));
+  if (epicDir && fs.existsSync(epicDir) && handed.includes(path.resolve(epicDir))) {
+    const dst = path.join(path.dirname(path.dirname(target)), parent);
+    if (!fs.existsSync(dst)) fs.cpSync(epicDir, dst, { recursive: true });
+  }
   return { config: wtConfig, story: target };
 }
 

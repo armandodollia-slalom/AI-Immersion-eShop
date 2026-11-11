@@ -123,9 +123,9 @@ export const defaultExperimentDeps = {
   runArm: runArmProcess,
   // A pooled e2e spec against an arm's result: `experiment.testCmd` with {file}; passes on exit 0.
   runTest: (config, arm, file) => run('sh', ['-c', (config.experiment?.testCmd ?? 'npx playwright test -c playwright.teststack.config.ts {file}').replace('{file}', JSON.stringify(file))], { cwd: arm.worktree, timeoutSec: config.experiment?.testTimeoutSec ?? 1800 }).status === 0,
-  // The PR check (report only, no fixer) of one ticket against the arm's whole diff.
-  prCheck: (config, arm, key, base) => {
-    const r = run(process.execPath, [PR_CHECK_CLI, 'run', '--story', key, '--base', base, '--no-fix', '--json'], { cwd: arm.worktree, env: armEnv({ id: 'grading' }, arm), timeoutSec: 14400 });
+  // The PR check (report only, no fixer) of all the epic's tickets against the arm's whole diff.
+  prCheck: (config, arm, keys, base) => {
+    const r = run(process.execPath, [PR_CHECK_CLI, 'run', '--stories', keys.join(','), '--base', base, '--no-fix', '--json'], { cwd: arm.worktree, env: armEnv({ id: 'grading' }, arm), timeoutSec: 14400 });
     try {
       const o = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
       return { verdict: o.verdict, score: o.score, upheld: (o.openFindings ?? []).length };
@@ -198,9 +198,8 @@ export async function gradeExperiment(config, id, { deps = {} } = {}) {
       tests.push({ file, from: t.arm, passed: Boolean(await d.runTest(config, arm, file)) });
     }
     for (const f of copied) fs.rmSync(path.join(arm.worktree, f), { force: true });
-    const prCheck = {};
-    for (const key of exp.tickets) prCheck[key] = await d.prCheck(config, arm, key, exp.baseSha);
-    arm.grade = { tests, passed: tests.filter((t) => t.passed).length, total: tests.length, prCheck, upheld: Object.values(prCheck).reduce((n, c) => n + (c.upheld ?? 0), 0), gradedAt: nowIso() };
+    const prCheck = await d.prCheck(config, arm, exp.tickets, exp.baseSha);
+    arm.grade = { tests, passed: tests.filter((t) => t.passed).length, total: tests.length, prCheck, upheld: prCheck.upheld ?? null, gradedAt: nowIso() };
     log(`experiment ${id}: arm ${arm.name} graded (${arm.grade.passed}/${arm.grade.total} shared tests, ${arm.grade.upheld} upheld PR check finding(s))`);
   }
   saveExperiment(config, exp);

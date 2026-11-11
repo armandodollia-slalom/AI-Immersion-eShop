@@ -177,6 +177,6 @@ test('experiment run: arms from one base on their own branches, results integrat
   assert.equal(storyArm.tokens, 600);
   assert.equal(storyArm.rework.reworked, 1, 'DEMO-2 modified the file DEMO-1 created');
   assert.equal(epicArm.rework.reworked, 0);
-  assert.deepEqual([epicArm.upheldFindings, storyArm.upheldFindings], [2, 4]);
+  assert.deepEqual([epicArm.upheldFindings, storyArm.upheldFindings], [1, 2]);
   assert.match(formatReport(rep), /Caveats:[\s\S]*n is small/);
 });

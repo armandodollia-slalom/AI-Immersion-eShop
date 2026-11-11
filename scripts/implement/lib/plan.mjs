@@ -202,10 +202,11 @@ export function validatePlan(raw, { storyText = '', limits = {} } = {}) {
   const { maxSubtasks = 4, maxLargeSubtasks = 1 } = limits;
   const errors = [];
   const fatal = [];
-  const detectedUi = isUiStory(storyText);
+  // A ticket with mockups is a UI story too (limits.hasMockups, from the ticket's mockups folder).
+  const detectedUi = isUiStory(storyText) || Boolean(limits.hasMockups);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, errors: ['the plan is not a JSON object'], fatal: [], plan: null };
   if (!['delegate', 'self'].includes(raw.mode)) errors.push('`mode` must be "delegate" or "self"');
-  if (raw.uiStory === true && !detectedUi) errors.push('`uiStory` is true but the story is not a UI story (no [FE] tag, no WebApp/WebAppComponents/Blazor in the title, no .razor file named)');
+  if (raw.uiStory === true && !detectedUi) errors.push('`uiStory` is true but the story is not a UI story (no [FE] tag, no WebApp/WebAppComponents/Blazor in the title, no .razor file named, no mockups)');
   const uiStory = detectedUi;
 
   if (!nonEmptyString(raw.modeReason)) errors.push('`modeReason` is required: one short sentence on why delegate or self');

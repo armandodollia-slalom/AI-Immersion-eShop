@@ -254,11 +254,12 @@ export async function epicQe(env, { key, note }) {
   return { status: state().automation?.status ?? 'unknown', bugs: state().automation?.bugs ?? [] };
 }
 
-// The PR check of one ticket (or the journey ticket) against the whole unit diff, through the PR check
-// CLI's existing interface. Report only unless `fix` (fixes are committed on the unit branch).
-export async function prCheckStory(env, key, { fix = false } = {}) {
+// The PR check of a whole unit (its tickets, and the journey ticket) against the unit diff, in one run of
+// the PR check's multi-ticket mode (`run --stories K1,K2`): every frontend ticket gets the design lens.
+// Report only unless `fix` (fixes are committed on the unit branch).
+export async function prCheckUnit(env, keys, { fix = false } = {}) {
   const { worktree, base, wtConfig } = env;
-  const r = cli(PR_CHECK_CLI, worktree, base, ['run', '--story', key, '--base', base, '--json', ...(fix ? [] : ['--no-fix'])], { timeoutSec: wtConfig.implement.epic?.prCheckTimeoutSec ?? 14400, sources: [ticketDir(wtConfig, key)] });
+  const r = cli(PR_CHECK_CLI, worktree, base, ['run', '--stories', keys.join(','), '--base', base, '--json', ...(fix ? [] : ['--no-fix'])], { timeoutSec: wtConfig.implement.epic?.prCheckTimeoutSec ?? 14400, sources: keys.map((k) => ticketDir(wtConfig, k)) });
   try {
     const out = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
     return { verdict: out.verdict, score: out.score, openFindings: out.openFindings ?? [], report: out.report ?? null };
@@ -283,7 +284,7 @@ export const defaultDeps = (config, log) => ({
   planEpic,
   runFoundation,
   epicQe,
-  prCheck: prCheckStory,
+  prCheck: prCheckUnit,
   openPr,
 });
 
@@ -485,16 +486,16 @@ async function deliverUnit(env, unit, units, epicWt) {
     if (qe.status !== 'verified') return finish(`epic-qe-${qe.status}`, { reason: `epic-level QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}` });
   }
 
-  // The PR check for the whole unit: each ticket (frontend ones get the design lens) and the journeys.
-  const prChecks = { ...(state.units?.[unit.id]?.prChecks ?? {}) };
+  // The PR check for the whole unit, in one run: every ticket (frontend ones get the design lens) and
+  // the journeys. Each ticket's row in the PR body shows the unit's result.
+  let prChecks = { ...(state.units?.[unit.id]?.prChecks ?? {}) };
   const mode = E.prCheck ?? 'report';
-  if (mode !== 'off') {
-    for (const key of [...unit.keys, ...(qe?.status === 'verified' ? [qeKey] : [])]) {
-      if (prChecks[key]) continue;
-      log(`PR check ${key} against ${unit.branch} (${mode})`);
-      prChecks[key] = await deps.prCheck(uenv, key, { fix: mode === 'fix' });
-      saveUnit(config, epic.key, unit.id, { prChecks });
-    }
+  const checked = [...unit.keys, ...(qe?.status === 'verified' ? [qeKey] : [])];
+  if (mode !== 'off' && !checked.every((k) => prChecks[k])) {
+    log(`PR check ${checked.join(', ')} against ${unit.branch} (${mode})`);
+    const result = await deps.prCheck(uenv, checked, { fix: mode === 'fix' });
+    prChecks = Object.fromEntries(checked.map((k) => [k, result]));
+    saveUnit(config, epic.key, unit.id, { prChecks, prCheck: result });
     commitAll(unit.worktree, `${feature ? epic.key : unit.id}: Record PR check metrics`, [wtConfig.metricsDir]);
   }
 
