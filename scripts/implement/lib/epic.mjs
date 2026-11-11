@@ -370,7 +370,7 @@ async function epicFlow(env) {
     ? [epicUnit]
     : (() => {
         const groups = note?.prGroups?.length ? note.prGroups : singleGroups(stories);
-        const gdeps = groupDeps(groups, stories);
+        const gdeps = groupDeps(groups, stories, note);
         return groups.map((g) => ({ id: g.id, kind: 'group', group: g, branch: groupBranchFor(config, epic.key, g.id), worktree: groupWorktreeFor(config, epic.key, g.id), keys: g.tickets, deps: gdeps.get(g.id) ?? [] }));
       })();
   for (const u of units) saveUnit(config, epic.key, u.id, { id: u.id, kind: u.kind, branch: u.branch, worktree: u.worktree, keys: u.keys, deps: u.deps, ...(u.group ? { title: u.group.title, reason: u.group.reason, risk: u.group.risk } : {}) });

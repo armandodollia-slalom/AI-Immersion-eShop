@@ -149,9 +149,21 @@ test('validateGroups: coverage, duplicates, Blocked-by order; no cap by default,
   assert.match(validateGroups(one, { stories, maxPerGroup: 2 }).errors.join(), /more than maxBugsPerGroup \(2\)/);
   const errors = validateGroups([{ id: 'b', tickets: ['BUG-2', 'BUG-3'] }, { id: 'a', tickets: ['BUG-1', 'BUG-3'] }], { stories }).errors.join('\n');
   assert.match(errors, /BUG-3 is in both b and a/);
-  assert.match(errors, /BUG-2 is blocked by BUG-1, which is in the later group a/);
+  assert.match(errors, /BUG-2 is blocked by \(or dependsOn\) BUG-1, which is in the later group a/);
   assert.match(validateGroups([{ id: 'a', tickets: ['BUG-1'] }], { stories }).errors.join(), /BUG-2 is in no group/);
   assert.deepEqual(Object.fromEntries(groupDeps([{ id: 'a', tickets: ['BUG-1'] }, { id: 'b', tickets: ['BUG-2', 'BUG-3'] }], stories)), { a: [], b: ['a'] });
+});
+
+test("bug groups honour the design note's dependsOn like Blocked-by: ordering is validated and the later group waits", () => {
+  const stories = [{ key: 'BUG-1', blockedBy: [] }, { key: 'BUG-2', blockedBy: [] }, { key: 'BUG-3', blockedBy: [] }];
+  const note = { stories: [{ key: 'BUG-3', dependsOn: ['BUG-1'] }] };
+  const groups = [{ id: 'auth', tickets: ['BUG-1'] }, { id: 'paging', tickets: ['BUG-2'] }, { id: 'validation', tickets: ['BUG-3'] }];
+  assert.deepEqual(Object.fromEntries(groupDeps(groups, stories, note)), { auth: [], paging: [], validation: ['auth'] });
+  assert.deepEqual(Object.fromEntries(groupDeps(groups, stories)), { auth: [], paging: [], validation: [] }, 'without the note only Blocked-by counts');
+  assert.match(validateGroups([...groups].reverse(), { stories, note }).errors.join(), /BUG-3 is blocked by \(or dependsOn\) BUG-1, which is in the later group auth/);
+  const v = validateNote({ stories: note.stories, prGroups: [...groups].reverse() }, { keys: ['BUG-1', 'BUG-2', 'BUG-3'], groups: true, stories });
+  assert.equal(v.ok, false);
+  assert.deepEqual(v.noteErrors, [], 'only the grouping is wrong, so the run can fall back to one PR per ticket');
 });
 
 test('deliveryShape: bug epics are grouped when most tickets are bugs; --grouping overrides', () => {

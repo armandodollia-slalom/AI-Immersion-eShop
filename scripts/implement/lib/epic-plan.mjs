@@ -49,10 +49,13 @@ export function deliveryShape(tickets, grouping = 'auto') {
 // and `--grouping ticket`.
 export const singleGroups = (stories) => stories.map((s) => ({ id: s.key.toLowerCase(), title: s.title ?? s.key, tickets: [s.key], reason: 'one PR per ticket', risk: null }));
 
+// A ticket's in-epic prerequisites for grouping: its Blocked-by tickets plus the design note's dependsOn.
+const prerequisites = (story, note) => [...new Set([...(story?.blockedBy ?? []), ...((note?.stories ?? []).find((n) => n.key === story?.key)?.dependsOn ?? [])])];
+
 // Validates the orchestrator's PR groups: every ticket in exactly one group, at most `maxPerGroup`
 // tickets per group (only when a positive cap is configured; none by default), and a ticket's Blocked-by
-// tickets in the same group or an earlier one.
-export function validateGroups(raw, { stories, maxPerGroup = null }) {
+// tickets (and the note's dependsOn) in the same group or an earlier one.
+export function validateGroups(raw, { stories, maxPerGroup = null, note = null }) {
   const errors = [];
   const known = new Map(stories.map((s) => [s.key, s]));
   const seen = new Map();
@@ -78,20 +81,21 @@ export function validateGroups(raw, { stories, maxPerGroup = null }) {
   const index = new Map(groups.map((g, i) => [g.id, i]));
   for (const g of groups) {
     for (const k of g.tickets) {
-      for (const b of known.get(k)?.blockedBy ?? []) {
+      for (const b of prerequisites(known.get(k), note)) {
         if (!seen.has(b)) continue;
-        if (index.get(seen.get(b)) > index.get(g.id)) errors.push(`prGroups.${g.id}: ${k} is blocked by ${b}, which is in the later group ${seen.get(b)}; put ${b} in the same or an earlier group`);
+        if (index.get(seen.get(b)) > index.get(g.id)) errors.push(`prGroups.${g.id}: ${k} is blocked by (or dependsOn) ${b}, which is in the later group ${seen.get(b)}; put ${b} in the same or an earlier group`);
       }
     }
   }
   return { ok: !errors.length, errors, groups };
 }
 
-// The groups each group waits for: those holding a Blocked-by ticket of one of its tickets.
-export function groupDeps(groups, stories) {
+// The groups each group waits for (and stacks on): those holding a Blocked-by ticket, or a ticket the
+// design note says it dependsOn, of one of its tickets.
+export function groupDeps(groups, stories, note = null) {
   const of = new Map(groups.flatMap((g) => g.tickets.map((k) => [k, g.id])));
   const byKey = new Map(stories.map((s) => [s.key, s]));
-  return new Map(groups.map((g) => [g.id, [...new Set(g.tickets.flatMap((k) => (byKey.get(k)?.blockedBy ?? []).map((b) => of.get(b)).filter((x) => x && x !== g.id)))]]));
+  return new Map(groups.map((g) => [g.id, [...new Set(g.tickets.flatMap((k) => prerequisites(byKey.get(k) ?? { key: k }, note).map((b) => of.get(b)).filter((x) => x && x !== g.id)))]]));
 }
 
 // The decision log record of the grouping (stage implement-epic-plan, decision pr-groups).
@@ -160,7 +164,7 @@ export function epicPlanTask({ epic, stories, mockups = [], errors = null, group
       ? [
           '',
           'This is a **bug epic**: its tickets are not delivered as one PR. Decide which bug tickets ship together as one PR (`prGroups`); each group gets its own branch from the base, its tickets run the usual per-ticket flow and merge into it, and the group gets one PR. Guidance:',
-          '- group tickets that share a service or area, change overlapping files, share a root cause, or depend on each other (a Blocked-by ticket goes in the same group or an earlier one);',
+          '- group tickets that share a service or area, change overlapping files, share a root cause, or depend on each other (a Blocked-by or dependsOn ticket goes in the same group or an earlier one; a group that needs another group\'s tickets waits for that group\'s PR and is stacked on its branch, and is skipped if it fails, so add a cross-group dependsOn only when a fix really needs the other fix);',
           `- keep each PR reviewable: a reviewer should be able to follow the whole group (a judgement call${maxPerGroup > 0 ? `; the harness allows at most ${maxPerGroup} tickets per group` : ''}); a single-ticket group is fine;`,
           '- keep unrelated or risky fixes separate: a security or data fix ships alone; one failing ticket holds back its whole group, so do not group risky fixes with easy ones;',
           '- every ticket in exactly one group. Leave `foundation` null and `journeys` empty unless a journey really crosses tickets.',
@@ -241,7 +245,7 @@ export function validateNote(raw, { keys, groups = false, stories: tickets = nul
   // back to one PR per ticket instead of failing the epic.
   let groupErrors = [];
   if (groups) {
-    const g = validateGroups(raw.prGroups, { stories: tickets ?? keys.map((key) => ({ key, blockedBy: [] })), maxPerGroup });
+    const g = validateGroups(raw.prGroups, { stories: tickets ?? keys.map((key) => ({ key, blockedBy: [] })), maxPerGroup, note });
     note.prGroups = g.groups;
     groupErrors = g.errors;
   }
