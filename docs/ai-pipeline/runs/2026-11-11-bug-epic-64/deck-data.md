@@ -13,12 +13,12 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | PR groups chosen by the supervisor | 9 (timeline 04:19) |
 | Group PRs open | 5: [#100](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/100) catalog-item-validation (6 bugs), [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70) catalog-write-auth, [#71](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/71) token-audience, [#72](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/72) login-open-redirect, [#97](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/97) catalog-paging |
 | Group PR CI | #72 green; #70/#71/#97 fail `teststack` (compose drift from BUG-4), #70/#71 also `test` (scopes test, BUG-4) |
-| Tickets verified (implemented + tests verified) | 13: BUG-4, 5, 6, 7, 8, 11, 12, 13, 17, 18, 19, 20, 21 |
+| Tickets verified (implemented + tests verified) | 14: BUG-4, 5, 6, 7, 8, 11, 12, 13, 14, 17, 18, 19, 20, 21 |
 | Tickets escalated to a human | 1: BUG-1 (QE meta-test), blocking BUG-2/3 |
 | Agent runs | 235 |
 | Token cost (list price) | $52.48 (implement $20.98; PR checks $12.70) |
 | Copilot premium requests | 930 at 08:27, then the monthly quota ran out (~08:55) |
-| Pipeline defects found and fixed | 17 (D1-D17) |
+| Pipeline defects found and fixed | 19 (D1-D19) |
 | Cache hit rate | 88% |
 
 ## Lane counts over time

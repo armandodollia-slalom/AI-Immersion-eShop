@@ -392,3 +392,31 @@ policy for every Claude run.
   The push reason includes stdout. Commit `532790c`.
 - **Impact:** the largest group of the run (6 bugs) was held back; any stacked
   group whose tickets share spec files hits this.
+
+## D18: a blocked-on-plan automation never restarted
+
+- **Symptom:** BUG-16's plan verified at 10:29, but the next run ended
+  `qe-blocked-on-plan` again after its implementer re-ran; no automation log
+  was written.
+- **Root cause:** the QE stop hook returns early when automation already ran
+  on the same implementation hash (`workingHash === hash`) and was not
+  interrupted, whatever its outcome. A `blocked-on-plan` run therefore stayed
+  terminal after the plan was fixed, and the implement worker read that
+  status back.
+- **Fix:** `automationUpToDate()` treats a `blocked-on-plan` run as out of
+  date once the plan is verified. Unit test in `scripts/qe/test/unit.test.mjs`.
+  Commit `15f7450`.
+- **Impact:** BUG-16 needed two extra runs (each with an opus implementer).
+
+## D19: metrics left in a group worktree blocked the next merge
+
+- **Symptom:** BUG-14 (verified) ended `merge-conflict`: "Your local changes
+  to the following files would be overwritten by merge:
+  .agent-metrics/token-usage.jsonl".
+- **Root cause:** the agent that resolved BUG-8's conflict ran in the group
+  worktree and recorded its usage there after the merge commit; nothing
+  committed it, and git refuses to merge over a dirty file.
+- **Fix:** `mergeStory` commits pending metrics in the unit worktree before
+  each merge (metrics logs merge as a union). Test in `epic.test.mjs`.
+  Commit `0865621`.
+- **Impact:** the `basket-cart` group (3 bugs) was held back one run.
