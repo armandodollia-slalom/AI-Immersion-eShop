@@ -1,0 +1,4 @@
+description: >
+  Default data, unchanged. BUG-5 cases only need the default user alice (password Pass123$)
+  signed in to the WebApp; no extra rows are seeded.
+extends: default

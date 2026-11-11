@@ -19,7 +19,6 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 
 | Bug | Evidence | Test (fixme) |
 | --- | --- | --- |
-| Open redirect after sign-in: `/user/login?returnUrl=//evil.example` returns `302 Location: http://evil.example/` | `LogIn.razor` only rejects URIs that parse as absolute; protocol-relative URLs pass | `auth-login.spec.ts` › a protocol-relative returnUrl on /user/login must not redirect off-site |
 | A basket line whose product is no longer in the catalog breaks every page for that user | `BasketState.FetchBasketItemsAsync` indexes `catalogItems[item.ProductId]`; WebApp logs `KeyNotFoundException: The given key '99999' was not present in the dictionary`; `CartMenu` renders on every page | `basket-cart.spec.ts` › a basket line for a product no longer in the catalog does not break the site |
 | Basket.API stores zero and negative quantities | gRPC `UpdateBasket` with quantities -3 and 0 returns OK and writes them to Redis; `BasketItem.Validate` is never invoked | `basket-api.spec.ts` › UpdateBasket rejects zero or negative quantities |
 | Basket.API accepts tokens without the `basket` scope | Identity's `ApiResource`s declare no scopes, so tokens have no `aud`; `AddDefaultAuthentication` sets `ValidateAudience = false` | `basket-api.spec.ts` › a token issued without the basket scope cannot update the basket |
@@ -79,8 +78,8 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 - **Steps:** request the URL with a relative, absolute or protocol-relative return URL, or post the login form with a tampered `ReturnUrl`.
 - **Expected outcome:** relative URLs are followed; anything off-site goes to the home page or is refused.
 - **Positive cases:** `returnUrl=item/7` goes to `/item/7`; "Log in to purchase" returns to the item page without adding it to the bag.
-- **Negative/edge cases:** `https://evil.example/` falls back to `/`; a tampered Identity `ReturnUrl` is refused (500 "invalid return URL", no redirect); `//evil.example` redirects off-site (bug, fixme).
-- **Covered by:** `auth-login.spec.ts` › a relative returnUrl…, an absolute returnUrl…, a protocol-relative returnUrl… (fixme); `auth-identity-api.spec.ts` › a tampered off-site ReturnUrl….
+- **Negative/edge cases:** `https://evil.example/` falls back to `/`; a tampered Identity `ReturnUrl` is refused (500 "invalid return URL", no redirect); `//evil.example` and `/\evil.example` fall back to `/`.
+- **Covered by:** `auth-login.spec.ts` › a relative returnUrl…, an absolute returnUrl…, a protocol-relative returnUrl…; `auth-identity-api.spec.ts` › a tampered off-site ReturnUrl….
 
 ## Session persistence
 

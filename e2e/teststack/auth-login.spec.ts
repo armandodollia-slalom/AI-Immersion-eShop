@@ -303,9 +303,7 @@ test.describe('auth-lockout scenario: sessions, protected pages and returnUrl', 
     await page.context().close();
   });
 
-  // BUG: LogIn.razor only rejects URIs that parse as absolute. "//evil.example" is a protocol-relative
-  // URL, so Nav.NavigateTo sends a 302 to http://evil.example/ - an open redirect after sign-in.
-  test.fixme('a protocol-relative returnUrl on /user/login must not redirect off-site', async ({ browser }) => {
+  test('a protocol-relative returnUrl on /user/login must not redirect off-site', async ({ browser }) => {
     const page = await freshPage(browser);
     await login(page, 'alice');
     const response = await page.context().request.get('/user/login?returnUrl=%2F%2Fevil.example', { maxRedirects: 0 });
