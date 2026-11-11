@@ -283,10 +283,17 @@ export async function prCheckUnit(env, keys, { fix = false } = {}) {
   }
 }
 
-function openPr(env, { title, body }) {
+// Pushes the unit branch and opens its PR; a unit re-delivered on resume keeps the PR it already has
+// (its body is refreshed).
+function openPr(env, { title, body, existing = null }) {
   const { worktree, branch, prBase } = env;
   const push = git(worktree, ['push', '-u', 'origin', branch]);
   if (push.status !== 0) return { url: null, reason: `push failed: ${tail(push.stderr, 300)}` };
+  const prior = existing ?? (run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url'], { cwd: worktree }).stdout ?? '').trim();
+  if (prior) {
+    run('gh', ['pr', 'edit', prior, '--body', body], { cwd: worktree });
+    return { url: prior };
+  }
   const created = run('gh', ['pr', 'create', '--base', prBase.replace(/^origin\//, ''), '--head', branch, '--title', title, '--body', body], { cwd: worktree });
   return created.status === 0 ? { url: created.stdout.trim() } : { url: null, reason: `gh pr create failed: ${tail(created.stderr, 300)}` };
 }
@@ -539,7 +546,7 @@ async function deliverUnit(env, unit, units, epicWt) {
     return finish('done', { prBody: body });
   }
   const title = feature ? `Epic: ${(epic.title ?? epic.key).replace(/^Epic:\s*/i, '')}` : `Fix ${unit.keys.join(', ')}: ${unit.group.title}`;
-  const opened = deps.openPr(uenv, { title, body });
+  const opened = deps.openPr(uenv, { title, body, existing: state.units?.[unit.id]?.pr ?? null });
   if (!opened.url) {
     log(`no PR: ${opened.reason}`);
     if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);

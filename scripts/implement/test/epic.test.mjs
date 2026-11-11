@@ -109,9 +109,9 @@ function fakeDeps(note, extra = {}) {
     board: (root, key, args) => board.push([key, ...args]),
     epicQe: async (env, { key }) => ({ status: 'verified', key }),
     prCheck: async (env, keys) => (checks.push(keys), { verdict: 'PASS', score: 10, openFindings: [] }),
-    openPr: (env, { title, body }) => {
-      prs.push({ title, body, branch: env.branch, base: env.prBase });
-      return { url: `https://github.com/example/repo/pull/${100 + prs.length}` };
+    openPr: (env, { title, body, existing }) => {
+      prs.push({ title, body, branch: env.branch, base: env.prBase, existing });
+      return { url: existing ?? `https://github.com/example/repo/pull/${100 + prs.length}` };
     },
     ...extra,
   };
@@ -353,6 +353,18 @@ test('bug epic: a stacked group gets the tickets of the groups below it synced b
   await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
   assert.match(seen.two ?? '', /## Implementation Notes/, "the stacked group's worktree has BUG-1's ticket with its notes");
   assert.equal(seen.three, null, 'an independent group gets no other tickets');
+});
+
+test('bug epic: a group re-delivered by a later run keeps the PR it already has', async () => {
+  const env = makeRepo({ bugs: true });
+  const worker = fakeWorker();
+  const note = { stories: [], prGroups: [{ id: 'all', title: 'All', tickets: ['BUG-1', 'BUG-2', 'BUG-3'] }] };
+  const first = fakeDeps(note, { startWorker: worker.startWorker });
+  const r1 = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: first.deps, log: () => {} });
+  const second = fakeDeps(note, { startWorker: worker.startWorker });
+  const r2 = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: second.deps, log: () => {} });
+  assert.deepEqual(second.prs.map((p) => p.existing), r1.epic.prs, 'the second run hands the existing PR to openPr');
+  assert.deepEqual(r2.epic.prs, r1.epic.prs);
 });
 
 test('singleGroups: one group per ticket', () => {
