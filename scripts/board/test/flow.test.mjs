@@ -12,6 +12,7 @@ import { mergeEpicEvidence, parseEpicEvidence, renderEpicEvidence, upsertEpicEvi
 import { TRANSITIONS, allocateSeq, applyEvent, encodeMarker, eventsForState, failStory, flowDir, latestMarker, nextLane, parseMarker, readFlow } from '../lib/flow.mjs';
 import { syncBoard } from '../lib/sync.mjs';
 import { failedResults, skipRefused } from '../../implement/lib/board-events.mjs';
+import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BOARD_CLI = path.resolve(here, '..', 'board.mjs');
@@ -41,7 +42,7 @@ function fixture({ issues = {}, origin = null } = {}) {
     root,
     stateDir: '.agent-state',
     metricsDir: '.agent-metrics',
-    storiesDir: 'product-research/stories',
+    tickets: { dir: '.agent-state/board', repo: 'acme/shop' },
     board: { repo: 'acme/shop', owner: 'acme', ownerType: 'user', projectNumber: 1, statusField: 'Status', columns: COLUMNS, storyLabel: 'story', blockedLabel: 'needs-human', epicLabel: 'epic' },
   };
   const gh = () => JSON.parse(fs.readFileSync(stateFile, 'utf8'));
@@ -246,8 +247,7 @@ test('the epic evidence comment shrinks to one line per story over the size limi
 test('interactive sessions: story-start claims, the stop hook reports Testing, the bug, Testing again and Pending Review', () => {
   const f = fixture({ origin: `https://github.com/${REAL_REPO}.git` });
   try {
-    fs.mkdirSync(path.join(f.root, 'product-research/stories'), { recursive: true });
-    fs.writeFileSync(path.join(f.root, 'product-research/stories/DEMO-1-first.md'), '# DEMO-1: First\n\nText.\n');
+    seedTicket(f.root, { key: 'DEMO-1', slug: 'DEMO-1-first', text: '# DEMO-1: First\n\nText.\n' });
     const env = { ...process.env, ...f.env, PIPELINE_ROOT: f.root, PIPELINE_HEADLESS: '' };
     const cli = (args, extra = {}) => spawnSync(process.execPath, [BOARD_CLI, ...args], { cwd: f.root, env: { ...env, ...extra }, input: '{}', encoding: 'utf8' });
     const stateFile = path.join(f.root, '.agent-state/stories/DEMO-1.json');

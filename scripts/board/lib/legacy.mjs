@@ -1,4 +1,4 @@
-// Reads the legacy story folder (config.tickets.legacyDir, `product-research/` until it is deleted) and
+// Reads the legacy story folder (config.tickets.legacyDir, until `board migrate --delete-local` removes it) and
 // classifies every file in it: a ticket (story, bug, epic, research spike), an asset of a ticket
 // (mockups, images, attachments), ignored OS clutter, or unplaced. Used by `board migrate` and, while the
 // folder still exists, by the loader to import a ticket that is not on the board yet.

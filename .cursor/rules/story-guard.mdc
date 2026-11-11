@@ -1,6 +1,6 @@
 ---
-description: Story and epic folders are off limits except the story handed to the pipeline
+description: The ticket cache is off limits except the story handed to the pipeline
 alwaysApply: true
 ---
 
-Ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. The `pipeline hook pre-tool` hook enforces this.
+Stories, epics, spikes and mockups are GitHub issues on the story board; the pipeline caches them in `.agent-state/board/<KEY>/`. Ignore that cache except for what was handed to the pipeline: the story given to `pipeline start <KEY>` (its folder, with its own mockups), or the tickets given to `pipeline implement run`. Do not read, search, list or edit anything else there. The `pipeline hook pre-tool` hook enforces this.

@@ -2,7 +2,7 @@
 
 **Each run got further than the last. Run 3, from a clean `main`, took one command to a reviewed implementation, a 10/10 test plan and a full set of written tests. Those tests are blocked by a test-runner mismatch in the QE config, not by the story or the agents.**
 
-This is the first trial of the [AI development pipeline](README.md) on a real story, [PROMO-1](../../product-research/stories/PROMO-1-promotions-service-scaffold.md) (the Promotions.API service scaffold for the eShop promotions and marketing features). All three runs happened on 2026-11-10. Numbers come from each run's own metrics and logs.
+This is the first trial of the [AI development pipeline](README.md) on a real story, [PROMO-1](https://github.com/armandodollia-slalom/AI-Immersion-eShop/issues/52) (the Promotions.API service scaffold for the eShop promotions and marketing features). All three runs happened on 2026-11-10. Numbers come from each run's own metrics and logs.
 
 ## The flow
 

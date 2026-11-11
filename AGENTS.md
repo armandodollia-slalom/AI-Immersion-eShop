@@ -27,7 +27,7 @@ Skip this only for backend-only, docs-only or no-behavior-change work, and say s
 
 ## Story and epic folders
 
-Agents ignore `product-research/` (stories, epics, mockups) except for what was handed to the pipeline: the story given to `pipeline start <KEY>`, or the folder or files given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
+Stories, epics, spikes and mockups are GitHub issues on the story board; the pipeline caches them in `.agent-state/board/<KEY>/`. Agents ignore that cache except for what was handed to the pipeline: the story given to `pipeline start <KEY>` (its folder, with its own mockups), or the tickets given to `pipeline implement run`. Do not read, search, list or edit anything else there. A PreToolUse hook (`pipeline hook pre-tool`, configured in `scripts/pipeline/config.json` → `storyGuard`) enforces this.
 
 ## Code intelligence (LSP)
 

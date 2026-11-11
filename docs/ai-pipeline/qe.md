@@ -17,8 +17,8 @@ flowchart LR
   P -.->|5 rounds below 9/10| E[Escalation for a human]
 ```
 
-- Output: `tests/plans/<story-file-name>/_index.md` plus one `TC-<KEY>-NN-<slug>.md` per case, covering every happy and sad path (see [tests/plans/README.md](../../tests/plans/README.md)).
-- The runner owns the index front matter. `story-sha` records the story text the plan was written for. When the story changes, the plan becomes stale and the agent gets the story diff and updates the affected cases in place, keeping the ids of the others stable.
+- Output: `tests/plans/<story-slug>/_index.md` (the slug is the story's original file name, kept in its issue metadata) plus one `TC-<KEY>-NN-<slug>.md` per case, covering every happy and sad path (see [tests/plans/README.md](../../tests/plans/README.md)).
+- The runner owns the index front matter. `story-sha` records the story text the plan was written for (the cached ticket's text, so it stays the same after the move to the board) and `story-issue` links the story's issue. When the story changes on the board, the plan becomes stale and the agent gets the story diff and updates the affected cases in place, keeping the ids of the others stable. The diff comes from the ticket cache, which keeps every version it fetched (`.agent-state/board/<KEY>/history/`), or else from the issue's edit history.
 - Every case file starts with a `## Why` section: the requirement or risk it protects and why it sits at its layer. The plan agent's result also lists what it deliberately left out and why. Both go to the [decision log](#decision-log), not to the verifier.
 - The verifier sees only the story and the plan. It never sees the planner's reasoning in its own context; the `## Why` sections are part of the plan it reads.
 
@@ -51,11 +51,11 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | `session-start` | resumes plan and automation runs that died; test plan and automation state of the active story, open product bugs, stale plans |
 | `stop` | after review approval: starts automation in the background, or resumes it if its run died |
 | `post-commit`, `post-merge` | nothing by default; with `git config qe.autoPlan true`, the plan loop in the background for stories added or changed |
-| `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes) |
+| `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes). A push touches a story through its plan or scenario folder, tests carrying its case ids, or its key in the branch name or a commit message; stories are checked against their cached ticket (fetched when missing) |
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
 | manual (local, or `workflow_dispatch`) | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
 
-Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself. Opt in to automatic planning on commit with `git config qe.autoPlan true`; opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
+Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself; `qe plan <KEY>` re-checks the issue first. Opt in to automatic planning with `git config qe.autoPlan true`: `board fetch` then plans every story it brings in changed (commits no longer do, since stories are not files in the repository); opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
 
 ## Verifier loops
 

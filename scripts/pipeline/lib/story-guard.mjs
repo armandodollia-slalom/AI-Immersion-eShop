@@ -15,7 +15,7 @@ const inside = (child, parent) => {
   const rel = path.relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 };
-// The fixed part of a glob, e.g. product-research/stories/*.md -> product-research/stories.
+// The fixed part of a glob, e.g. .agent-state/board/*/story.md -> .agent-state/board.
 const staticPrefix = (p) => p.split(/[*?[{]/)[0].replace(/\/+$/, '') || '.';
 
 export function allowedSources(config, env = process.env) {

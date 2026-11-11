@@ -1,14 +1,13 @@
 # Implement stage
 
-Point the pipeline at a folder of stories and it implements them: one worktree and feature branch per story, the [implementer agent](../../.github/agents/implementer.agent.md) as an **orchestrator** that plans the story into subtasks, **verifier pairs** that implement and check each subtask in its own worktree, then the [architecture review](review.md) loop and [verified tests](qe.md). A deterministic Node harness runs the loops; every agent is a separate headless CLI process, so it works the same with Claude Code, Copilot CLI, Codex or `PIPELINE_AGENT_CMD`.
+Give the pipeline story keys (or an epic) from the [board](board.md) and it implements them: one worktree and feature branch per story, the [implementer agent](../../.github/agents/implementer.agent.md) as an **orchestrator** that plans the story into subtasks, **verifier pairs** that implement and check each subtask in its own worktree, then the [architecture review](review.md) loop and [verified tests](qe.md). A deterministic Node harness runs the loops; every agent is a separate headless CLI process, so it works the same with Claude Code, Copilot CLI, Codex or `PIPELINE_AGENT_CMD`.
 
 ```bash
-node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-run
-node scripts/pipeline/pipeline.mjs implement run path/to/stories               # one story at a time
-node scripts/pipeline/pipeline.mjs implement run path/to/stories --parallel 3 --pr
-node scripts/pipeline/pipeline.mjs implement run product-research/stories/PROMO-3-cart-pricing-evaluation-api.md
-node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, from storiesDir
-node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --pr   # every story the epic file names
+node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --dry-run
+node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4                   # one story at a time
+node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4 --parallel 3 --pr
+node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, fetched from its issue
+node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --pr   # every story of the epic (its sub-issues)
 node scripts/pipeline/pipeline.mjs implement status                            # live progress, from another terminal
 node scripts/pipeline/pipeline.mjs implement cleanup [KEY]                     # remove subtask worktrees a failed run kept
 node scripts/pipeline/pipeline.mjs implement resume                            # continue a run that was interrupted
@@ -22,7 +21,7 @@ node scripts/pipeline/pipeline.mjs implement decisions [--story KEY] [--json]  #
 | `--parallel N` | Run up to N stories at once (default 1). Each has its own worktree; dependents still wait for their blockers. |
 | `--base <ref>` | Base for stories with no in-batch blocker (default `baseRef`, `origin/main`; fetched first). |
 | `--pr` | Push each finished branch and open a PR with `gh`, against its base branch (stacked PRs for dependents). |
-| `--epic <EPIC>` | Implement every story the epic file (`epic-<EPIC>.md` next to the stories folder) names that has a story file, in addition to any given. |
+| `--epic <EPIC>` | Implement every story and bug of the epic (its sub-issues on the board, fetched into the ticket cache), in Blocked-by order, in addition to any given. The epic's own ticket folder (its body and mockups) is handed to the agents too. |
 | `--force` | Also implement stories that already have `## Implementation Notes`, and take over [board](board.md) cards another machine holds in In Progress or Testing (or that are already in Pending Review or Done). |
 
 ## What happens
@@ -46,8 +45,8 @@ flowchart TD
   I --> R[pipeline done → architecture review loop → QE → PR]
 ```
 
-1. **Plan.** Every `<KEY>-<title>.md` in the folders and files given is a story. A story that already has `## Implementation Notes` is skipped. Each story's `**Blocked by:**` line is parsed. Stories blocked by others in the batch run after them, and a dependency cycle is an error. Blockers outside the batch are left to the implementer, which checks that their code exists.
-2. **Worktree.** Each story gets `../<repo>-worktrees/<key>` on `feat/<key>-<title>`. A story with no in-batch blocker branches from the base. A dependent stacks on the branch of the blocker that already contains the most of its other blockers and merges in the rest; a merge conflict marks the story `blocked`. Rerunning reuses existing worktrees and branches. The story file is committed to the branch (`<KEY>: Add story`) if it is not already there. The runner calls `pipeline start`, and starts the language server daemon for the story worktree (if the LSP tooling is installed).
+1. **Plan.** Every key given is fetched from its issue into the ticket cache (`.agent-state/board/<KEY>/`; an unchanged issue is not downloaded again), and its cached `story.md` is the story. A cached `story.md` path, or a `<KEY>-<title>.md` file or folder of them, works too. A story that already has `## Implementation Notes` is skipped. Each story's `**Blocked by:**` line is parsed. Stories blocked by others in the batch run after them, and a dependency cycle is an error. Blockers outside the batch are left to the implementer, which checks that their code exists.
+2. **Worktree.** Each story gets `../<repo>-worktrees/<key>` on `feat/<key>-<title>`. A story with no in-batch blocker branches from the base. A dependent stacks on the branch of the blocker that already contains the most of its other blockers and merges in the rest; a merge conflict marks the story `blocked`. Rerunning reuses existing worktrees and branches. The story's ticket folder (story, metadata, its own mockups) is copied into the worktree's ticket cache, and into each subtask worktree, so every stage there reads the same text; nothing about the story is committed. When the story finishes, the runner publishes the cached story (with the implementer's Implementation Notes) back to its issue (`board publish`). The runner calls `pipeline start`, and starts the language server daemon for the story worktree (if the LSP tooling is installed).
 3. **Orchestrator plan.** The implementer agent runs in PLAN mode (read-only) and ends with `AGENT_RESULT: <plan JSON>` (a last fenced `json` block is accepted too). The harness validates it (see [Plan](#plan)); an invalid plan goes back once with the errors, then the story fails `plan-rejected`. More than `maxSubtasks` subtasks fails at once with "split the story". An orchestrator that reports the story blocked ends it `blocked`.
 4. **Verifier pairs.** For each subtask the harness creates `../<repo>-worktrees/<key>--<id>` on `feat/<key>--<id>` from the story branch's current head (copying the story worktree's graphify graph, running `prepareCmd` (a `dotnet restore`) and starting a language server limited to the subtask's projects). Then, up to `maxPairRounds` times:
    - the **pair-implementer** (implement mode, the subtask's model class, no subagents) implements and commits;
@@ -222,6 +221,6 @@ Caveats: compare decisions only between stories with similar `features` (service
 
 ## Not automatic
 
-Adding or merging stories to `product-research/stories` starts nothing: no implementation and no test plans (unless you opted in with `git config qe.autoPlan true`). Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI logged in.
+Creating or editing a story on the board starts nothing: no implementation, and no test plans (unless you opted in with `git config qe.autoPlan true`, which plans a story when `board fetch` brings a changed one). Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI and `gh` logged in.
 
-The agents only see the stories you pass to `implement run`: the [story guard](README.md#story-guard) denies them every other story, epic and mockup in `product-research/`. Pass a folder to let them read everything in it (for example an epic folder with its stories), or single story files to keep them to those.
+The agents only see the tickets you pass to `implement run`: the [story guard](README.md#story-guard) denies them every other ticket in the cache (`.agent-state/board/`). Each story's own folder (its `story.md` and mockups) is open to it; `--epic` also opens the epic's folder.

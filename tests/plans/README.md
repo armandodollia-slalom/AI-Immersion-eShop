@@ -1,6 +1,6 @@
 # Integration test plans
 
-One directory per story in `product-research/stories`, named after the story file. Plans are written and updated by the `qe-plan` agent and approved by the `qe-plan-verifier` agent; see [docs/ai-pipeline/qe.md](../../docs/ai-pipeline/qe.md).
+One directory per story on the [board](../../docs/ai-pipeline/board.md), named after the story's slug (its original file name, kept in the issue metadata). Plans are written and updated by the `qe-plan` agent and approved by the `qe-plan-verifier` agent; see [docs/ai-pipeline/qe.md](../../docs/ai-pipeline/qe.md).
 
 ```text
 tests/plans/PROMO-3-apply-promotions-to-basket/
