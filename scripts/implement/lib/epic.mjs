@@ -18,6 +18,7 @@ import { logDecision } from '../../pipeline/lib/decisions.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { readOutage } from '../../pipeline/lib/outage.mjs';
 import { acquireLock, appendJsonl, log as defaultLog, nowIso, readJson, releaseLock, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { ticketDir, writeTicket } from '../../board/lib/source.mjs';
 import { metaFor } from '../../board/lib/ticket-format.mjs';
@@ -414,8 +415,12 @@ async function epicFlow(env) {
   const groupParallel = feature ? 1 : env.parallel;
   const pending = [...targets];
   const running = new Map();
+  const unitsStarted = Date.now();
   while (pending.length || running.size) {
-    for (let i = 0; i < pending.length; i++) {
+    // An agent provider outage (outage.mjs): start no more groups and skip none for it.
+    const outage = readOutage(unitsStarted);
+    if (outage && !running.size) break;
+    for (let i = 0; !outage && i < pending.length; i++) {
       const u = pending[i];
       const failedDep = u.deps.find((d) => unitResults.has(d) && unitResults.get(d).outcome !== 'done');
       if (failedDep && !only) {
@@ -444,6 +449,7 @@ async function epicFlow(env) {
       const hit = r.results?.find((x) => x.key === s.key);
       if (hit) return hit;
     }
+    if (!only && readOutage(unitsStarted)) return { key: s.key, outcome: null, reason: 'not started: the agent provider is unavailable' };
     return { key: s.key, outcome: 'skipped', reason: only ? 'not part of this run' : 'its group never ran' };
   }).filter((r) => !only || only.includes(r.key));
   if (only) {
@@ -620,9 +626,11 @@ async function runUnitStories(env, { parallel, deferReview }) {
     return { ...result, mergedSha: m.sha };
   };
 
+  const storiesStarted = Date.now();
   for (;;) {
     const skippedByBlocker = [...outcome].filter(([, r]) => r.outcome === 'skipped' && /^blocker /.test(r.reason ?? '')).map(([k]) => k);
-    const { start, skip } = nextStories({ order, deps: sdeps, owns, pending, running: new Set(running.keys()), merged, failed: new Set([...failed, ...skippedByBlocker]), slots: parallel });
+    // An agent provider outage (outage.mjs): start no more stories and skip none for it.
+    const { start, skip } = readOutage(storiesStarted) ? { start: [], skip: [] } : nextStories({ order, deps: sdeps, owns, pending, running: new Set(running.keys()), merged, failed: new Set([...failed, ...skippedByBlocker]), slots: parallel });
     for (const { key, blocker } of skip) {
       pending.delete(key);
       const r = { outcome: 'skipped', reason: `blocker ${blocker} ended ${outcome.get(blocker)?.outcome ?? 'failed'}` };
@@ -647,7 +655,8 @@ async function runUnitStories(env, { parallel, deferReview }) {
     log(`${key}: ${r.outcome}${r.reason ? ` (${r.reason})` : ''}`);
   }
   // Stories that could never start (a dependency outside the epic that never merged) are reported too.
-  for (const key of pending) outcome.set(key, { outcome: 'skipped', reason: 'its dependencies were never merged' });
+  const outage = readOutage(storiesStarted);
+  for (const key of pending) outcome.set(key, outage ? { outcome: null, reason: 'not started: the agent provider is unavailable' } : { outcome: 'skipped', reason: 'its dependencies were never merged' });
   return planned.map((s) => ({ ...s, ...outcome.get(s.key) }));
 }
 

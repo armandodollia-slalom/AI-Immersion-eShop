@@ -264,6 +264,15 @@ Each run saves its story list and options to `.agent-state/implement/batch.json`
 
 A QE run that dies while the runner waits is resumed by the QE stage's own [recovery](qe.md#crash-recovery). A worker that fails with `error` or `qe-not-started` is retried `maxWorkerRetries` times in the same run.
 
+### Agent provider outages
+
+When an agent CLI answers that its provider will serve no more requests for a while (Copilot's "exceeded your monthly quota", Claude Code's usage limit), every later agent would fail the same way. The story failing is not the story's fault, so the run treats it as an interruption (`scripts/pipeline/lib/outage.mjs`):
+
+- the agent's run records the outage in `.agent-state/implement/agent-outage.json`, which the run's worker and QE processes share (`PIPELINE_OUTAGE_FILE`); an orchestrated story stops at once (`agent-unavailable`);
+- a story that ends any way but `done` during the outage ends `error` ("interrupted: the agent provider is unavailable"), so the next run resumes it in its worktree, and the worker is not retried;
+- no further story or group starts, no story is skipped for a blocker that hit the outage, and stories that never started have no outcome;
+- the runner prints the summary, moves no card to Failed, leaves the batch unfinished and exits 75. Run `implement resume` (or `pipeline resume`) once the provider is back; a new run clears the marker.
+
 An orchestrated story that is resumed does not plan again. Subtasks approved before the crash were already merged into the story branch; the runner removes the subtask worktrees and branches the interrupted run left (stopping their language servers), and the orchestrator continues the story itself from what is on the branch, like a single implementer, before the review and QE. Stack slot leases need no cleanup: a lease whose owner process died is stale and reclaimed by the next `lease`. `implement status` lists leftover subtask worktrees, and `implement cleanup [KEY]` removes them by hand.
 
 ## Config

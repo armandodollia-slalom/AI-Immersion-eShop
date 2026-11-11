@@ -256,3 +256,29 @@ worked on): symptom, root cause, fix, commit and impact.
   having had 33 minutes of compute, and was retried. For unattended runs, keep
   the host awake (`caffeinate -dimsu -w <batch pid>` on macOS); a future
   `implement run` could start it itself.
+
+## D12: a provider quota outage failed 14 tickets
+
+- **Symptom:** at about 08:55 the Copilot monthly quota ran out. Every agent
+  answered `You have exceeded your monthly quota`, and within 15 minutes the
+  batch recorded BUG-18 `pair-exhausted`, BUG-11/BUG-14 `plan-rejected` ("no
+  plan found"), BUG-8/BUG-16 `qe-blocked-on-plan`, skipped their dependents,
+  closed four groups without a PR and moved 14 cards to Failed.
+- **Root cause:** an agent that fails because its provider refuses all requests
+  looks like any failed agent run. The harness spent its plan retries, pair
+  rounds and QE rounds on it, then reported an ordinary outcome, and the
+  scheduler cascaded "blocker failed" skips.
+- **Fix:** `scripts/pipeline/lib/outage.mjs` recognizes quota and usage-limit
+  answers (Copilot quota, Claude usage/5-hour limits, low credit) in stderr or
+  short/failed answers. `runAgent*` records a run-wide marker
+  (`PIPELINE_OUTAGE_FILE`, inherited by worker and QE processes). An
+  orchestrated story stops at once (`agent-unavailable`), a story that does not
+  finish `done` during the outage ends `error` (resumable, not retried), the
+  story and group schedulers start nothing more and skip nothing, and the
+  runner moves no card to Failed, leaves the batch unfinished and exits 75 so
+  `implement resume` continues later. Tests in `outage.test.mjs` and
+  `epic.test.mjs`; `implement.md` "Agent provider outages". Commit: see
+  timeline 09:45.
+- **Impact:** about 15 minutes of wasted agent runs and 14 cards wrongly in
+  Failed; recovered by switching the agent CLI to Claude Code at 09:29 and
+  re-running the non-done tickets.

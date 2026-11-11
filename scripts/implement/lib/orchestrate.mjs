@@ -129,6 +129,7 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
     const extraEnv = { PIPELINE_STORY_SOURCES: [process.env.PIPELINE_STORY_SOURCES, ctx.key].filter(Boolean).join(path.delimiter) };
     const res = await ctx.deps.runAgent(ctx.config, { name, task, mode, model, cli, noSubagents: true, cwd, timeoutSec: Math.max(1, Math.min(timeoutSec, left)), signal: ctx.abort.signal, extraEnv, usage: { stage: USAGE_STAGE[role] ?? 'implement', story: ctx.key, step, round } });
     if (ctx.abort.signal.aborted) throw new AbortedError('aborted');
+    if (res.outage) throw limit(ctx, 'agent-unavailable', `the agent provider is unavailable: ${res.outage}`);
     if (res.timedOut && Date.now() >= ctx.deadline) throw limit(ctx, 'limit-wall-clock', `the story ran past its ${ctx.s.storyWallClockSec}s wall clock while ${name} was running`);
     ctx.metrics.usage = addUsage(ctx.metrics.usage, res.usage ?? null);
     const calls = ctx.deps.lsp.calls(cwd, name, t0, Date.now());

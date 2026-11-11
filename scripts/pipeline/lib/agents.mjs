@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { INSTALL_ROOT } from './config.mjs';
+import { providerOutage, recordOutage } from './outage.mjs';
 import { parseClaudeJson, parseCodexJsonl, parseCopilotUsage, parseUsageFile, readUsageFile, recordUsage, summarizeUsage } from './usage.mjs';
 import { log, parseFrontMatter, run, sha } from './util.mjs';
 
@@ -242,7 +243,13 @@ const finalize = (config, prepared, { name, mode, usage }, { stdout, stderr, sta
   const { output, seconds, usage: used } = finishRun(config, invocation, { name, mode, alias, modelId, usageFile, usage, version: definition.version, stdout, status, timedOut, started });
   log(`agent ${name} finished in ${seconds}s (exit ${status}${timedOut ? ', timed out' : ''})`);
   if (status !== 0 && stderr.trim()) log(stderr.trim().slice(-2000));
-  return { ok: status === 0, status, timedOut, output, version: definition.version, seconds, usage: used };
+  // A quota or usage limit fails every later agent too: record it for the run (see outage.mjs).
+  const outage = timedOut ? null : providerOutage({ output, stderr, status });
+  if (outage) {
+    log(`agent ${name}: the ${invocation.cli} provider is unavailable: ${outage}`);
+    recordOutage({ cli: invocation.cli, agent: name, reason: outage });
+  }
+  return { ok: status === 0 && !outage, status, timedOut, output, version: definition.version, seconds, usage: used, outage };
 };
 
 // Every call is a brand-new headless process, so each agent (and each verifier round) starts with a

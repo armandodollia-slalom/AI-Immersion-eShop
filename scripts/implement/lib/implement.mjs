@@ -20,6 +20,7 @@ import { formatDiagnostics, lspAdapter } from './lsp.mjs';
 import { LimitError, agentSettings, checkBudget, createContext, orchestrate } from './orchestrate.mjs';
 import { applyResources, resourcesFromEnv, waitForMemory } from './resources.mjs';
 import { newFeedbackLog } from './feedback.mjs';
+import { readOutage } from '../../pipeline/lib/outage.mjs';
 import { epicNoteBlock, integrationTask } from './tasks.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
@@ -98,8 +99,12 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
   const blockerFailed = (s) => s.deps.find((k) => outcome.has(k) && !['done', 'skipped'].includes(outcome.get(k).outcome));
   const ready = (s) => s.deps.every((k) => ['done', 'skipped'].includes(outcome.get(k)?.outcome));
 
+  const batchStarted = Date.now();
   while (pending.length || running.size) {
-    for (let i = 0; i < pending.length; i++) {
+    // An agent provider outage (outage.mjs): start nothing more, and skip no blocked story for it.
+    const outage = readOutage(batchStarted);
+    if (outage && !running.size) break;
+    for (let i = 0; !outage && i < pending.length; i++) {
       const s = pending[i];
       const failed = blockerFailed(s);
       if (failed) {
@@ -118,7 +123,7 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
     const [s, result] = await Promise.race(running.values());
     running.delete(s.key);
     const attempt = (retries.get(s.key) ?? 0) + 1;
-    if (RETRYABLE.has(result.outcome) && attempt <= maxWorkerRetries) {
+    if (RETRYABLE.has(result.outcome) && attempt <= maxWorkerRetries && !result.outage) {
       retries.set(s.key, attempt);
       s.resume = true;
       log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}; retrying (${attempt}/${maxWorkerRetries}).`);
@@ -128,6 +133,7 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
     outcome.set(s.key, result);
     log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}`);
   }
+  for (const s of pending) outcome.set(s.key, { outcome: null, reason: 'not started: the agent provider is unavailable' });
   return stories.map((s) => ({ ...s, ...outcome.get(s.key) }));
 }
 
@@ -157,7 +163,11 @@ export function startWorker(config, story, { pr, script }) {
   fs.closeSync(fd);
   return new Promise((resolve) => {
     child.on('exit', (code) => {
-      const result = readJson(resultFile, null) ?? { outcome: 'error', reason: `worker exited ${code} without a result; see ${path.relative(config.root, logPath)}` };
+      let result = readJson(resultFile, null) ?? { outcome: 'error', reason: `worker exited ${code} without a result; see ${path.relative(config.root, logPath)}` };
+      // A story that failed during an agent provider outage was interrupted, not failed: `error` makes
+      // the next run resume it in its worktree.
+      const outage = result.outcome !== 'done' ? readOutage(Date.parse(running.startedAt)) : null;
+      if (outage) result = { ...result, outcome: 'error', reason: `interrupted: the agent provider is unavailable (${outage.reason}); was ${result.outcome}`, outage: true };
       saveRun(config, story.key, { ...result, status: 'finished', finishedAt: nowIso() });
       resolve(result);
     });

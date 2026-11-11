@@ -12,10 +12,12 @@ import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 import { loadConfig } from '../../pipeline/lib/config.mjs';
 import { loadTicket, resetTicketMemo } from '../../pipeline/lib/tickets.mjs';
 import { readJsonl } from '../../pipeline/lib/util.mjs';
+import { recordOutage } from '../../pipeline/lib/outage.mjs';
 import { ticketDir } from '../../board/lib/source.mjs';
 import { epicToJoin, loadEpicRun, runEpic } from '../lib/epic.mjs';
 import { deliveryShape, epicDeps, epicPrBody, groupDeps, nextStories, ownsConflict, singleGroups, validateGroups, validateNote } from '../lib/epic-plan.mjs';
 import { groupRow, labelDecisions } from '../lib/decisions.mjs';
+import { failedResults } from '../lib/board-events.mjs';
 import { planTask } from '../lib/tasks.mjs';
 
 const git = (cwd, ...args) => {
@@ -336,6 +338,32 @@ test('bug epic: a grouping that stays invalid falls back to one PR per bug; a fa
   assert.deepEqual(Object.fromEntries(r.results.map((x) => [x.key, x.outcome])), { 'BUG-1': 'pair-exhausted', 'BUG-2': 'skipped', 'BUG-3': 'done' });
   assert.deepEqual(f.prs.map((p) => p.branch), ['bugfix/shop/bug-3'], 'only the independent group gets a PR');
   assert.equal(r.epic.outcome, 'stories-failed');
+});
+
+test('bug epic: an agent provider outage stops the run without failing or skipping the tickets it did not reach', async () => {
+  const env = makeRepo({ bugs: true });
+  const prev = process.env.PIPELINE_OUTAGE_FILE;
+  process.env.PIPELINE_OUTAGE_FILE = path.join(env.tmp, 'agent-outage.json');
+  try {
+    const worker = fakeWorker();
+    // BUG-1's agents hit the provider's quota: the worker reports it interrupted (startWorker does).
+    const startWorker = async (config, s) => {
+      if (s.key !== 'BUG-1') return worker.startWorker(config, s);
+      recordOutage({ cli: 'copilot', agent: 'implementer', reason: 'You have exceeded your monthly quota' });
+      return { key: s.key, outcome: 'error', reason: 'interrupted: the agent provider is unavailable', outage: true, branch: s.branch, worktree: s.worktree };
+    };
+    const note = { stories: [], prGroups: [{ id: 'cart', tickets: ['BUG-1', 'BUG-2'] }, { id: 'auth', tickets: ['BUG-3'] }] };
+    const f = fakeDeps(note, { startWorker });
+    const r = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+    const byKey = Object.fromEntries(r.results.map((x) => [x.key, x.outcome]));
+    assert.deepEqual(byKey, { 'BUG-1': 'error', 'BUG-2': null, 'BUG-3': null }, 'BUG-2 is not skipped for its blocker, BUG-3 never starts');
+    assert.deepEqual(worker.calls, [], 'no story starts after the outage');
+    assert.equal(f.prs.length, 0);
+    assert.deepEqual(failedResults(r.results).map((x) => x.key), ['BUG-1']);
+  } finally {
+    if (prev === undefined) delete process.env.PIPELINE_OUTAGE_FILE;
+    else process.env.PIPELINE_OUTAGE_FILE = prev;
+  }
 });
 
 test('bug epic: a stacked group gets the tickets of the groups below it synced before its PR check and push', async () => {

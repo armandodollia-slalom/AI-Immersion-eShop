@@ -8,6 +8,7 @@ import { spawnBackground } from '../pipeline/lib/background.mjs';
 import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
+import { clearOutage, readOutage } from '../pipeline/lib/outage.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
 import { epicTickets, loadTicket } from '../pipeline/lib/tickets.mjs';
 import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
@@ -92,6 +93,10 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
   // ticket's whole folder (story and its own mockups), or the files and folders given.
   // An epic run also hands over the epic's own ticket (its body and mockups).
   process.env.PIPELINE_STORY_SOURCES = [...inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))), ...extraSources].join(path.delimiter);
+  // One marker for the whole run, shared by its worker and QE processes (outage.mjs). A new run starts
+  // clean: the operator resumes once the provider is back.
+  process.env.PIPELINE_OUTAGE_FILE = path.join(runsDir(config), 'agent-outage.json');
+  clearOutage();
   const batch = { inputs: inputs.map((p) => path.resolve(p)), extraSources, base, parallel, pr, delivery, epic: epicRun ? { key: epicRun.epic.key, only: epicRun.only ?? null, grouping: epicRun.grouping ?? null } : null, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
   writeJson(batchFile(config), batch);
   let results;
@@ -101,6 +106,14 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
     results = r.results;
     epicSummary = r.epic;
   } else results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
+  // An agent provider outage interrupts the run: no card moves to Failed, and the batch stays
+  // unfinished so `implement resume` continues it.
+  const outage = readOutage(Date.parse(batch.startedAt));
+  if (outage) {
+    console.log(`\n${formatSummary(results)}`);
+    console.log(`\nStopped: the agent provider is unavailable (${outage.cli}, ${outage.agent}: ${outage.reason}).\nUnfinished stories keep their cards. Run \`node scripts/pipeline/pipeline.mjs implement resume\` once it is back.`);
+    return 75;
+  }
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
   // Every story that did not finish goes to Failed with its outcome, reason and findings.
   // (Epic delivery has no PR per story, so a done story is never failed for a missing PR.)
