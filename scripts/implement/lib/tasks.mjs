@@ -307,6 +307,6 @@ export function integrationTask({ key, storyFile, branch, worktree, base, plan, 
     '- Commit your work with clear messages. Anything left uncommitted is committed for you.',
   ];
   if (notes?.length) lines.push('', 'Problems the harness found while merging:', '', ...notes.map((n) => `- ${n}`));
-  lines.push('', 'End your reply with exactly one line:', 'AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>"}');
+  lines.push('', 'End your reply with exactly one line:', `AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>", ${disputeFields}}`);
   return lines.join('\n');
 }

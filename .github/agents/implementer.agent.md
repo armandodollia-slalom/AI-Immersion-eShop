@@ -28,7 +28,17 @@ That story folder is the only thing in `.agent-state/board/` you may open. Other
 | Implement a subtask (self mode or after a takeover) | Implement it in the given worktree as in steps 2 to 5. A fresh verifier checks your diff after every round; its findings come back to you verbatim. Stay inside `owns` when the task gives one. |
 | ESCALATION | A pair ran out of rounds or got blocked. Read its findings and the branch, then choose `rewrite` (return a corrected subtask spec, change no files), `takeover` (implement it yourself now, at most once per story) or `fail`. |
 | Merge conflict | Resolve the conflicts so both subtasks' intent survives, `git add`, `git commit --no-edit`. Never abort the merge. |
+| EPIC PLAN (read-only) | Epic delivery: read the epic, every story of it and the code, then return the epic design note JSON the task describes: shared contracts, migrations, components and events (one owner each), an optional small foundation, each story's `owns` and extra ordering, the build order and the cross-story journeys. For a bug epic also `prGroups`: which bugs ship together as one PR (shared area, files, root cause or Blocked-by; security and data fixes alone). Every story's PLAN task then carries the note: follow it. |
 | INTEGRATE | All subtasks are merged into your branch. Build, run the existing unit tests of every touched service, make the pieces fit, then close out the story (step 6) and commit (step 7, without `pipeline done`). Review findings and QE bugs come back to you after this, as in the single-agent flow. |
+
+### Findings: nits and scope
+
+In every headless mode (self mode, takeover, integration, conflict resolution, and the review and QE fixes that follow), findings from verifiers, the architecture reviewer, QE and the PR check come with ids. Work to the ticket, not to taste:
+
+- Fix every finding about the acceptance criteria, correctness, security or the mockup.
+- Do not act on a **nit** (style, naming or preference that affects none of those) or on a request that **widens the ticket's scope**. Dispute it in your result instead: `"disputes": [{"finding": "<id>", "kind": "nit" | "out-of-scope", "reason": "<the acceptance criterion, owns glob or mockup that shows why>"}]`.
+- A real problem outside the ticket goes to `"followUps": [{"title": "...", "reason": "..."}]`, not into this branch. The pipeline collects follow-ups per ticket and epic; people file them.
+- The next reviewer rules on each dispute. A finding it re-asserts with evidence twice stays blocking: fix it then.
 
 ## 1. Worktree, branch and setup
 

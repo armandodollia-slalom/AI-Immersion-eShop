@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
-import { formatBugs } from '../../pipeline/lib/decisions.mjs';
+import { formatBugs, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
@@ -19,6 +19,7 @@ import { commitAll, commitEnv, filesChanged, headSha, listSubtaskWorktrees, must
 import { formatDiagnostics, lspAdapter } from './lsp.mjs';
 import { LimitError, agentSettings, checkBudget, createContext, orchestrate } from './orchestrate.mjs';
 import { applyResources, resourcesFromEnv, waitForMemory } from './resources.mjs';
+import { newFeedbackLog } from './feedback.mjs';
 import { epicNoteBlock, integrationTask } from './tasks.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
@@ -223,7 +224,7 @@ function implementerTask({ key, storyFile, branch, worktree, base, feedback, epi
     '- Nobody can answer questions. If an Open Question or missing blocker makes the story unimplementable, stop and report `blocked`. Otherwise make a reasonable, documented choice and continue.',
     '',
     'End your reply with exactly one line:',
-    'AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>"}',
+    'AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>", "disputes": [{"finding": "<finding id>", "kind": "nit" | "out-of-scope", "reason": "<the acceptance criterion, owns or mockup that shows why>"}], "followUps": [{"title": "<real problem outside this ticket>", "reason": "<why it matters>"}]}',
   ];
   if (epicNote) lines.push('', epicNoteBlock(epicNote));
   if (feedback) lines.push('', 'Address this feedback, then finish again:', '', feedback);
@@ -315,7 +316,11 @@ async function implementStoryInner(config, opts, holder) {
           signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences,
         }
       : {};
-  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extraMetrics(), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)), ...extra });
+  // Disputes and follow-ups the implementer raised against review findings and QE bugs (lib/feedback.mjs);
+  // the pairs' own follow-ups are in ctx.metrics.followUps.
+  const feedbackLog = newFeedbackLog();
+  const allFollowUps = () => [...(ctx?.metrics.followUps ?? []), ...feedbackLog.followUps];
+  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extraMetrics(), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)), followUps: allFollowUps(), disputes: feedbackLog.counts(), ...extra });
 
   const prep = prepareWorktree(config, opts);
   if (prep.error) return finish('blocked', prep.error);
@@ -349,7 +354,7 @@ async function implementStoryInner(config, opts, holder) {
   if (opts.resume && wt.implement.orchestrate !== false) await cleanupSubtasks(wt, key);
   const recordOutcome = (outcome, reason) => {
     const m = extraMetrics();
-    appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: Math.round((Date.now() - started) / 600) / 100, prompt_version: metrics.promptVersion, ...(ctx ? { mode: m.mode, decision_id: m.decisionId, subtasks: m.subtasks, agent_runs: m.agentRuns, pair_rounds: m.pairRounds, takeovers: m.takeovers, escalations: m.escalations, limit_hit: m.limitHit, lsp_calls: m.lspCalls, signature_changes_without_references: m.signatureChangesWithoutReferences } : {}), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)), ...(resourcesFromEnv() ? { resources: resourcesFromEnv() } : {}), ...runTags() }]);
+    appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: Math.round((Date.now() - started) / 600) / 100, prompt_version: metrics.promptVersion, ...(ctx ? { mode: m.mode, decision_id: m.decisionId, subtasks: m.subtasks, agent_runs: m.agentRuns, pair_rounds: m.pairRounds, takeovers: m.takeovers, escalations: m.escalations, limit_hit: m.limitHit, lsp_calls: m.lspCalls, signature_changes_without_references: m.signatureChangesWithoutReferences } : {}), ...usageFields(addUsage(ctx?.metrics.usage ?? null, storyUsage)), ...(resourcesFromEnv() ? { resources: resourcesFromEnv() } : {}), disputes: feedbackLog.counts(), follow_ups: allFollowUps(), ...runTags() }]);
     if (ctx) appendJsonl(metricsFile(wt, OUTCOMES_FILE), [{ ...storyOutcomeRecord({ ts: nowIso(), key, decisionId: ctx.decisionId, mode: ctx.metrics.mode, outcome, reason, wallClockSec: Math.round((Date.now() - started) / 1000), agentRuns: ctx.metrics.agentRuns, reviewBlocks: metrics.reviewBlocks, bugFixCycles: metrics.bugFixCycles, limitHit: ctx.metrics.limitHit, branch, lspCalls: ctx.metrics.lspCalls, signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences, usage: addUsage(ctx.metrics.usage, storyUsage), followUps: ctx.metrics.followUps }), ...runTags() }]);
   };
   const recordEscaped = (source, findings, files) => {
@@ -417,6 +422,9 @@ async function implementStoryInner(config, opts, holder) {
         metrics.promptVersion = res.version;
         reported = extractResult(res.output);
         commitAll(worktree, `${key}: Implementation`);
+        // Disputes of the findings it was given go to the next review round (or are recorded, for QE
+        // bugs); follow-ups are collected for the run record.
+        feedbackLog.afterRun(wt, key, reported, { round: metrics.implementerRuns });
         if (fixingBugs) {
           recordEscaped('qe', (qe?.bugs ?? []).map((b) => (typeof b === 'string' ? { issue: b } : b)), filesChanged(worktree, before));
           fixingBugs = false;
@@ -446,7 +454,7 @@ async function implementStoryInner(config, opts, holder) {
       }
       if (output?.decision === 'block') {
         metrics.reviewBlocks++;
-        feedback = output.reason;
+        feedback = `${output.reason}${feedbackLog.given('architecture-reviewer', lastReviewFindings(wt, key).filter((f) => f.severity !== 'minor'), { round: metrics.reviewBlocks, config: wt, key })}`;
         recordEscaped('arch-review', lastReviewFindings(wt, key).filter((f) => f.severity !== 'minor'), []);
         continue;
       }
@@ -467,7 +475,7 @@ async function implementStoryInner(config, opts, holder) {
     // Back to the implementer: the card returns to In Progress with the bugs.
     boardEvent(worktree, key, ['event', key, 'product-bug', ...(qe.finishedAt ? ['--id', `bug:${qe.finishedAt}`] : [])], { input: JSON.stringify({ bugs: qe.bugs ?? [], cycle: metrics.bugFixCycles }) });
     fixingBugs = true;
-    feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${formatBugs(qe.bugs)}`;
+    feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${formatBugs(qe.bugs)}${feedbackLog.given('qe-automation', normalizeBugs(qe.bugs).map((b) => ({ issue: [b.case, b.reason].filter(Boolean).join(': '), severity: 'blocking' })), { round: metrics.bugFixCycles })}`;
   }
 
   const outcome = qe.status === 'verified' ? 'done' : `qe-${qe.status}`;

@@ -501,7 +501,10 @@ async function deliverUnit(env, unit, units, epicWt) {
 
   // One PR for the unit, then the board.
   const runs = Object.fromEntries(results.map((r) => [r.key, r]));
-  const body = epicPrBody({ epic, branch: unit.branch, stories: uenv.stories, results: runs, qe, prChecks, foundation: feature ? loadEpicRun(config, epic.key).foundation : null, noteFile: path.relative(config.root, env.noteFile), group: feature ? null : unit.group });
+  // Follow-ups the implementers listed instead of widening their tickets (filing them is up to people).
+  const followUps = results.flatMap((r) => (r.followUps ?? []).map((u) => ({ ...u, ticket: r.key })));
+  if (followUps.length) saveUnit(config, epic.key, unit.id, { followUps });
+  const body = epicPrBody({ followUps, epic, branch: unit.branch, stories: uenv.stories, results: runs, qe, prChecks, foundation: feature ? loadEpicRun(config, epic.key).foundation : null, noteFile: path.relative(config.root, env.noteFile), group: feature ? null : unit.group });
   if (!env.pr || prsDisabled()) {
     if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
     log(`every ticket verified and merged into ${unit.branch}${env.pr ? ' (PRs disabled)' : '; --pr opens the PR'}`);
@@ -563,7 +566,7 @@ async function runUnitStories(env, { parallel, deferReview }) {
   const finishStory = async (s, result) => {
     if (!DONE.has(result.outcome)) {
       failed.add(s.key);
-      saveStory(config, epic.key, s.key, { outcome: result.outcome, reason: result.reason ?? null, merged: false, status: 'finished' });
+      saveStory(config, epic.key, s.key, { outcome: result.outcome, reason: result.reason ?? null, merged: false, status: 'finished', followUps: result.followUps ?? [] });
       return result;
     }
     const m = await mergeStory(env, s);
@@ -574,7 +577,7 @@ async function runUnitStories(env, { parallel, deferReview }) {
       return r;
     }
     merged.add(s.key);
-    saveStory(config, epic.key, s.key, { outcome: 'done', status: 'finished', merged: true, mergedSha: m.sha, mergedAt: nowIso(), conflicts: m.conflicts ?? [], unit: unit.id, branch: s.branch, mode: result.mode ?? null, agentRuns: result.agentRuns ?? null, reviewBlocks: result.reviewBlocks ?? null, bugFixCycles: result.bugFixCycles ?? null, cost_usd: result.cost_usd ?? null });
+    saveStory(config, epic.key, s.key, { outcome: 'done', status: 'finished', merged: true, mergedSha: m.sha, mergedAt: nowIso(), conflicts: m.conflicts ?? [], unit: unit.id, branch: s.branch, mode: result.mode ?? null, agentRuns: result.agentRuns ?? null, reviewBlocks: result.reviewBlocks ?? null, bugFixCycles: result.bugFixCycles ?? null, cost_usd: result.cost_usd ?? null, followUps: result.followUps ?? [], disputes: result.disputes ?? null });
     log(`${s.key} merged into ${branch}`);
     // A feature epic's card goes to Pending Review now; a bug group's waits for the group PR.
     if (!deferReview) reportStory(env, s);

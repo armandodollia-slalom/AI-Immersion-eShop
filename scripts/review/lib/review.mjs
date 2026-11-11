@@ -5,7 +5,8 @@ import { logDecision } from '../../pipeline/lib/decisions.mjs';
 import { implChanges, implDiff } from '../../pipeline/lib/git.mjs';
 import { nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { clearEscalation, escalate, loadState, lockFile, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
-import { acquireLock, appendJsonl, extractResult, isProcessAlive, lockHolder, log, nowIso, readJsonl, releaseLock, run, selfProcess } from '../../pipeline/lib/util.mjs';
+import { acquireLock, appendJsonl, extractResult, isProcessAlive, lockHolder, log, nowIso, readJson, readJsonl, releaseLock, run, selfProcess, writeJson } from '../../pipeline/lib/util.mjs';
+import { formatDisputes, ruleDisputes } from '../../implement/lib/disputes.mjs';
 
 const fence = (text, lang = '') => `\`\`\`\`${lang}\n${text.replace(/\r\n/g, '\n').trimEnd()}\n\`\`\`\``;
 const block = (reason) => ({ decision: 'block', reason });
@@ -47,6 +48,24 @@ function logReviewDecision(config, story, round, { agent, agentVer, verdict, sum
   });
 }
 
+// Disputes the implementer raised against the last round's findings (nits, scope creep), written by the
+// implement runner (scripts/implement/lib/implement.mjs) and ruled on by the next reviewer round. The
+// file also keeps how often each finding was re-asserted: twice and it stays blocking.
+export const reviewDisputesFile = (config, key) => path.join(config.root, config.stateDir, 'review', `${key}.disputes.json`);
+export const readReviewDisputes = (config, key) => ({ open: [], overruled: [], state: {}, ...readJson(reviewDisputesFile(config, key), {}) });
+
+function disputesBlock(d) {
+  if (!d.open.length && !d.overruled.length) return [];
+  return [
+    '',
+    '### Implementer disputes of your last findings',
+    '',
+    'The implementer did not act on these findings and says why. Rule on each: re-raise the finding (keep its id) only when the story\'s acceptance criteria, correctness, security or the mockup require it, and give the `evidence` (the criterion or the concrete failure). A disputed finding re-raised without evidence does not block. You may also list `disputes: [{"finding": "<id>", "decision": "accepted" | "reasserted", "evidence": "<why>"}]` in your result.',
+    '',
+    formatDisputes(d.open, d.overruled),
+  ];
+}
+
 function reviewTask(config, story, round) {
   const conventions = ['AGENTS.md', 'CONTRIBUTING.md'].filter((f) => fs.existsSync(path.join(config.root, f)));
   return [
@@ -61,7 +80,22 @@ function reviewTask(config, story, round) {
     '### Implementation diff (tests and plans excluded)',
     '',
     fence(implDiff(config), 'diff'),
+    ...disputesBlock(readReviewDisputes(config, story.key)),
   ].join('\n');
+}
+
+// Applies the reviewer's rulings on the implementer's disputes: an accepted dispute (or a finding raised
+// again without evidence) becomes minor; one re-asserted with evidence stays blocking, and after
+// MAX_REASSERTS it can no longer be disputed. Clears the open disputes and keeps the counts.
+export function applyReviewDisputes(config, key, { verdict, findings, disputes }) {
+  const d = readReviewDisputes(config, key);
+  if (!d.open.length && !d.overruled.length) return { verdict, findings, rulings: [] };
+  const state = new Map(Object.entries(d.state));
+  const ruled = ruleDisputes({ verdict, findings, disputes }, d.open, state, d.overruled);
+  const blocking = ruled.verdict.findings.some((f) => f.severity === 'blocking');
+  const next = blocking ? 'CHANGES_REQUESTED' : ruled.rulings.some((r) => r.ruling === 'accepted') ? 'APPROVED' : verdict;
+  writeJson(reviewDisputesFile(config, key), { open: [], overruled: [], state: Object.fromEntries(state), rulings: ruled.rulings });
+  return { verdict: next, findings: ruled.verdict.findings, rulings: ruled.rulings };
 }
 
 // One review round by a fresh reviewer process that sees only the story and the diff.
@@ -77,8 +111,9 @@ export function architectureReview(config, story, round) {
     });
     const raw = extractResult(result.output);
     if (raw && ['APPROVED', 'CHANGES_REQUESTED'].includes(raw.verdict)) {
-      const findings = Array.isArray(raw.findings) ? raw.findings : [];
-      const verdict = raw.verdict === 'APPROVED' && findings.some((f) => f.severity === 'blocking') ? 'CHANGES_REQUESTED' : raw.verdict;
+      const ruled = applyReviewDisputes(config, story.key, { verdict: raw.verdict, findings: Array.isArray(raw.findings) ? raw.findings : [], disputes: raw.disputes });
+      const findings = ruled.findings;
+      const verdict = ruled.verdict === 'APPROVED' && findings.some((f) => f.severity === 'blocking') ? 'CHANGES_REQUESTED' : ruled.verdict;
       appendJsonl(metricsFile(config, REVIEWS_FILE), {
         ts: nowIso(),
         story: story.key,
@@ -87,7 +122,7 @@ export function architectureReview(config, story, round) {
         reviewer_ver: result.version,
         findings: findings.map(loggedFinding),
       });
-      logReviewDecision(config, story, round, { agent: 'architecture-reviewer', agentVer: result.version, verdict, summary: String(raw.summary ?? ''), findings });
+      logReviewDecision(config, story, round, { agent: 'architecture-reviewer', agentVer: result.version, verdict, summary: String(raw.summary ?? ''), findings, ...(ruled.rulings.length ? { disputes: ruled.rulings.map((r) => ({ finding: r.id, kind: r.kind, ruling: r.ruling, reason: r.reason, evidence: r.evidence ?? null })) } : {}) });
       return { verdict, findings, summary: String(raw.summary ?? '') };
     }
   }
