@@ -9,7 +9,7 @@ import { seedTicket } from './fixtures/tickets.mjs';
 import { runAgent } from '../lib/agents.mjs';
 import { loadConfig } from '../lib/config.mjs';
 import { epicReport, formatStory, overviewReport, storyReport, summarize } from '../lib/costs.mjs';
-import { addUsage, costOf, loadUsage, normalizeModel, parseClaudeJson, parseCodexJsonl, parseCopilotUsage, priceFor, summarizeUsage, usageRecords } from '../lib/usage.mjs';
+import { addUsage, costOf, loadUsage, loadUsageAcrossWorktrees, normalizeModel, parseClaudeJson, parseCodexJsonl, parseCopilotUsage, priceFor, summarizeUsage, usageRecords } from '../lib/usage.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -139,5 +139,23 @@ describe('usage summaries', () => {
     const text = formatStory({ story: 'TEST-1', epic: null, stages: [{ stage: 'implement-verify', ...s }], total: s });
     assert.match(text, /Copilot premium requests: 15/);
     assert.match(text, /AI credits worth \$0\.14; \$0\.14 computed/);
+  });
+});
+
+describe('usage across worktrees', () => {
+  it('reads every worktree once and drops the records a stacked branch repeats', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-wt-'));
+    after(() => fs.rmSync(base, { recursive: true, force: true }));
+    const write = (dir, rows) => {
+      fs.mkdirSync(path.join(base, dir, '.agent-metrics'), { recursive: true });
+      fs.writeFileSync(path.join(base, dir, '.agent-metrics', 'token-usage.jsonl'), rows.map((r) => JSON.stringify(r) + '\n').join(''));
+    };
+    const a = { ts: '1', story: 'BUG-1', model: 'claude-opus-5.5' };
+    const b = { ts: '2', story: 'BUG-2', model: 'claude-sonnet-5.5' };
+    write('main', [{ ts: '0', story: null }]);
+    write('bug-1', [a]);
+    write('group', [a, b]);
+    const rows = loadUsageAcrossWorktrees({ root: path.join(base, 'main'), metricsDir: '.agent-metrics' }, { worktrees: [path.join(base, 'bug-1'), path.join(base, 'group'), path.join(base, 'gone')] });
+    assert.deepEqual(rows.map((r) => r.ts), ['0', '1', '2']);
   });
 });

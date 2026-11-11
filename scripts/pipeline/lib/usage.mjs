@@ -10,6 +10,7 @@
 // - cost_usd is priced from scripts/pipeline/pricing.json at the time of the run, and `pricing` keeps
 //   the rates used, so later price changes never rewrite history. null when the model has no price.
 // - measured is false when the CLI reported no usage (timeout, crash, custom command without a report).
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runTags } from './run-tags.mjs';
@@ -272,6 +273,31 @@ export function addUsage(a, b) {
 }
 
 export const loadUsage = (config) => readJsonl(metricsFile(config, USAGE_FILE));
+
+// Usage from every git worktree of the repo (each `implement run` ticket and group has one, and its records
+// reach main only when its branch merges), deduplicated: a group branch carries its tickets' records too.
+export function loadUsageAcrossWorktrees(config, { worktrees = gitWorktrees(config.root) } = {}) {
+  const seen = new Set();
+  const rows = [];
+  for (const dir of [config.root, ...worktrees]) {
+    for (const row of readJsonl(path.join(dir, config.metricsDir, USAGE_FILE))) {
+      const id = JSON.stringify(row);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
+function gitWorktrees(root) {
+  try {
+    const out = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+    return out.split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice('worktree '.length));
+  } catch {
+    return [];
+  }
+}
 
 export function readUsageFile(file) {
   try {
