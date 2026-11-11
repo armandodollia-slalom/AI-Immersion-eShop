@@ -3,3 +3,5 @@
 {"ts":"2026-11-11T16:26:34.401Z","stage":"automation","story":"PROMO-1","round":4,"agent_prompt_ver":"09b47565","verifier_ver":"3158c4fc","cli":"claude","score":8,"passed":false,"gaps":1}
 {"ts":"2026-11-11T16:32:26.008Z","stage":"automation","story":"PROMO-1","round":5,"agent_prompt_ver":"09b47565","verifier_ver":"3158c4fc","cli":"claude","score":9,"passed":true,"gaps":2}
 {"ts":"2026-11-11T16:50:05.887Z","stage":"automation","story":"PROMO-1","round":1,"agent_prompt_ver":"09b47565","verifier_ver":"3158c4fc","cli":"claude","score":10,"passed":true,"gaps":0}
+{"ts":"2026-11-11T18:37:35.753Z","stage":"plan","story":"PROMO-2","round":1,"agent_prompt_ver":"c3934e11","verifier_ver":"73ba1657","cli":"claude","score":8,"passed":false,"gaps":5}
+{"ts":"2026-11-11T18:38:44.419Z","stage":"plan","story":"PROMO-2","round":2,"agent_prompt_ver":"c3934e11","verifier_ver":"73ba1657","cli":"claude","score":9,"passed":true,"gaps":3}
