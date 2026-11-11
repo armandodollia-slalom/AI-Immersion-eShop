@@ -29,6 +29,7 @@ var catalogDb = postgres.AddDatabase("catalogdb");
 var identityDb = postgres.AddDatabase("identitydb");
 var orderDb = postgres.AddDatabase("orderingdb");
 var webhooksDb = postgres.AddDatabase("webhooksdb");
+var promotionsDb = postgres.AddDatabase("promotionsdb");
 
 var launchProfileName = ShouldUseHttpForEndpoints() || isTestStack ? "http" : "https";
 
@@ -56,6 +57,14 @@ var orderingApi = builder.AddDotnetProject("ordering-api", "../Ordering.API")
     .WithReference(orderDb).WaitFor(orderDb)
     .WithHttpHealthCheck("/health")
     .WithEnvironment("Identity__Url", identityEndpoint);
+
+var promotionsApi = builder.AddDotnetProject("promotions-api", "../Promotions.API")
+    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(promotionsDb).WaitFor(promotionsDb)
+    .WithHttpHealthCheck("/health")
+    .WithEnvironment("Identity__Url", identityEndpoint);
+
+orderingApi.WithReference(promotionsApi);
 
 var orderProcessor = builder.AddDotnetProject("order-processor", "../OrderProcessor")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
@@ -86,6 +95,7 @@ var webApp = builder.AddDotnetProject("webapp", "../WebApp", o => o.LaunchProfil
     .WithReference(basketApi)
     .WithReference(catalogApi)
     .WithReference(orderingApi)
+    .WithReference(promotionsApi)
     .WithReference(rabbitMq).WaitFor(rabbitMq)
     .WaitFor(identityApi)
     .WithEnvironment("IdentityUrl", identityEndpoint);
@@ -128,6 +138,7 @@ if (isTestStack)
     });
     catalogApi.WithTestStackService(TestStack.CatalogApiPort, seeded: true, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     orderingApi.WithTestStackService(TestStack.OrderingApiPort, seeded: true, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
+    promotionsApi.WithTestStackService(TestStack.PromotionsApiPort, seeded: true, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     basketApi.WithTestStackService(TestStack.BasketApiPort, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     webHooksApi.WithTestStackService(TestStack.WebhooksApiPort, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     orderProcessor.WithTestStackService();

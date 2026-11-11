@@ -84,6 +84,7 @@ function main(argv) {
     input: JSON.stringify(toClaudePayload(event, input, projectDir)),
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'inherit'],
+    windowsHide: true,
   });
   if (child.error) {
     process.stderr.write(`[hooks] ${command[0]}: ${child.error.message}\n`);

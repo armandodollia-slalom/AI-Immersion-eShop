@@ -23,6 +23,7 @@ import {
   pidAlive,
   readJson,
   realWorktree,
+  removeSocket,
   runtimeDir,
   stateDir,
   worktreeOf,
@@ -44,7 +45,7 @@ export async function daemonStatus(worktree, timeoutMs = 3000) {
 function clearStale(paths) {
   const info = readJson(paths.pidFile);
   if (info && pidAlive(info.pid)) return false;
-  fs.rmSync(paths.socket, { force: true });
+  removeSocket(paths.socket);
   fs.rmSync(paths.pidFile, { force: true });
   return true;
 }
@@ -87,7 +88,7 @@ export async function ensureDaemon(worktree, { slnf, waitMs = 30000 } = {}) {
     const log = fs.openSync(path.join(stateDir(worktree), 'lspd.log'), 'a');
     const args = [SELF, 'serve', '--worktree', worktree];
     if (slnf) args.push('--slnf', path.resolve(worktree, slnf));
-    const child = spawn(process.execPath, args, { cwd: worktree, detached: true, stdio: ['ignore', log, log], env: process.env });
+    const child = spawn(process.execPath, args, { cwd: worktree, detached: true, stdio: ['ignore', log, log], env: process.env, windowsHide: true });
     child.unref();
     fs.closeSync(log);
     while (Date.now() < deadline) {
@@ -126,7 +127,10 @@ function knownDaemons() {
   return fs
     .readdirSync(dir)
     .filter((f) => /^[0-9a-f]{12}\.json$/.test(f))
-    .map((f) => readJson(path.join(dir, f)))
+    .map((f) => {
+      const info = readJson(path.join(dir, f));
+      return info && { ...info, pidFile: path.join(dir, f) };
+    })
     .filter(Boolean);
 }
 
@@ -138,8 +142,8 @@ export async function allStatus() {
     else {
       if (fs.existsSync(info.worktree)) clearStale(daemonPaths(info.worktree));
       else if (!pidAlive(info.pid)) {
-        fs.rmSync(info.socket, { force: true });
-        fs.rmSync(path.join(runtimeDir(), `${path.basename(info.socket, '.sock')}.json`), { force: true });
+        removeSocket(info.socket);
+        fs.rmSync(info.pidFile, { force: true });
       }
     }
   }
