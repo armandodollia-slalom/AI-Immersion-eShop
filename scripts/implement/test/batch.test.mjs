@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { blockersOf, collectStories, orderStories, worktreeFor } from '../lib/batch.mjs';
-import { plan, skippedOutcome } from '../lib/implement.mjs';
+import { implChanges } from '../../pipeline/lib/git.mjs';
+import { approvedOnDisk, plan, skippedOutcome } from '../lib/implement.mjs';
 
 function storiesDir(stories) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-unit-'));
@@ -85,4 +87,40 @@ test('dependency cycles and duplicate keys are errors', () => {
   assert.throws(() => collectStories([dir]), /Two story files for C-1/);
   assert.throws(() => collectStories([path.join(dir, 'missing.md')]), /No such file/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('approvedOnDisk: a resumed story stacked on a group branch matches the hash its review approved against that branch', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-approved-'));
+  const g = (...args) => {
+    const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  const write = (rel, text) => {
+    fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(repo, rel), text);
+  };
+  g('init', '-q', '-b', 'main');
+  g('config', 'user.email', 't@example.com');
+  g('config', 'user.name', 'T');
+  write('src/A.cs', '// a\n');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
+  // The group branch already carries an earlier ticket; the story stacks on it.
+  g('switch', '-q', '-c', 'bugfix/group');
+  write('src/Earlier.cs', '// earlier ticket\n');
+  g('add', '-A');
+  g('commit', '-qm', 'earlier');
+  g('switch', '-q', '-c', 'feat/story');
+  write('src/Story.cs', '// this story\n');
+  write('tests/StoryTests.cs', '// QE work in progress is not implementation\n');
+  const wt = { root: repo, baseRef: 'main', implExclude: ['tests'] };
+  const approvedHash = implChanges({ ...wt, baseRef: 'bugfix/group' }).hash;
+  const prior = { done: { hash: approvedHash }, review: { lastVerdict: 'APPROVED', approvedHash } };
+  assert.equal(approvedOnDisk(wt, prior, 'bugfix/group'), true);
+  assert.notEqual(implChanges(wt).hash, approvedHash, 'against main the earlier ticket is in the diff');
+  write('src/Story.cs', '// changed after the review\n');
+  assert.equal(approvedOnDisk(wt, prior, 'bugfix/group'), false);
+  assert.equal(approvedOnDisk(wt, { ...prior, review: { ...prior.review, lastVerdict: 'CHANGES_REQUESTED' } }, 'bugfix/group'), false);
+  fs.rmSync(repo, { recursive: true, force: true });
 });

@@ -319,6 +319,15 @@ export async function cleanupSubtasks(config, key) {
 
 const lastReviewFindings = (wt, key) => readJsonl(metricsFile(wt, 'arch-reviews.jsonl')).filter((r) => r.story === key).at(-1)?.findings ?? [];
 
+// The code on disk is what the story's review approved. The review hook runs with PIPELINE_BASE_REF set
+// to the story's base (a group or epic branch in epic delivery), so the hash is taken against that base
+// too; against the worktree's default base ref the group's other tickets would always differ.
+export function approvedOnDisk(wt, prior, base) {
+  if (!prior?.done || prior.review?.lastVerdict !== 'APPROVED') return false;
+  const { hash } = implChanges({ ...wt, baseRef: base ?? wt.baseRef });
+  return Boolean(hash) && prior.review.approvedHash === hash;
+}
+
 async function implementStoryInner(config, opts, holder) {
   const { key, base, branch, worktree, pr } = opts;
   const settings = config.implement;
@@ -360,8 +369,7 @@ async function implementStoryInner(config, opts, holder) {
   // Resuming a story whose review already approved the code on disk goes straight to QE; otherwise the
   // implementer continues from the work left in the worktree.
   const prior = opts.resume ? loadState(wt, key) : null;
-  const hash = prior ? implChanges(wt).hash : null;
-  let skipImplementer = Boolean(hash && prior.done && prior.review.lastVerdict === 'APPROVED' && prior.review.approvedHash === hash);
+  let skipImplementer = approvedOnDisk(wt, prior, base);
   let feedback = null;
   if (skipImplementer) {
     log(`${key}: resuming after the approved review; (re)starting QE.`);

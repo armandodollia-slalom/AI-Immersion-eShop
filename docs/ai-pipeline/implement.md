@@ -259,7 +259,7 @@ Hard stops are recorded (`limit_hit` in `implement-runs.jsonl`, `limitHit` in th
 Each run saves its story list and options to `.agent-state/implement/batch.json`, and each story's progress to `.agent-state/implement/<KEY>.json`. If the machine crashes or the runner is killed, `implement status` and the next agent session say so. `pipeline resume` restarts the batch in the background (log in `.agent-state/logs/`), and `implement resume` (or the same `implement run` again) continues it in the foreground:
 
 - stories that finished `done` and still have their branch are kept, and their dependents still stack on them (`--force` redoes them);
-- stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there, the runner goes straight to the tests; otherwise the implementer continues from the work on the branch, and the review keeps its round count;
+- stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there (the hash is taken against the story's base, its group or epic branch in epic delivery, as the review took it), the runner goes straight to the tests; otherwise the implementer continues from the work on the branch, and the review keeps its round count;
 - stories that ended `qe-escalated` or `review-escalated` wait for a human (see `.agent-state/escalations/` in their worktree): they keep that outcome, and their dependents are skipped for it, instead of running again to the same end. `--force` retries them once the escalation is handled;
 - the rest run as usual.
 
