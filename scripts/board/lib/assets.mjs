@@ -10,7 +10,7 @@ import { sha256 } from './ticket-format.mjs';
 
 // Runs a command; `binary` returns stdout as a Buffer. Same shape as util.run: { status, stdout, stderr }.
 export function exec(cmd, args, { cwd, input, env, binary = false } = {}) {
-  const r = spawnSync(cmd, args, { cwd, input, env: env ?? process.env, encoding: binary ? 'buffer' : 'utf8', maxBuffer: 512 * 1024 * 1024 });
+  const r = spawnSync(cmd, args, { cwd, input, env: env ?? process.env, encoding: binary ? 'buffer' : 'utf8', maxBuffer: 512 * 1024 * 1024, windowsHide: true });
   return {
     status: r.status ?? (r.error ? 127 : 1),
     stdout: r.stdout ?? (binary ? Buffer.alloc(0) : ''),

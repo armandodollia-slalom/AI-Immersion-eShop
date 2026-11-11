@@ -172,7 +172,7 @@ export function resolveModel(provider, requested, opts = {}) {
 // Discovery
 
 export function defaultRunner(cmd, args, { timeoutMs = 30000, env = process.env } = {}) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: timeoutMs, env, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: timeoutMs, env, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '', error: r.error ?? null };
 }
 
@@ -276,7 +276,7 @@ const DISCOVERERS = {
 export function cacheFile(opts = {}) {
   if (opts.cacheFile) return opts.cacheFile;
   if (process.env.MODELS_CACHE_FILE) return process.env.MODELS_CACHE_FILE;
-  const r = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: opts.root ?? REPO_ROOT, encoding: 'utf8' });
+  const r = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: opts.root ?? REPO_ROOT, encoding: 'utf8', windowsHide: true });
   const dir = r.status === 0 ? path.resolve(opts.root ?? REPO_ROOT, r.stdout.trim()) : os.tmpdir();
   return path.join(dir, 'models-cache.json');
 }
