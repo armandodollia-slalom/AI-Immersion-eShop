@@ -61,3 +61,7 @@ The implement stage itself is commit `9293e05`; see [implement.md](implement.md)
 - **Solution files count as implementation.** Adding a test project edits `eShop.slnx`, `eShop.Web.slnf` and `Directory.Packages.props`, which changes the approved implementation's fingerprint. Exclude them from the review hash, or have the implementer make those edits.
 - **Run the stack end to end.** The implementer only builds and runs existing unit tests.
 - **More stories.** Run PROMO-2 to PROMO-4 in parallel with `--background`, once the above is fixed.
+
+## See also
+
+- [First epic run: Promotions & Recommendations (in progress)](demo-epic-promo-2-results.md): the same pipeline on a whole epic, starting with PROMO-2.
