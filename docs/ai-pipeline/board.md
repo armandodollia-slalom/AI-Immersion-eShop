@@ -64,7 +64,7 @@ An event whose number is not above the last applied one is stale or a replay and
 Automatic pickup (`board pick`, which polled the board and ran the stories assigned to you) was removed; it will be reworked later. An engineer starts the pipeline by hand from an up-to-date checkout of `main`:
 
 ```bash
-node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --pr   # every story of an epic
+node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --pr   # every story of an epic, one epic PR
 node scripts/pipeline/pipeline.mjs implement run PROMO-3 --pr                                  # one story
 node scripts/board/board.mjs mine                                                              # the stories assigned to you
 ```
@@ -93,7 +93,12 @@ When a story reaches Pending Review, the issue gets a comment with the PR link a
 Whenever a story posts evidence (Pending Review), fails, or reaches Done, its epic issue gets the same links on **one rolling comment**, edited in place and found by a hidden marker (`<!-- pipeline-epic-evidence:{...} -->`, which also carries the data, so any machine can update its story's section without losing the others). The comment has:
 
 - per story: its lane, the PR link (and the epic branch it was merged into) or the branch, the feature video, screenshots, and a link to the API evidence comment on the story issue (the requests and responses themselves stay on the story issue);
-- for an epic delivered as one branch: the epic PR, its branch and its video (`board epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]`; `board review <KEY> --pr <url> --epic-branch <branch>` records that a story's PR was merged into the epic branch).
+- for an epic delivered as one branch: the epic PR, its branch and its video (`board epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]`; `board review <KEY> --pr <url> --epic-branch <branch>` records that a story's PR was merged into the epic branch);
+- for a bug epic delivered as PR groups: one line per group with its PR, branch and tickets (`board epic-pr <epic issue> --pr <url> --branch <name> --group <id> [--title <text>] [--tickets K1,K2]`).
+
+### Epic PRs
+
+With [epic delivery](implement.md#epic-delivery) (`implement run --epic <EPIC>`, the default) there is no PR per story. When a story's tests verify and it is merged into the epic branch, the runner moves its card to Pending Review with `board review <KEY> --epic-branch <branch>` (no `--pr`; the comment and the epic's section name the epic branch). When every story is verified, the runner opens ONE PR for the epic, whose body has `Closes #N` for every story and bug (so merging it closes them all, and `board sync` moves them to Done), and records it with `board epic-pr`. A bug epic gets one PR per group instead: each ticket goes to Pending Review with its group's PR (`board review <KEY> --pr <url> --epic-branch <group branch>`), and each group PR is recorded with `board epic-pr ... --group <id>`. A story that fails goes to Failed as usual; the epic PR is not opened until every story is verified.
 
 Over 60,000 characters every story shrinks to one line of links, below GitHub's comment limit.
 

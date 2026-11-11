@@ -214,6 +214,7 @@ node scripts/stack/slots.mjs list            # every pool slot, its owner and wh
 - A lease is stale, and the next `lease` takes it over, when its owner pid is gone or it is older than `leaseTtlMinutes` (240) since it was taken or last renewed (`slots.mjs renew --slot <n>`). The owner pid defaults to the parent process of `slots.mjs` (the harness that spawned it); pass `--pid` when that is a short-lived shell.
 - `release` does not stop the stack. Run `down` first unless the next owner should reuse it.
 - `lease` warns (stderr and `warning`) when Docker's memory looks too small for one more stack.
+- The QE stage runs a story's e2e specs on a leased slot when several tickets are implemented at once ([qe.md](../docs/ai-pipeline/qe.md#stack-slots)). Specs reach the slot through `e2e/teststack/ports.ts` (URLs from `TESTSTACK_SLOT`); specs with literal 18xxx ports stay on slot 0.
 - The harness can import everything from `scripts/stack/lib/index.mjs` (`lease`, `release`, `renew`, `listLeases`, `slotInfo`, `slotPorts`, `servicesFor`, ...).
 
 **Incremental rebuilds.** After code changes in a worktree, rebuild only what changed:

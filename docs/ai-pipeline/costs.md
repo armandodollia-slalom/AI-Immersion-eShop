@@ -25,13 +25,15 @@ The notes under a report list the runs that reported no usage (timed out, crashe
 | --- | --- |
 | `ts`, `run_id` | when the run finished; one id per agent run (a run can have several rows, one per model) |
 | `story`, `epic` | the ticket and its epic at the time (reports fill a missing epic from the current epic files) |
-| `stage`, `round`, `step` | pipeline stage (`implement` for the orchestrator or single implementer, `implement-pair`, `implement-verify` and `implement-ui-verify` for the verifier pairs, `review`, `plan`, `plan-verify`, `automation`, `automation-verify`, `pr-check`, `lessons`), the round within it, and the step: `plan`, `merge <subtask>` or the subtask id for the orchestrator and pairs, the critic or fixer for the PR check |
+| `stage`, `round`, `step` | pipeline stage (`implement` for the orchestrator or single implementer, `implement-epic-plan` for the epic plan of [epic delivery](implement.md#epic-delivery), `implement-pair`, `implement-verify` and `implement-ui-verify` for the verifier pairs, `review`, `plan`, `plan-verify`, `automation`, `automation-verify`, `pr-check`, `lessons`), the round within it, and the step: `plan`, `merge <subtask>` or the subtask id for the orchestrator and pairs, the critic or fixer for the PR check |
 | `agent`, `agent_ver`, `mode`, `cli`, `requested_model` | the agent definition and its version, headless or interactive, the CLI and the model alias asked for |
 | `model`, `measured` | the model that served the tokens; `measured: false` (and null tokens) when the run reported no usage |
 | `tokens` | `input` (uncached), `output`, `cache_read`, `cache_write_5m`, `cache_write_1h` |
 | `requests`, `cache_hit`, `cache_hit_rate` | model requests (Copilot and Codex), whether the run read from the cache, and the share of prompt tokens served from it |
 | `cost_usd`, `pricing` | the cost, and the rates used (model, the price entry's effective date, standard or long-context tier) so the figure never changes when prices do |
 | `cli_cost_usd`, `premium_requests`, `nano_aiu` | what the CLI reported: Claude Code's cost, Copilot's premium requests and AI units |
+| `delivery` | how the run delivered its stories: `epic` (one epic branch and PR) or `story` (a branch and PR per story); set by `implement run` |
+| `experiment_id`, `experiment_arm` | only inside a [delivery experiment](experiments.md): the experiment and its arm (`<mode>-<n>`) |
 
 ## How usage is captured
 
@@ -45,6 +47,8 @@ All runs go through `runAgent` and `runAgentAsync` in `scripts/pipeline/lib/agen
 Recording usage never fails a run. A model with no price is recorded with `cost_usd: null`, and a warning names it.
 
 Every run's result also carries a summary of what it recorded (`usage`: tokens, `costUsd`, `premiumRequests`, `nanoAiu`; `summarizeUsage` in `usage.mjs`). The implement harness adds these up per subtask and per story, so `subtask-runs.jsonl` and `decision-outcomes.jsonl` carry `tokens`, `cost` and `premiumRequests` next to the decisions they paid for, and `implement-runs.jsonl` carries the story total (`tokens`, `cost_usd`, `premium_requests`).
+
+The same `delivery`, `experiment_id` and `experiment_arm` fields are on every record of `decisions.jsonl`, `implement-runs.jsonl`, `subtask-runs.jsonl` and `decision-outcomes.jsonl`, so an experiment's report can attribute every token, decision and outcome to its arm. Records outside an experiment carry only `delivery` (and older records neither).
 
 ## Copilot billing
 

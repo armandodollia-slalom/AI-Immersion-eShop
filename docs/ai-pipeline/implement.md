@@ -18,12 +18,65 @@ node scripts/pipeline/pipeline.mjs implement decisions [--story KEY] [--json]  #
 | Option | Meaning |
 | --- | --- |
 | `--dry-run` | Print the order, branches and bases, then stop. No agents run. |
-| `--parallel N` | Run up to N stories at once (default 1). Each has its own worktree; dependents still wait for their blockers. |
+| `--parallel N\|auto` | Run up to N stories (or bug groups) at once. `auto` (the default, `implement.parallel`) sizes it from free memory; see [Resources](#resources). Each has its own worktree; dependents still wait for their blockers. |
 | `--base <ref>` | Base for stories with no in-batch blocker (default `baseRef`, `origin/main`; fetched first). |
 | `--pr` | Push each finished branch and open a PR with `gh`, against its base branch (stacked PRs for dependents). |
-| `--epic <EPIC>` | Implement every story and bug of the epic (its sub-issues on the board, fetched into the ticket cache), in Blocked-by order, in addition to any given. The epic's own ticket folder (its body and mockups) is handed to the agents too. |
+| `--epic <EPIC>` | Implement every story and bug of the epic (its sub-issues on the board, fetched into the ticket cache), in Blocked-by order, in addition to any given. The epic's own ticket folder (its body and mockups) is handed to the agents too, and copied into every worktree of the run. |
+| `--delivery epic\|story` | How an epic is delivered (`implement.delivery`, default `epic`): one epic branch and one PR (bug epics: one PR per group of bugs), or a branch and PR per story. See [Delivery modes](#delivery-modes). |
+| `--grouping auto\|epic\|ticket` | Bug epics (`implement.epic.grouping`, default `auto`): `auto` lets the orchestrator group the bugs into PRs when most tickets are bugs, `epic` forces one PR, `ticket` one PR per bug. See [Bug epics: PR groups](#bug-epics-pr-groups). |
+| `--standalone` | A ticket of an epic whose epic run is in progress gets its own branch and PR instead of joining the epic's branch. |
 | `--force` | Also implement stories that already have `## Implementation Notes`, and run stories whose [board](board.md) card is already in Pending Review or Done. |
 | `--takeover` | Take over board cards another machine holds in In Progress or Testing (otherwise those stories, and stories stacked on them, are skipped). |
+
+## Delivery modes
+
+| Mode | Command | Branches | PRs |
+| --- | --- | --- | --- |
+| **epic** (default) | `implement run --epic <EPIC>` | `epic/<slug>` from the base, one long-lived epic worktree; each story on its own branch from the epic branch, merged back once verified | one PR for the epic (`Closes #N` for every story and bug), or one per [PR group](#bug-epics-pr-groups) for a bug epic |
+| **story** | `implement run --epic <EPIC> --delivery story`, or `implement run <KEY>...` | a branch per story, stacked on its blockers | one PR per story (with `--pr`) |
+
+A single ticket (`implement run <KEY>`) keeps the story path: its own branch from the base and its own PR. If the ticket belongs to an epic with an epic run in progress (its run state in `.agent-state/implement/epics/<epic>.json` is not delivered and its epic branch exists), it **joins** that run instead: it runs from the epic branch (or its PR group's branch), merges back into it and goes to Pending Review naming that branch, without planning the epic again or opening a PR; the epic run (or `implement resume`) opens the PR. `--standalone` opts out. Bugs (`BUG-*` keys or type bug) take the same paths.
+
+### Epic delivery
+
+```mermaid
+flowchart TD
+  E[implement run --epic EPIC] --> W[epic/slug from the base<br/>one epic worktree, warm language server]
+  W --> P[Orchestrator: EPIC PLAN<br/>read mode, every ticket of the epic + mockups]
+  P --> N[[epic design note<br/>contracts, migrations, components,<br/>events, owns, build order, journeys]]
+  N --> F{foundation?}
+  F -->|yes| FD[Epic foundation:<br/>one verifier pair in the epic worktree]
+  F -->|no| S
+  FD --> S[Stories in Blocked-by order, up to --parallel,<br/>never two with overlapping owns at once]
+  S --> ST[Per story: the usual flow on feat/... from the epic branch<br/>its PLAN gets the design note<br/>pairs, review, QE]
+  ST -->|verified| M[Merge into the epic branch, serial<br/>conflicts: orchestrator in the epic worktree<br/>card to Pending Review with the epic branch]
+  ST -->|failed| X[dependents skipped,<br/>independent stories keep going]
+  M --> Q{every story verified?}
+  X --> Q
+  Q -->|no| FL[[no PR: failed and skipped list]]
+  Q -->|yes| EQ[Epic-level QE: EPIC-n journey ticket,<br/>plan + automation, TC-EPIC-n-NN]
+  EQ --> PC[PR check of every story and the journeys<br/>run --stories, report only]
+  PC --> PR[ONE PR: Closes #N per story,<br/>evidence per story, follow-ups]
+  PR --> B[board epic-pr: the epic's evidence comment]
+```
+
+1. **Epic branch and worktree.** `epic/<slug>` (`implement.epic.branchPrefix`) from the base, in `../<repo>-worktrees/epic-<slug>`, with the epic's tickets (epic body, stories, mockups) in its ticket cache. Its language server stays warm for the foundation and conflict resolution.
+2. **Epic plan.** The orchestrator (read mode, `implement.epic.planTimeoutSec`) reads the epic, every story inline and the mockups, and returns the **epic design note** (`AGENT_RESULT: <note JSON>`): shared contracts, migrations, components and integration events (one owner each), an optional **foundation**, each story's `owns` and extra `dependsOn`, the build order and the cross-story **journeys**. The harness validates it (story keys, journey ids, cycles; `lib/epic-plan.mjs`) and asks once more with the errors. The note is kept as JSON and Markdown in `.agent-state/implement/epics/<epic>.note.{json,md}` and logged in the decision log (stage `implement-epic-plan`, decision `plan-written` or `plan-rejected`). A rejected or blocked plan ends the run before any story starts (every story `blocked`).
+3. **Foundation.** Shared groundwork several stories need (a migration, a DTO) runs first as one verifier pair in the epic worktree: the orchestrator implements it inside the foundation's `owns`, a fresh verifier checks it, and it is committed on the epic branch. A failed foundation ends the run.
+4. **Stories.** Each story runs the per-story flow ([What happens](#what-happens)) on its own branch from the epic branch's current head; its PLAN task carries the design note. Stories start in Blocked-by order (plus the note's `dependsOn`) once their blockers are merged, up to `--parallel` at once, and two stories whose planned `owns` overlap never run at the same time. A verified story is merged into the epic branch (`<KEY>: Merge into epic/<slug>`, one at a time under a lock shared with joined tickets); a conflict goes to the orchestrator in the epic worktree, and an unresolved one ends the story `merge-conflict`. After the merge the runner publishes the ticket and moves its card to Pending Review with `board review <KEY> --epic-branch <branch>` (no PR per story). A failed story's dependents are skipped; independent stories keep going.
+5. **Epic-level QE.** When every story is verified and merged, the journeys become a ticket `EPIC-<epic issue number>` in the epic worktree's cache, and the QE stage plans and automates it like a story (cases `TC-EPIC-<n>-NN`). `implement.epic.qe: false` skips it.
+6. **PR check.** One run of the PR check over every story and the journey ticket against the whole epic diff (`pr-check run --stories K1,K2,EPIC-n`; each frontend story gets the design lens). `implement.epic.prCheck`: `report` (default), `fix` (fixes committed on the epic branch) or `off`.
+7. **One PR.** With `--pr`: the epic branch is pushed and one PR opened against the base, titled for the epic, whose body lists every story with its outcome, orchestration, review rounds, bug-fix cycles and PR check, the journeys' QE, the implementers' follow-ups, `Closes #N` for every story and bug and `Part of #<epic>`. Then `board epic-pr <epic#> --pr <url> --branch <branch>` records it on the epic's evidence comment. Without `--pr` the run ends `complete` with the body saved in the epic run state.
+
+The epic PR is opened only when every story that ran is verified and merged; otherwise the run ends with the epic's failed and skipped list (`stories-failed`), and the cards of failed stories go to Failed as usual. `implement status` shows each epic run (plan, foundation, merged, running, failed and skipped stories, each unit's branch, QE and PR), and `implement resume` continues an interrupted epic: the note, the foundation and merged stories are kept, a story that finished but was not merged is merged, interrupted stories resume in their worktrees.
+
+### Bug epics: PR groups
+
+An epic whose tickets are all or mostly bugs (type `bug` or `BUG-*` keys; `--grouping auto`) is not delivered as one PR. Its epic plan (run from this checkout) also returns `prGroups: [{id, title, tickets, reason, risk}]`: the orchestrator decides which bugs ship together, grouping by shared service or area, overlapping files, a shared root cause or Blocked-by, and keeping each PR reviewable; unrelated or risky fixes (security, data) ship alone. The harness checks the grouping: every ticket in exactly one group, a ticket's Blocked-by tickets in the same or an earlier group, and at most `implement.maxBugsPerGroup` tickets per group when that is a positive number (default `null`: no cap). An invalid grouping goes back once with the errors; if only the grouping is still wrong, the run falls back to one PR per bug. `--grouping ticket` skips the orchestrator's grouping (one PR per bug), `--grouping epic` delivers the bug epic like a feature epic.
+
+Each group gets `bugfix/<epic-slug>/<group-id>` (`implement.epic.bugfixPrefix`) from the base, stacked on the branch of a group it depends on, and its own worktree. Its tickets run the usual per-ticket flow one at a time and merge into the group branch; then the group gets one PR check of all its tickets (`run --stories`) and one PR with `Closes #N` for each of its tickets and why they were grouped. Groups run in parallel, up to `--parallel` groups at once; a group whose dependency group failed is skipped. Each ticket's card goes to Pending Review with its group's PR, and `board epic-pr <epic#> --pr <url> --branch <branch> --group <id>` lists every group PR on the epic's evidence comment. The epic-level journeys are skipped unless the plan lists journeys whose tickets are all in one group.
+
+The grouping is a decision (stage `implement-epic-plan`, decision `pr-groups`, `items` = the groups with their reasons, `fallback` when the harness grouped one per ticket), and every group's outcome is a `type: "pr-group"` record in `decision-outcomes.jsonl` (`groupId`, `tickets`, `verified`, `failed`, `skipped`, `pr`, `outcome`, `cost_usd`, `mergeConflicts`). Both are written in this checkout's `.agent-metrics/` (a bug epic has no single branch to commit them to). `implement decisions` labels a group **`bad-grouping`** when some of its tickets verified and others did not (the failure held back a PR that was ready), or when merging its tickets conflicted.
 
 ## What happens
 
@@ -82,6 +135,7 @@ The review and QE stages run against the worktree (`PIPELINE_ROOT`) using the pi
     "owns": ["src/Catalog.API/**"],                     // globs: * in a segment, ** across, bare path = subtree
     "dependsOn": [],
     "modelClass": "small" | "medium" | "large", "modelReason": "...",
+    "model": "<optional allowed alias, e.g. sol on Copilot>",
     "justification": "...",                             // required for large
     "verify": "code" | "ui", "verifyReason": "...",
     "scenario": "<optional teststack scenario for ui>",
@@ -138,7 +192,23 @@ Pairs work to the ticket, not to taste. Every finding gets an id (`<subtask>-r<r
 3. **The next verifier round** gets the disputes and rules on each (`disputes: [{finding, decision: "accepted" | "reasserted", evidence}]`): accepted drops the finding; re-asserted raises it again with the same id and evidence that the ticket's acceptance criteria, the mockup or correctness/security require it. A disputed finding raised again without evidence is accepted and demoted to minor, so a dispute alone never leaves a finding "unaddressed".
 4. **No ping-pong:** a finding re-asserted twice (`MAX_REASSERTS`) can no longer be disputed; a further dispute is `overruled`, the finding stays blocking and the implementer is told to fix it or report blocked. The round limit still applies.
 
+The same rule holds above the pairs, with the same JSON shape (`lib/feedback.mjs`): architecture review findings and QE bugs reach the orchestrator with ids (`review-r<n>-<i>`, `qe-r<n>-<i>`). It fixes what the acceptance criteria, correctness, security or the mockup need, disputes nits and scope creep in its result, and lists follow-ups. Review disputes are written to `.agent-state/review/<KEY>.disputes.json` in the story worktree; the next review round shows them to the reviewer, which accepts them or re-raises the finding with evidence (`scripts/review/lib/review.mjs`). A finding raised again keeps the id it was disputed under, so a finding re-asserted twice stays blocking there too. QE bugs are failing tests, so their disputes are only recorded. The orchestrator's disputes and follow-ups are logged in the decision log (stage `implement`, decision `disputed` or `follow-ups`), the reviewer's rulings in its `review` entry (`disputes`), and `implement-runs.jsonl` carries `disputes` {`nit`, `outOfScope`, `total`} and `follow_ups` (the pairs' and the orchestrator's). In epic delivery each ticket's follow-ups are kept in the epic run state and listed in the epic (or group) PR.
+
 Recorded: per round in `subtask-runs.jsonl`, `disputes` {`nit`, `outOfScope`, `accepted`, `reasserted`, `overruled`, `followUps`}; in the `implement-verify` decision-log entry, `disputes` [{`finding`, `kind`, `reason`, `ruling`, `evidence`}], `follow_ups`, and on each item its `id` and `dispute` {`kind`, `ruling`}. Follow-ups are collected per subtask (`followUps` in `subtask-runs.jsonl`) and for the story (`followUps` in its `type: "story"` record in `decision-outcomes.jsonl`, and in the run's progress), to be filed as new tickets; filing them is not automatic.
+
+## Resources
+
+`--parallel auto` (the default) sizes the run from the memory free right now (`lib/resources.mjs`): `os.freemem`, plus on macOS the inactive and purgeable pages `vm_stat` reports, and Docker's `MemTotal` (`docker info`). From the budget (free memory minus `resources.reserveGb`, default 6) it derives, and prints with the reasons at the start of the run:
+
+| Value | Rule (defaults in `resources` of `scripts/implement/config.json`) |
+| --- | --- |
+| `parallel` (tickets or bug groups at once) | budget / (`worktreeGb` 3 + `agentGb` 0.5), at least 1, at most the CPUs and `maxParallel` |
+| `maxConcurrentPairs` per story | 2 when each ticket's share also holds a second pair (`roslynGb` 0.8 + `agentGb`), else 1 |
+| `maxConcurrentAgents` | two per ticket, at most the CPUs |
+| `LSP_MAX_SERVERS` (passed to `lspd`) | one per ticket plus what the rest of the budget holds at `roslynGb` each |
+| `TESTSTACK_SLOTS` (stack slots for UI verifiers and QE) | (Docker memory - `dockerOverheadGb` 1 - slot 0) / `stackGb` 1.6, at most `parallel` |
+
+On a 48 GB, 14-CPU machine with about 30 GB free and a 15.6 GB Docker VM this gives 6 tickets at once (8 with 34 GB free), 6 stack slots and 12 agents. The values go to every process of the run (`IMPLEMENT_RESOURCES`) and into each `implement-runs.jsonl` record (`resources`). Before a new ticket, group or verifier pair starts, the harness checks free memory again and waits while it is below the reserve (every `waitPollSec` 15, at most `maxWaitSec` 1800, then starts anyway). An explicit `--parallel N` (or a number in `implement.parallel`) turns auto sizing off; `LSP_MAX_SERVERS`, `TESTSTACK_SLOTS`, `IMPLEMENT_MAX_AGENTS` and `IMPLEMENT_MAX_PAIRS` in the environment win over the derived values. With several tickets at once, QE runs each story's e2e specs on a leased stack slot ([qe.md](qe.md#stack-slots)).
 
 ## Language servers
 
@@ -154,7 +224,7 @@ If `scripts/lsp/` is installed (the adapter is `scripts/implement/lib/lsp.mjs`; 
 | `blocked` | The orchestrator (or implementer) reported the story unimplementable (for example an Open Question that changes the design), or blockers' branches conflict | skipped |
 | `plan-rejected` | The plan broke the rules twice, or had more than `maxSubtasks` subtasks ("split the story") | skipped |
 | `pair-exhausted` | A subtask was not approved after its rounds and one escalation (rewrite or takeover) | skipped |
-| `merge-conflict` | The orchestrator could not resolve a conflict merging a subtask | skipped |
+| `merge-conflict` | The orchestrator could not resolve a conflict merging a subtask (or, in epic delivery, merging the story into the epic or group branch) | skipped |
 | `model-policy` | A model the accepted plan needs (or a role's CLI) is not allowed by the model policy | skipped |
 | `limit-agent-runs`, `limit-wall-clock` | The story hit `maxAgentRunsPerStory` or `storyWallClockSec` | skipped |
 | `no-changes` | The implementer finished without changing implementation files | skipped |
@@ -204,7 +274,11 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 | --- | --- | --- |
 | `implement.worktreeDir` | `../{repo}-worktrees` | Where worktrees go, relative to the repo root (subtask worktrees sit next to their story's, as `<key>--<id>`) |
 | `implement.branchPrefix` | `feat/` | Branch name prefix (subtasks: `feat/<key>--<id>`) |
-| `implement.parallel` | 1 | Default `--parallel` |
+| `implement.parallel` | `auto` | Default `--parallel`: a number, or `auto` ([Resources](#resources)) |
+| `implement.delivery` | `epic` | Default `--delivery` for `--epic` runs |
+| `implement.epic.*` | `branchPrefix` `epic/`, `bugfixPrefix` `bugfix/`, `grouping` `auto`, `planTimeoutSec` 1800, `qe` true, `prCheck` `report`, `prCheckTimeoutSec` 14400 | [Epic delivery](#epic-delivery) and [bug epics](#bug-epics-pr-groups) |
+| `implement.maxBugsPerGroup` | `null` (no cap) | A positive number caps the tickets per bug PR group |
+| `resources.*` | `reserveGb` 6, `worktreeGb` 3, `agentGb` 0.5, `roslynGb` 0.8, `stackGb` 1.6, `dockerOverheadGb` 1, `maxParallel` null, `waitPollSec` 15, `maxWaitSec` 1800 | [Resources](#resources) |
 | `implement.orchestrate` | `true` | `false` (or `IMPLEMENT_ORCHESTRATE=0`): one implementer agent per story |
 | `implement.implementerTimeoutSec` | 5400 | Per orchestrator integration/fix run |
 | `implement.maxImplementerRuns` | 8 | Orchestrator runs after the pairs (integration, review fixes and bug fixes) |
@@ -215,7 +289,7 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 | `implement.retryDelaySec` | 30 | Wait before a retry, times the attempt number |
 | `implement.selfModeMaxFiles` | 6 | Guidance for the planner: self mode up to about this many files |
 | `implement.roles.<role>.cli` | `null` (the pipeline's CLI) | Run a role on another CLI. Roles: `orchestrator`, `pairImplementer`, `verifier`, `uiVerifier`. `PIPELINE_VERIFIER_CLI` sets both verifiers |
-| `implement.roles.<role>.modelClass` | orchestrator `large`, verifier `medium`, uiVerifier `large` | Fixed by the harness; pair implementers use the planner's class |
+| `implement.roles.<role>.modelClass` | orchestrator `large`, verifier `medium`, uiVerifier `large` | Fixed by the harness; pair implementers use the planner's class, or the `model` alias the planner names for a subtask (any alias in `agent.allowedModels` with an id for the pair implementer's CLI, for example `sol` on Copilot; checked when the plan is accepted) |
 | `modelClasses.<class>` | small and medium `sonnet`, large `opus` | Model alias per class (from `agent.allowedModels`). `agent.models.implementer` pins the orchestrator's model. All choices go through `resolveModelForRole()` in `lib/plan.mjs`, which checks the alias for the role's CLI with the pipeline's one model check (`resolveModel` in `scripts/pipeline/lib/agents.mjs`, see [models](models.md)) when the plan is accepted, so a disallowed model or a CLI without allowed ids (Codex today) fails the plan, not a pair |
 | `agent.models.implementer` | `null` (the orchestrator's class) | Model alias for the orchestrator or single implementer |
 | `implement.prepareCmd` | `dotnet restore eShop.Web.slnf` | Run in each new subtask worktree (failure is logged, not fatal) |
@@ -247,6 +321,7 @@ The orchestrator's decisions go to the pipeline's shared decision log, `.agent-m
 | `bad-split` | Merge conflicts, edits or needs outside `owns`, or findings pointing at another subtask's files |
 | `should-have-been-self` | (per plan) Delegated, every subtask ≤ `tinySubtaskLoc` (40) LOC and ≤ `tinySubtaskFiles` (3) files, total ≤ `selfMaxTotalLoc` (150), and more than `selfOverheadRunsPerSubtask` (2) agent runs per subtask |
 | `weak-verification` | An escaped defect was credited to the subtask |
+| `bad-grouping` | (per bug PR group) Some of the group's tickets verified and others did not, or merging its tickets conflicted ([Bug epics](#bug-epics-pr-groups)) |
 
 Caveats: compare decisions only between stories with similar `features` (services, acceptance criteria, size); a bigger story legitimately needs more rounds. A change to a verifier's prompt (its `promptVersion`) changes how strict it is, so round counts and escaped defects before and after are not comparable. LOC expectations are the planner's guesses; the useful signal is the trend of expected versus actual, not single misses.
 
