@@ -152,3 +152,34 @@ Lane counts: In Progress: 14, Pending Review: 3, Testing: 5
 | BUG-21 | #44 | In Progress | - |
 
 Lane counts: In Progress: 14, Pending Review: 3, Testing: 5
+
+## 09:47 (after the Copilot quota outage; Claude Code run at parallel 3)
+
+Cards wrongly moved to Failed at 09:10 (D12) went back to In Progress when the 09:29 run claimed them.
+
+| Ticket | Issue | Lane |
+| --- | --- | --- |
+| EPIC #64 | #64 | In Progress |
+| BUG-1 | #31 | In Progress |
+| BUG-2 | #42 | In Progress |
+| BUG-3 | #45 | In Progress |
+| BUG-4 | #46 | Pending Review |
+| BUG-5 | #47 | Pending Review |
+| BUG-6 | #48 | Pending Review |
+| BUG-7 | #49 | Pending Review |
+| BUG-8 | #50 | Testing |
+| BUG-9 | #51 | In Progress |
+| BUG-10 | #32 | In Progress |
+| BUG-11 | #33 | Testing |
+| BUG-12 | #34 | In Progress |
+| BUG-13 | #35 | Pending Review |
+| BUG-14 | #36 | In Progress |
+| BUG-15 | #37 | In Progress |
+| BUG-16 | #38 | In Progress |
+| BUG-17 | #39 | Pending Review |
+| BUG-18 | #40 | Testing |
+| BUG-19 | #41 | Pending Review |
+| BUG-20 | #43 | In Progress |
+| BUG-21 | #44 | In Progress |
+
+Lane counts: In Progress: 12, Pending Review: 7, Testing: 3
