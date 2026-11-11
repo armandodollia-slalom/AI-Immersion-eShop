@@ -282,3 +282,20 @@ worked on): symptom, root cause, fix, commit and impact.
 - **Impact:** about 15 minutes of wasted agent runs and 14 cards wrongly in
   Failed; recovered by switching the agent CLI to Claude Code at 09:29 and
   re-running the non-done tickets.
+
+## D13: an escalated ticket was re-run on every restart
+
+- **Symptom:** after each batch restart, BUG-1 (QE escalated at 06:11) was
+  re-planned and re-implemented by opus (about 5 minutes and three agent runs)
+  and then ended `qe-escalated` again within minutes, because its QE
+  escalation still stood.
+- **Root cause:** `plan()` keeps only `done` stories and resumes interrupted
+  ones; every other outcome starts over, including outcomes that wait for a
+  human.
+- **Fix:** `qe-escalated` and `review-escalated` are kept by later runs (the
+  story is skipped with that outcome, stays a dependency, and its dependents
+  are skipped for it as before). `--force` retries it once the escalation is
+  handled. Tests in `batch.test.mjs` and `epic.test.mjs`; `implement.md`
+  "Interrupted runs". Commit `e3ec3a0`.
+- **Impact:** about $1–2 and 5–10 minutes of an agent slot per restart (five
+  restarts so far).
