@@ -2,14 +2,14 @@
 
 The pipeline only calls the models this project allows. The policy is `agent.allowedModels` and `agent.modelIds` in `scripts/pipeline/config.json`, and every agent run checks its model through one function, `resolveModel` in `scripts/pipeline/lib/agents.mjs`, before its CLI starts. `scripts/models/models.mjs` shows the policy per agent CLI, what the CLIs on your machine can serve, resolves model names and checks every model configured elsewhere in the repo; it resolves through the same function, so it never disagrees with a run.
 
-Current policy: **Claude Opus 5.5 and Claude Sonnet 5.5 only**, Sonnet 5.5 by default.
+Current policy: **Claude Opus 5.5 and Claude Sonnet 5.5 on every CLI, plus Sol 6.1 on Copilot**, Sonnet 5.5 by default.
 
 ```json
 "agent": {
-  "allowedModels": ["opus", "sonnet"],
+  "allowedModels": ["opus", "sonnet", "sol"],
   "modelIds": {
     "claude": { "opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5" },
-    "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5" }
+    "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5", "sol": "gpt-6.1-sol" }
   },
   "strictModels": true,
   "models": { "default": "sonnet" }
@@ -19,12 +19,12 @@ Current policy: **Claude Opus 5.5 and Claude Sonnet 5.5 only**, Sonnet 5.5 by de
 | Agent CLI | Allowed ids | Default |
 | --- | --- | --- |
 | `claude` (Claude Code) | `claude-opus-5-5`, `claude-sonnet-5-5` | `claude-sonnet-5-5` |
-| `copilot` (GitHub Copilot CLI) | `claude-opus-5.5`, `claude-sonnet-5.5` | `claude-sonnet-5.5` |
+| `copilot` (GitHub Copilot CLI) | `claude-opus-5.5`, `claude-sonnet-5.5`, `gpt-6.1-sol` | `claude-sonnet-5.5` |
 | `codex` (OpenAI Codex CLI) | none | none |
 
-- **Aliases.** Configs and stages name models by alias (`opus`, `sonnet`); `modelIds` maps each alias to each CLI's own id. Claude Code spells versions with dashes, Copilot CLI with dots. The ids pin the version: Claude Code's own `opus` alias would follow the newest Opus, so the policy names `claude-opus-5-5`.
+- **Aliases.** Configs and stages name models by alias (`opus`, `sonnet`, `sol`); `sol` (Sol 6.1) has an id only for Copilot, so a Claude Code run asked for `sol` is refused under `strictModels`; `modelIds` maps each alias to each CLI's own id. Claude Code spells versions with dashes, Copilot CLI with dots. The ids pin the version: Claude Code's own `opus` alias would follow the newest Opus, so the policy names `claude-opus-5-5`.
 - **Strict.** With `strictModels`, a run with no model gets `agent.models.default`, and an alias with no id for the run's CLI is refused instead of falling back to the CLI's default model, so nothing outside the list ever runs. Without it (the pre-policy behaviour, and what the unit tests of other stages use), a missing id means the CLI's default.
-- **Codex is refused.** Codex only serves OpenAI models, so `modelIds` has no entry for it and every run on it (`PIPELINE_AGENT_CLI=codex`, an implement role or PR-check model set with `"cli": "codex"`) fails before the CLI starts. To enable it, add OpenAI ids under `modelIds.codex` for aliases you add to `allowedModels` (the policy then no longer says "Opus and Sonnet only").
+- **Codex is refused.** Codex only serves OpenAI models, so `modelIds` has no entry for it and every run on it (`PIPELINE_AGENT_CLI=codex`, an implement role or PR-check model set with `"cli": "codex"`) fails before the CLI starts. To enable it, add OpenAI ids under `modelIds.codex` for aliases you add to `allowedModels` (Codex also serves `gpt-6.1-sol`, so mapping `sol` there would enable it for that alias only).
 - `PIPELINE_MODEL_OVERRIDE=<alias>` forces one allowed alias for every agent, for experiments; it is checked like any other choice.
 
 ## Commands

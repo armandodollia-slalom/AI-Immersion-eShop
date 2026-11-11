@@ -89,10 +89,10 @@ test('the policy per CLI: agent.allowedModels mapped through agent.modelIds, def
   assert.equal(resolveModel('copilot', 'default', opts), 'claude-sonnet-5.5');
 });
 
-test('the checked-in policy allows exactly Opus 5.5 and Sonnet 5.5 and disables codex', () => {
+test('the checked-in policy allows Opus 5.5 and Sonnet 5.5 (plus Sol 6.1 on Copilot) and disables codex', () => {
   const opts = { configDir: path.join(here, '..') };
   assert.deepEqual(allowedModels('claude', opts), ['claude-opus-5-5', 'claude-sonnet-5-5']);
-  assert.deepEqual(allowedModels('copilot', opts), ['claude-opus-5.5', 'claude-sonnet-5.5']);
+  assert.deepEqual(allowedModels('copilot', opts), ['claude-opus-5.5', 'claude-sonnet-5.5', 'gpt-6.1-sol']);
   assert.throws(() => assertProviderUsable('codex', opts), ProviderDisabledError);
 });
 

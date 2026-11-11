@@ -62,7 +62,7 @@ test('PIPELINE_MODEL_OVERRIDE forces one allowed alias, and is checked too', () 
 
 test('the checked-in configs only use allowed models, and test writing uses sonnet', () => {
   const qe = loadConfig('qe');
-  assert.deepEqual(qe.agent.allowedModels, ['opus', 'sonnet']);
+  assert.deepEqual(qe.agent.allowedModels, ['opus', 'sonnet', 'sol']);
   assert.equal(qe.agent.models.automation, 'sonnet');
   for (const stage of [null, 'review', 'implement', 'qe']) {
     for (const alias of Object.values(loadConfig(stage).agent.models)) {

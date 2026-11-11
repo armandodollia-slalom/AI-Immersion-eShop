@@ -15,10 +15,10 @@
   },
   "agent": {
     "cli": "claude",
-    "allowedModels": ["opus", "sonnet"],
+    "allowedModels": ["opus", "sonnet", "sol"],
     "modelIds": {
       "claude": { "opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5" },
-      "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5" }
+      "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5", "sol": "gpt-6.1-sol" }
     },
     "strictModels": true,
     "models": {
