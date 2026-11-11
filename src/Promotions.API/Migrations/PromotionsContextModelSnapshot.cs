@@ -88,12 +88,16 @@ namespace Promotions.API.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal?>("AmountOff")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
                     b.Property<int?>("BuyQuantity")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset?>("EndedEventSentAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset>("EndsAt")
                         .HasColumnType("timestamp with time zone");
@@ -101,20 +105,26 @@ namespace Promotions.API.Migrations
                     b.Property<int?>("GetQuantity")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("IsStackable")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("MinOrderTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<decimal?>("PercentOff")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("numeric(5,2)");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
 
                     b.Property<bool>("RequiresCoupon")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("StartedEventSentAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset>("StartsAt")
                         .HasColumnType("timestamp with time zone");
@@ -128,6 +138,16 @@ namespace Promotions.API.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -147,19 +167,22 @@ namespace Promotions.API.Migrations
                     b.Property<int>("PromotionId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("TargetId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TargetType")
+                    b.Property<string>("Scope")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("TargetId")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
                     b.HasIndex("PromotionId");
 
-                    b.ToTable("PromotionTargets", (string)null);
+                    b.ToTable("PromotionTargets", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PromotionTargets_TargetId_Scope", "(\"Scope\" = 'All') = (\"TargetId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("eShop.IntegrationEventLogEF.IntegrationEventLogEntry", b =>

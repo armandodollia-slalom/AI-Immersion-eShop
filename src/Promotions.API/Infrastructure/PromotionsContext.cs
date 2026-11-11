@@ -17,11 +17,13 @@ public class PromotionsContext(DbContextOptions<PromotionsContext> options) : Db
         modelBuilder.Entity<Promotion>(eb =>
         {
             eb.ToTable("Promotions");
-            eb.Property(p => p.Name).HasMaxLength(200).IsRequired();
+            eb.Property(p => p.Name).HasMaxLength(Promotion.NameMaxLength).IsRequired();
+            eb.Property(p => p.Description).HasMaxLength(Promotion.DescriptionMaxLength).IsRequired();
             eb.Property(p => p.Type).HasConversion<string>().HasMaxLength(32);
             eb.Property(p => p.Status).HasConversion<string>().HasMaxLength(32);
-            eb.Property(p => p.PercentOff).HasPrecision(5, 2);
-            eb.Property(p => p.AmountOff).HasPrecision(18, 2);
+            eb.Property(p => p.Value).HasPrecision(18, 2);
+            eb.Property(p => p.MinOrderTotal).HasPrecision(18, 2);
+            eb.Property(p => p.Version).IsRowVersion();
             eb.HasIndex(p => new { p.Status, p.StartsAt, p.EndsAt });
             eb.HasMany(p => p.Targets).WithOne().HasForeignKey(t => t.PromotionId).OnDelete(DeleteBehavior.Cascade);
             eb.HasMany(p => p.Coupons).WithOne().HasForeignKey(c => c.PromotionId).OnDelete(DeleteBehavior.Cascade);
@@ -30,8 +32,11 @@ public class PromotionsContext(DbContextOptions<PromotionsContext> options) : Db
         modelBuilder.Entity<PromotionTarget>(eb =>
         {
             eb.ToTable("PromotionTargets");
-            eb.Property(t => t.TargetType).HasConversion<string>().HasMaxLength(32);
+            eb.Property(t => t.Scope).HasConversion<string>().HasMaxLength(32);
             eb.HasIndex(t => t.PromotionId);
+            eb.ToTable(t => t.HasCheckConstraint(
+                "CK_PromotionTargets_TargetId_Scope",
+                "(\"Scope\" = 'All') = (\"TargetId\" IS NULL)"));
         });
 
         modelBuilder.Entity<Coupon>(eb =>
