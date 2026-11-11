@@ -1,7 +1,10 @@
 // Unit tests for the board stage's pure logic (no GitHub calls).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { columnForState, isForward, pickable, storyKind } from '../lib/board.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { columnForState, epicSlugOf, isForward, listEpics, mockupsFor, pickable, renderMockups, storyKind } from '../lib/board.mjs';
 import { parseNetwork, redact, renderEvidence, tracesFromReport } from '../lib/evidence.mjs';
 
 const config = { board: { repo: 'acme/shop', storyLabel: 'story', blockedLabel: 'needs-human' } };
@@ -77,4 +80,35 @@ test('evidence Markdown is capped and says what it left out', () => {
   assert.match(md, /40 more characters/);
   assert.match(md, /1 more request\(s\) not shown/);
   assert.equal(md.match(/\*\*GET\*\*/g).length, 2);
+});
+
+test('a story belongs to the epic file its text links to', () => {
+  assert.equal(epicSlugOf('**Part of:** [Promotions epic](epic-promotions-and-recommendations.md)'), 'epic-promotions-and-recommendations');
+  assert.equal(epicSlugOf('**Part of:** [Bugs](../epic-teststack-bug-findings.md)'), 'epic-teststack-bug-findings');
+  assert.equal(epicSlugOf('See [research](../targeted-advertising-profiles.md)'), null);
+});
+
+test('epics and mockups are found by file and folder name and linked in the issue body', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'board-'));
+  const cfg = { root, board: { ...config.board, epicsDir: 'pr', mockupsDir: 'pr/mockups' } };
+  fs.mkdirSync(path.join(root, 'pr/mockups/PROMO-2-admin'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'pr/mockups/PROMO-20-other'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'pr/epic-promos.md'), '# Epic: Promos\n\nText');
+  fs.writeFileSync(path.join(root, 'pr/notes.md'), '# Not an epic');
+  fs.writeFileSync(path.join(root, 'pr/mockups/PROMO-2-admin/README.md'), '# Admin mockup\n\nThe console design ([local](./x)).\n\n- Live: https://example.com/live\n- File: [a](https://github.com/x)\n');
+  fs.writeFileSync(path.join(root, 'pr/mockups/PROMO-2-admin/Main.dc.html'), '');
+  fs.writeFileSync(path.join(root, 'pr/mockups/PROMO-2-admin/shot.png'), '');
+
+  assert.deepEqual(listEpics(cfg).map((e) => [e.slug, e.title]), [['epic-promos', 'Epic: Promos']]);
+  const mockups = mockupsFor(cfg, 'PROMO-2');
+  assert.deepEqual(mockups.map((m) => m.name), ['PROMO-2-admin']);
+  const md = renderMockups(cfg, mockups);
+  assert.match(md, /### \[Admin mockup\]\(https:\/\/github\.com\/acme\/shop\/tree\/main\/pr\/mockups\/PROMO-2-admin\)/);
+  assert.match(md, /The console design \(\[local\]\)\./);
+  assert.match(md, /- Live: https:\/\/example\.com\/live/);
+  assert.doesNotMatch(md, /File: \[a\]/);
+  assert.match(md, /- \[`Main\.dc\.html`\]\(https:\/\/github\.com\/acme\/shop\/blob\/main\/pr\/mockups\/PROMO-2-admin\/Main\.dc\.html\)/);
+  assert.match(md, /!\[shot\.png\]\(https:\/\/github\.com\/acme\/shop\/raw\/main\/pr\/mockups\/PROMO-2-admin\/shot\.png\)/);
+  assert.equal(renderMockups(cfg, mockupsFor(cfg, 'PROMO-9')), '');
+  fs.rmSync(root, { recursive: true });
 });
