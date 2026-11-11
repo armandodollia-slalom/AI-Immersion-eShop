@@ -26,14 +26,15 @@ Stages run in the order listed in `scripts/pipeline/stages.json`. All of them ar
 
 ```mermaid
 flowchart LR
-  C[You run a command<br/>implement run, pipeline start, qe plan] -->|worktree + headless agent| I
+  C[You run a command<br/>implement run or pipeline start] -->|worktree + headless agent| I
   I[Implementation agent<br/>pipeline start KEY ... pipeline done] -->|Stop / SubagentStop| D{{scripts/pipeline<br/>dispatcher}}
   D --> R[review stage]
   R -->|changes requested: block<br/>findings go back to the agent| I
   R -->|approved| Q[qe stage<br/>automation in the background]
   R -->|approved| PC[pr-check stage<br/>waits for QE, then checks in the background]
   PC -->|findings: block on the next stop| I
-  P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
+  D --> B[board stage<br/>moves the story's card, never blocks]
+  P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>blocks the push unless plans and tests are verified]
 ```
 
 ## Pipeline inputs: tickets on the board
