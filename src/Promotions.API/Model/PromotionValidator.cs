@@ -2,7 +2,7 @@
 
 /// <summary>
 /// The field rules of a promotion create or update. Errors are keyed by the camelCase JSON field name
-/// (<c>targets[0].targetId</c> for a target), ready for <c>TypedResults.ValidationProblem</c>.
+/// (every target rule under <c>targets</c>, with the target index in the message), ready for <c>TypedResults.ValidationProblem</c>.
 /// </summary>
 public static class PromotionValidator
 {
@@ -91,15 +91,15 @@ public static class PromotionValidator
                 var target = request.Targets[i];
                 if (target?.Scope is not { } scope)
                 {
-                    Add($"targets[{i}].scope", "Scope is required: All, Brand, Type or Product.");
+                    Add("targets", $"Target {i}: Scope is required: All, Brand, Type or Product.");
                 }
                 else if (scope == PromotionScope.All && target.TargetId is not null)
                 {
-                    Add($"targets[{i}].targetId", "TargetId must be null when scope is All.");
+                    Add("targets", $"Target {i}: TargetId must be null when scope is All.");
                 }
                 else if (scope != PromotionScope.All && target.TargetId is null)
                 {
-                    Add($"targets[{i}].targetId", $"TargetId is required when scope is {scope}.");
+                    Add("targets", $"Target {i}: TargetId is required when scope is {scope}.");
                 }
             }
         }
