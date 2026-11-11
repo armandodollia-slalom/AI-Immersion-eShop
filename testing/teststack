@@ -9,11 +9,19 @@ cd "$ROOT"
 
 export PATH="$HOME/.dotnet:$HOME/.aspire/bin:$PATH"
 
+# Slot 0 is the default stack; slots 1..8 are isolated copies (own compose project, host ports, state and
+# image tags) computed by scripts/stack (the single source of the port table). See "Slots" in testing/README.md.
+SLOT="${TESTSTACK_SLOT:-0}"
 PROJECT="eshop-teststack"
 COMPOSE_DIR="deploy/teststack"
 COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yaml"
 STATE_DIR="artifacts/teststack"
 ENV_FILE="$STATE_DIR/.env.teststack"
+LOADER_CONFIG="testing/teststack.json"
+IMAGE_TAG="teststack"
+SLOT_JSON='"slot":0'
+SLOTS_CLI="scripts/stack/slots.mjs"
+STATE_HOME="${TESTSTACK_STATE_HOME:-$HOME/.eshop-teststack}"
 LOADER_PROJECT="testing/eShop.TestStack/eShop.TestStack.csproj"
 LOADER_DLL="artifacts/bin/eShop.TestStack/release/teststack.dll"
 APPHOST="src/eShop.AppHost/eShop.AppHost.csproj"
@@ -25,11 +33,18 @@ export Parameters__redis_password="${TESTSTACK_REDIS_PASSWORD:-teststack-redis}"
 export Parameters__eventbus_password="${TESTSTACK_EVENTBUS_PASSWORD:-teststack-rabbit}"
 
 log() { printf '[teststack] %s\n' "$*" >&2; }
-fail() { log "error: $1"; printf '{"ok":false,"command":"%s","error":"%s"}\n' "${COMMAND:-}" "${1//\"/\\\"}"; exit "${2:-1}"; }
+fail() {
+  local slot="${SLOT:-0}"; [[ "$slot" =~ ^[0-9]+$ ]] || slot=null
+  log "error: $1"; printf '{"ok":false,"command":"%s","slot":%s,"error":"%s"}\n' "${COMMAND:-}" "$slot" "${1//\"/\\\"}"; exit "${2:-1}"
+}
 
 usage() {
   cat >&2 <<'EOF'
-Usage: testing/teststack <command> [options]
+Usage: testing/teststack [--slot <n>] <command> [options]
+
+  --slot <n>   0 (default, or $TESTSTACK_SLOT) is the standard stack on ports 18xxx. 1..8 are isolated copies:
+               project eshop-teststack-<n>, every host port + 1000*n, state in artifacts/teststack/slot-<n>/,
+               images tagged <service>:teststack-<n>. Lease one with 'node scripts/stack/slots.mjs lease'.
 
 Lifecycle
   up [--scenario <name|path>] [--timeout <s>]   Build if needed, start the stack, wait, load the scenario (default: "default")
@@ -45,6 +60,11 @@ State (all wait for health first)
 Authoring
   validate [<name|path>...]                     Parse and resolve scenarios without a running stack
   hash-password <password>                      Produce an ASP.NET Identity V3 hash for AspNetUsers.PasswordHash
+
+Incremental
+  rebuild-changed --base <git-ref>              Rebuild only the images affected by 'git diff <base>...HEAD' plus
+                                                uncommitted files, and recreate only those containers
+  services-for <files...>                       Print the compose services those files affect (no Docker needed)
 
 Generated compose file
   publish [--check]                             Regenerate deploy/teststack from the AppHost; --check fails on drift
@@ -75,11 +95,12 @@ images_hash() { content_hash src Directory.Build.props Directory.Build.targets D
 loader_hash() { content_hash testing/eShop.TestStack testing/Directory.Packages.props Directory.Build.props global.json; }
 
 build_loader() {
-  local force="${1:-}" stamp="$STATE_DIR/loader.stamp" hash
+  # The loader is per worktree, not per slot, so its stamp stays in the slot-0 state folder.
+  local force="${1:-}" stamp="artifacts/teststack/loader.stamp" hash
   hash="$(loader_hash)"
   if [[ -z "$force" && -f "$LOADER_DLL" && -f "$stamp" && "$(cat "$stamp")" == "$hash" ]]; then return; fi
   log "building loader"
-  mkdir -p "$STATE_DIR"
+  mkdir -p artifacts/teststack
   dotnet build "$LOADER_PROJECT" -c Release --nologo -v q -clp:ErrorsOnly >&2 || fail "loader build failed"
   echo "$hash" > "$stamp"
 }
@@ -93,6 +114,46 @@ images_present() {
   done < <(sed -n 's/^[A-Z_]*_IMAGE=//p' "$ENV_FILE")
 }
 
+# "<image> <id>" for every service image of this slot, sorted.
+current_image_ids() {
+  local image
+  while IFS= read -r image; do
+    printf '%s %s\n' "$image" "$("$DOCKER" image inspect -f '{{.Id}}' "$image" 2>/dev/null || echo missing)"
+  done < <(sed -n 's/^[A-Z_]*_IMAGE=//p' "$ENV_FILE" | sort)
+}
+record_image_ids() { current_image_ids > "$STATE_DIR/images.ids"; }
+
+# True when the slot's images are the ones this worktree built last. Slots are shared between worktrees, so
+# another worktree may have rebuilt the same tags since. A missing record (state from before slots) passes
+# unless strict is requested.
+images_ours() {
+  local strict="${1:-}"
+  [[ -f "$STATE_DIR/images.ids" ]] || { [[ -z "$strict" ]]; return; }
+  [[ "$(current_image_ids)" == "$(cat "$STATE_DIR/images.ids")" ]]
+}
+
+# Image builds tag '<name>:latest' before they are retagged per slot, so builds from different worktrees or
+# slots are serialized through a machine-wide lock.
+BUILD_LOCK=""
+acquire_build_lock() {
+  local dir="$STATE_HOME/build.lock" waited=0 holder
+  mkdir -p "$STATE_HOME"
+  until mkdir "$dir" 2>/dev/null; do
+    holder="$(cat "$dir/pid" 2>/dev/null || true)"
+    if [[ -n "$holder" ]] && ! kill -0 "$holder" 2>/dev/null; then
+      log "removing stale image build lock (pid $holder is gone)"; rm -rf "$dir"; continue
+    fi
+    if [[ -z "$holder" && -n "$(find "$dir" -maxdepth 0 -mmin +2 2>/dev/null)" ]]; then rm -rf "$dir"; continue; fi
+    (( waited % 30 == 0 )) && log "waiting for another test stack image build to finish (pid ${holder:-?}, lock $dir)"
+    (( waited >= 3600 )) && fail "timed out waiting for the image build lock $dir"
+    sleep 2; waited=$((waited + 2))
+  done
+  echo $$ > "$dir/pid"
+  BUILD_LOCK="$dir"
+  trap release_build_lock EXIT
+}
+release_build_lock() { if [[ -n "$BUILD_LOCK" ]]; then rm -rf "$BUILD_LOCK"; BUILD_LOCK=""; fi; }
+
 set_env() { # set_env KEY VALUE: replace or append in $ENV_FILE
   local key="$1" value="$2" tmp
   tmp="$(mktemp)"
@@ -101,13 +162,31 @@ set_env() { # set_env KEY VALUE: replace or append in $ENV_FILE
   mv "$tmp" "$ENV_FILE"
 }
 
+# Writes the slot's host ports into its env file so plain 'docker compose --env-file' calls see them too
+# (slot 0 relies on the defaults in the compose file and is left unchanged).
+write_port_env() {
+  (( SLOT > 0 )) || return 0
+  local var
+  for var in "${PORT_VARS[@]}"; do
+    [[ "$(sed -n "s/^${var}=//p" "$ENV_FILE")" == "${!var}" ]] || set_env "$var" "${!var}"
+  done
+}
+
+retag_image() { # retag_image ENV_KEY IMAGE: '<name>:latest' -> '<name>:$IMAGE_TAG' and record it in the env file
+  local key="$1" name="${2%%:*}"
+  "$DOCKER" tag "$name:latest" "$name:$IMAGE_TAG" || fail "built image $name:latest not found"
+  set_env "$key" "$name:$IMAGE_TAG"
+}
+
 build_images() {
   local force="${1:-}" stamp="$STATE_DIR/images.stamp" hash out generated key value
   hash="$(images_hash)"
-  if [[ -z "$force" && -f "$stamp" && "$(cat "$stamp")" == "$hash" ]] && images_present; then
+  if [[ -z "$force" && -f "$stamp" && "$(cat "$stamp")" == "$hash" ]] && images_present && images_ours; then
+    write_port_env
     log "images up to date"; return
   fi
   require_docker
+  acquire_build_lock
   log "building service images via 'aspire do prepare-teststack' (dotnet publish container support)"
   out="$STATE_DIR/prepare"
   rm -rf "$out"; mkdir -p "$out"
@@ -120,13 +199,13 @@ build_images() {
   cp "$generated" "$ENV_FILE"
 
   # The build step tags images '<name>:latest'; the deploy tag in the env file is only applied by
-  # a push/deploy step. Pin a stable local tag so compose never resolves an unrelated ':latest'.
-  local key image name
+  # a push/deploy step. Pin a stable local tag per slot so compose never resolves an unrelated ':latest'
+  # and slots never share an image.
+  local image
   while IFS='=' read -r key image; do
-    name="${image%%:*}"
-    "$DOCKER" tag "$name:latest" "$name:teststack" || fail "built image $name:latest not found"
-    set_env "$key" "$name:teststack"
+    retag_image "$key" "$image"
   done < <(grep '^[A-Z_]*_IMAGE=' "$ENV_FILE")
+  release_build_lock
 
   # Parameters are secret and may be left blank by prepare; fill from the fixed test values.
   for key in POSTGRES_PASSWORD:postgres_password REDIS_PASSWORD:redis_password EVENTBUS_PASSWORD:eventbus_password; do
@@ -139,14 +218,140 @@ build_images() {
   while IFS= read -r key; do
     [[ -n "$(sed -n "s/^${key}=//p" "$ENV_FILE")" ]] || fail "$ENV_FILE has no value for $key after prepare-teststack"
   done < <(sed -n 's/^\([A-Z_]*\)=.*/\1/p' "$COMPOSE_DIR/.env")
+  write_port_env
 
   images_present || fail "images listed in $ENV_FILE are missing after the build"
+  record_image_ids
   echo "$hash" > "$stamp"
 }
 
 loader() {
   build_loader
-  dotnet "$LOADER_DLL" "$@" --root "$ROOT"
+  if (( SLOT > 0 )); then dotnet "$LOADER_DLL" "$@" --root "$ROOT" --config "$LOADER_CONFIG"
+  else dotnet "$LOADER_DLL" "$@" --root "$ROOT"; fi
+}
+
+# Adds the slot, project, webappUrl and ports to a JSON result line.
+annotate() {
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" == \{*\} && "$line" != *'"slot":'* ]]; then printf '%s,%s}\n' "${line%\}}" "$SLOT_JSON"
+    else printf '%s\n' "$line"; fi
+  done
+}
+
+# Runs a loader command whose JSON result gets the slot annotation; keeps the loader's exit code.
+loader_json() {
+  local out rc=0
+  out="$(loader "$@")" || rc=$?
+  [[ -z "$out" ]] || annotate <<< "$out"
+  return "$rc"
+}
+
+# Resolves the slot (project, state paths, image tag, host ports) through scripts/stack, the single source of
+# the port table. Slot 0 keeps the defaults above and only needs node for the JSON annotation.
+setup_slot() {
+  [[ "$SLOT" =~ ^[0-9]+$ ]] || fail "--slot must be an integer, got '$SLOT'" 64
+  SLOT=$((10#$SLOT))
+  if ! command -v node >/dev/null 2>&1; then
+    (( SLOT == 0 )) || fail "node is required for --slot (scripts/setup.sh installs it)"
+    return
+  fi
+  local out key value
+  out="$(node "$SLOTS_CLI" shell-env --slot "$SLOT" 2>&1)" || fail "invalid slot $SLOT: $(printf '%s' "$out" | sed -n 's/^\[slots\] error: //p' | head -n1)" 64
+  PORT_VARS=()
+  while IFS='=' read -r key value; do
+    case "$key" in
+      PROJECT) PROJECT="$value" ;;
+      STATE_DIR) STATE_DIR="$value" ;;
+      ENV_FILE) ENV_FILE="$value" ;;
+      LOADER_CONFIG) LOADER_CONFIG="$value" ;;
+      IMAGE_TAG) IMAGE_TAG="$value" ;;
+      SLOT_JSON) SLOT_JSON="$value" ;;
+      PORT_*) key="${key#PORT_}"; PORT_VARS+=("$key"); export "$key=$value" ;;
+    esac
+  done <<< "$out"
+  mkdir -p "$STATE_DIR"
+}
+PORT_VARS=()
+
+# Built service images, as listed in the slot's env file: "identity-api", "webapp", ...
+built_services() { sed -n 's/^\([A-Z_]*\)_IMAGE=.*/\1/p' "$ENV_FILE" | tr 'A-Z_' 'a-z-'; }
+
+stack_running() { [[ -f "$ENV_FILE" && -n "$(compose ps -q 2>/dev/null)" ]]; }
+
+json_array() { local first=1 item; printf '['; for item in "$@"; do (( first )) || printf ','; printf '"%s"' "$item"; first=0; done; printf ']'; }
+
+rebuild_changed() {
+  local base="" only="" started=$SECONDS svc
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --base) base="${2:?--base requires a git ref}"; shift 2 ;;
+      --services) only="${2:?--services requires a comma-separated list}"; shift 2 ;;
+      *) fail "Usage: rebuild-changed --base <git-ref> | --services <a,b>" 64 ;;
+    esac
+  done
+  [[ -n "$base" || -n "$only" ]] || fail "Usage: rebuild-changed --base <git-ref> | --services <a,b>" 64
+
+  local files="" count=0 services=()
+  if [[ -n "$base" ]]; then
+    git rev-parse --verify --quiet "$base^{commit}" >/dev/null || fail "unknown git ref '$base'" 64
+    files="$( { git diff --name-only "$base...HEAD"; git diff --name-only HEAD; git ls-files -o --exclude-standard; } | sort -u)"
+    count="$(printf '%s' "$files" | grep -c . || true)"
+    while IFS= read -r svc; do [[ -n "$svc" ]] && services+=("$svc"); done \
+      < <(printf '%s\n' "$files" | node "$SLOTS_CLI" services-for --plain --stdin)
+  fi
+  if [[ -n "$only" ]]; then
+    local known; known="$(node -e 'console.log(Object.keys(require(process.argv[1]).services).join(" "))' "$ROOT/scripts/stack/config.json")"
+    for svc in ${only//,/ }; do
+      [[ " $known " == *" $svc "* ]] || fail "unknown service '$svc' (built services: $known)" 64
+      [[ " ${services[*]-} " == *" $svc "* ]] || services+=("$svc")
+    done
+  fi
+
+  local full=false
+  if (( ${#services[@]} > 0 )); then
+    require_docker
+    build_loader
+    local all_count; all_count="$( (built_services 2>/dev/null || true) | grep -c . || true)"
+    if ! images_present || ! images_ours strict || (( ${#services[@]} >= all_count )); then
+      # Never built here, rebuilt by another worktree since (a diff can't describe those images), or every
+      # service is affected anyway: one parallel full build is the fastest correct option.
+      if (( ${#services[@]} >= all_count )) && images_present && images_ours strict; then log "every service is affected; building all images"
+      else log "slot $SLOT images were not built from this worktree; building all images"; fi
+      full=true
+      build_images force
+      services=(); while IFS= read -r svc; do services+=("$svc"); done < <(built_services)
+    else
+      local svc key image no_build=""
+      acquire_build_lock
+      for svc in "${services[@]}"; do
+        log "building $svc via 'aspire do build-$svc'"
+        TestStack=true aspire do "build-$svc" --apphost "$APPHOST" -e teststack -o "$STATE_DIR/prepare-partial" --non-interactive $no_build >&2 \
+          || fail "aspire do build-$svc failed"
+        no_build="--no-build"
+        key="$(printf '%s' "$svc" | tr 'a-z-' 'A-Z_')_IMAGE"
+        image="$(sed -n "s/^${key}=//p" "$ENV_FILE")"
+        [[ -n "$image" ]] || fail "$ENV_FILE has no $key"
+        retag_image "$key" "$image"
+      done
+      release_build_lock
+      record_image_ids
+      images_hash > "$STATE_DIR/images.stamp"
+    fi
+  fi
+
+  local recreated=() wait_out="" rc=0
+  if (( ${#services[@]} > 0 )) && stack_running; then
+    log "recreating ${services[*]}"
+    compose up -d --no-deps "${services[@]}" >&2 || fail "docker compose up failed for ${services[*]}"
+    recreated=("${services[@]}")
+    wait_out="$(loader wait)" || rc=$?
+  fi
+  printf '{"ok":%s,"command":"rebuild-changed","base":%s,"changedFiles":%s,"services":%s,"full":%s,"recreated":%s%s,"elapsedMs":%s,%s}\n' \
+    "$( (( rc == 0 )) && echo true || echo false)" "$( [[ -n "$base" ]] && printf '"%s"' "$base" || echo null)" "${count:-0}" "$(json_array ${services[@]+"${services[@]}"})" "$full" \
+    "$(json_array ${recreated[@]+"${recreated[@]}"})" "${wait_out:+,\"wait\":$wait_out}" "$(( (SECONDS - started) * 1000 ))" "$SLOT_JSON"
+  return "$rc"
 }
 
 # Resolve a scenario argument that is a path relative to the caller's cwd; names pass through.
@@ -177,16 +382,26 @@ publish() {
   fi
 }
 
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --slot) SLOT="${2:-}"; [[ -n "$SLOT" ]] || { usage; exit 64; }; shift 2 ;;
+    --slot=*) SLOT="${1#--slot=}"; shift ;;
+    *) break ;;
+  esac
+done
+
 COMMAND="${1:-}"
 [[ -n "$COMMAND" ]] || { usage; exit 64; }
 shift
+
+case "$COMMAND" in -h|--help|help|publish|hash-password|services-for) ;; *) setup_slot ;; esac
 
 case "$COMMAND" in
   build)
     force=""; [[ "${1:-}" == "--force" ]] && force=1
     build_loader "$force"
     build_images "$force"
-    echo '{"ok":true,"command":"build"}'
+    echo "{\"ok\":true,\"command\":\"build\",$SLOT_JSON}"
     ;;
   up)
     scenario="default"; extra=()
@@ -199,27 +414,37 @@ case "$COMMAND" in
     require_docker
     build_loader
     build_images
-    log "starting stack"
+    log "starting stack $PROJECT (slot $SLOT)"
     compose up -d --remove-orphans >&2 || fail "docker compose up failed"
-    loader load "$scenario" ${extra[@]+"${extra[@]}"}
+    loader_json load "$scenario" ${extra[@]+"${extra[@]}"}
     ;;
   down)
     require_docker
     if [[ -f "$ENV_FILE" ]]; then compose down -v --remove-orphans >&2
     else "$DOCKER" compose -p "$PROJECT" down -v --remove-orphans >&2; fi
-    echo '{"ok":true,"command":"down"}'
+    echo "{\"ok\":true,\"command\":\"down\",$SLOT_JSON}"
     ;;
   load)
     [[ $# -ge 1 ]] || fail "Usage: load <scenario> [--hard] [--timeout <s>]" 64
     s="$(scenario_arg "$1")"; shift
-    loader load "$s" "$@"
+    loader_json load "$s" "$@"
     ;;
   validate)
     args=(); for a in "$@"; do if [[ "$a" == --* ]]; then args+=("$a"); else args+=("$(scenario_arg "$a")"); fi; done
     loader validate ${args[@]+"${args[@]}"}
     ;;
-  reset|wait|status|hash-password)
+  reset|wait|status)
+    loader_json "$COMMAND" "$@"
+    ;;
+  hash-password)
     loader "$COMMAND" "$@"
+    ;;
+  rebuild-changed)
+    rebuild_changed "$@"
+    ;;
+  services-for)
+    if [[ $# -eq 0 ]]; then fail "Usage: services-for <files...>" 64; fi
+    node "$SLOTS_CLI" services-for "$@"
     ;;
   publish)
     publish "${1:-}"

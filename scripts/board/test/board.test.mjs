@@ -1,10 +1,10 @@
 // Unit tests for the board stage's pure logic (no GitHub calls).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { columnForState, isForward, pickable, storyKind } from '../lib/board.mjs';
+import { COLUMNS, columnForState, failureComment, isForward, pickable, storyKind } from '../lib/board.mjs';
 import { parseNetwork, redact, renderEvidence, tracesFromReport } from '../lib/evidence.mjs';
 
-const config = { board: { repo: 'acme/shop', storyLabel: 'story', blockedLabel: 'needs-human' } };
+const config = { board: { repo: 'acme/shop', storyLabel: 'story', blockedLabel: 'needs-human', columns: { ready: 'Ready', failed: 'Failed' } } };
 
 test('story kind comes from the [FE]/[BE] tag in the title', () => {
   assert.equal(storyKind('# PROMO-6: [FE - WebApp, WebAppComponents] - Display\n'), 'ui');
@@ -19,6 +19,34 @@ test('cards only move forward unless forced', () => {
   assert.ok(isForward('inProgress', 'review'));
   assert.ok(!isForward('review', 'inProgress'));
   assert.ok(!isForward('review', 'review'));
+});
+
+test('the Failed lane sits between Pending Review and Done, so no hook moves a card out of it', () => {
+  assert.deepEqual(COLUMNS, ['backlog', 'ready', 'inProgress', 'review', 'failed', 'done']);
+  assert.ok(isForward('inProgress', 'failed'));
+  assert.ok(!isForward('failed', 'inProgress'), 'pipeline start does not drag a failed card back');
+  assert.ok(!isForward('failed', 'review'));
+  assert.ok(!isForward('failed', 'ready'), 'only a forced move (a human) retries it');
+});
+
+test('the failure comment carries the outcome, reason, findings, branch and log', () => {
+  const body = failureComment(
+    config,
+    {
+      outcome: 'pair-exhausted',
+      reason: 'subtask api was not approved after 3 rounds',
+      branch: 'feat/demo-1-x',
+      log: '.agent-state/logs/implement-DEMO-1.log',
+      findings: [{ subtask: 'api', file: 'src/A.cs', line: 12, issue: 'no owner check', fix: 'check buyer id' }, { subtask: 'ui', file: 'src/WebApp/X.razor', issue: 'button hidden', screenshot: '/tmp/s/round-3/cart.png' }, 'plain text finding'],
+    },
+    { host: 'box' },
+  );
+  assert.match(body, /\*\*pair-exhausted\*\* \(subtask api was not approved after 3 rounds\)/);
+  assert.match(body, /- \[api\] `src\/A\.cs:12` no owner check Fix: check buyer id/);
+  assert.match(body, /screenshot: `\/tmp\/s\/round-3\/cart\.png`/);
+  assert.match(body, /- plain text finding/);
+  assert.match(body, /Branch: `feat\/demo-1-x`\. Log on `box`: `\.agent-state\/logs\/implement-DEMO-1\.log`/);
+  assert.match(body, /remove the `needs-human` label and move the card back to Ready/);
 });
 
 test('the stop hook asks for Pending Review once verified (interactive only)', () => {
@@ -36,6 +64,7 @@ test('the picker takes open story cards in Ready (never Backlog) assigned to the
     item({ number: 1 }),
     item({ number: 2, column: 'inProgress' }),
     item({ number: 9, column: 'backlog' }),
+    item({ number: 10, column: 'failed' }),
     item({ number: 3, assignees: ['someone'] }),
     item({ number: 4, labels: ['story', 'needs-human'] }),
     item({ number: 5, state: 'CLOSED' }),

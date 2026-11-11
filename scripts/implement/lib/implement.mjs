@@ -5,8 +5,13 @@ import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
-import { appendJsonl, extractResult, isPidAlive, log, nowIso, readJson, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
+import { appendJsonl, extractResult, isPidAlive, log, nowIso, readJson, readJsonl, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { branchFor, collectStories, orderStories, worktreeFor } from './batch.mjs';
+import { OUTCOMES_FILE, attributeEscaped, storyOutcomeRecord } from './decisions.mjs';
+import { commitAll, commitEnv, filesChanged, headSha, mustGit } from './gitops.mjs';
+import { formatDiagnostics } from './lsp.mjs';
+import { LimitError, agentSettings, checkBudget, createContext, orchestrate } from './orchestrate.mjs';
+import { integrationTask } from './tasks.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
 const BOARD_CLI = path.join(INSTALL_ROOT, 'scripts/board/board.mjs');
@@ -112,16 +117,6 @@ function startWorker(config, story, { pr, script }) {
 // Worker: one story, start to finish, in its own worktree
 // ---------------------------------------------------------------------------------------------
 
-const commitEnv = { ...process.env, PIPELINE_DISABLE: '1' };
-const mustGit = (cwd, args) => git(cwd, args, { allowFail: false, env: commitEnv });
-
-function commitAll(cwd, message, specs = ['.', ':!graphify-out']) {
-  git(cwd, ['add', '-A', '--', ...specs], { env: commitEnv });
-  if (git(cwd, ['diff', '--cached', '--quiet']).status === 0) return false;
-  mustGit(cwd, ['commit', '-q', '-m', message]);
-  return true;
-}
-
 export function prepareWorktree(config, { key, file, base, branch, worktree, merge = [] }) {
   if (!fs.existsSync(worktree)) {
     if (!revExists(config.root, base)) throw new Error(`base ${base} does not exist`);
@@ -191,59 +186,160 @@ async function waitForQe(config, key, timeoutSec, pollSec) {
   }
 }
 
+// Settings the environment overrides: PIPELINE_VERIFIER_CLI runs both verifiers on another CLI, and
+// IMPLEMENT_ORCHESTRATE=0 falls back to one implementer agent per story.
+export function applyEnv(config) {
+  const s = config.implement;
+  if (process.env.IMPLEMENT_ORCHESTRATE === '0') s.orchestrate = false;
+  if (process.env.PIPELINE_VERIFIER_CLI) for (const r of ['verifier', 'uiVerifier']) s.roles[r] = { ...s.roles[r], cli: process.env.PIPELINE_VERIFIER_CLI };
+  return config;
+}
+
 export async function implementStory(config, opts) {
+  const holder = {};
+  try {
+    return await implementStoryInner(config, opts, holder);
+  } finally {
+    if (holder.ctx) await holder.ctx.deps.lsp.stopAll();
+  }
+}
+
+const lastReviewFindings = (wt, key) => readJsonl(metricsFile(wt, 'arch-reviews.jsonl')).filter((r) => r.story === key).at(-1)?.findings ?? [];
+
+async function implementStoryInner(config, opts, holder) {
   const { key, base, branch, worktree, pr } = opts;
   const settings = config.implement;
   const started = Date.now();
   const metrics = { implementerRuns: 0, reviewBlocks: 0, bugFixCycles: 0, promptVersion: null };
-  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extra });
+  let ctx = null;
+  const extraMetrics = () =>
+    ctx
+      ? {
+          mode: ctx.metrics.mode,
+          decisionId: ctx.decisionId,
+          subtasks: ctx.plan?.subtasks.length ?? 0,
+          agentRuns: ctx.metrics.agentRuns,
+          pairRounds: ctx.metrics.pairRounds,
+          takeovers: ctx.metrics.takeovers,
+          escalations: ctx.metrics.escalations,
+          limitHit: ctx.metrics.limitHit,
+          lspCalls: ctx.metrics.lspCalls,
+          signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences,
+        }
+      : {};
+  const finish = (outcome, reason = null, extra = {}) => ({ key, outcome, reason, branch, worktree, base, minutes: Math.round((Date.now() - started) / 600) / 100, ...metrics, ...extraMetrics(), ...extra });
 
   const prep = prepareWorktree(config, opts);
   if (prep.error) return finish('blocked', prep.error);
-  const wt = prep.config;
+  const wt = applyEnv(prep.config);
   const start = pipeline(worktree, base, ['start', key]);
   if (start.status !== 0) return finish('error', `pipeline start failed: ${tail(start.stderr, 500)}`);
 
+  const orchestrated = wt.implement.orchestrate !== false;
+  const recordOutcome = (outcome, reason) => {
+    const m = extraMetrics();
+    appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: Math.round((Date.now() - started) / 600) / 100, prompt_version: metrics.promptVersion, ...(ctx ? { mode: m.mode, decision_id: m.decisionId, subtasks: m.subtasks, agent_runs: m.agentRuns, pair_rounds: m.pairRounds, takeovers: m.takeovers, escalations: m.escalations, limit_hit: m.limitHit, lsp_calls: m.lspCalls, signature_changes_without_references: m.signatureChangesWithoutReferences } : {}) }]);
+    if (ctx) appendJsonl(metricsFile(wt, OUTCOMES_FILE), [storyOutcomeRecord({ ts: nowIso(), key, decisionId: ctx.decisionId, mode: ctx.metrics.mode, outcome, reason, wallClockSec: Math.round((Date.now() - started) / 1000), agentRuns: ctx.metrics.agentRuns, reviewBlocks: metrics.reviewBlocks, bugFixCycles: metrics.bugFixCycles, limitHit: ctx.metrics.limitHit, branch, lspCalls: ctx.metrics.lspCalls, signatureChangesWithoutReferences: ctx.metrics.signatureChangesWithoutReferences })]);
+  };
+  const recordEscaped = (source, findings, files) => {
+    if (!ctx?.plan) return;
+    const recs = attributeEscaped({ ts: nowIso(), key, decisionId: ctx.decisionId, subtasks: ctx.plan.subtasks, source, findings, files });
+    if (recs.length) appendJsonl(metricsFile(wt, OUTCOMES_FILE), recs);
+  };
+  // A story that stops before the review loop still records (and commits) its metrics.
+  const stop = (outcome, reason, extra = {}) => {
+    recordOutcome(outcome, reason);
+    commitAll(worktree, `${key}: Record implement metrics`, [wt.metricsDir]);
+    return { ...finish(outcome, reason, extra), finalSha: headSha(worktree) };
+  };
+
   let feedback = null;
+  let skipNextRun = false;
+  let integration = null;
+  if (orchestrated) {
+    ctx = createContext({ config: wt, key, storyFile: prep.story, branch, worktree, base, onProgress: (patch) => saveRun(config, key, patch) });
+    holder.ctx = ctx;
+    await ctx.deps.lsp.start(worktree);
+    const o = await orchestrate(ctx);
+    if (!o.ok) return stop(o.outcome, o.reason, { findings: o.findings });
+    // Self mode: the verifier already approved the orchestrator's own work, so the review comes next.
+    skipNextRun = o.mode === 'self';
+    if (o.mode === 'delegate') integration = integrationTask({ key, storyFile: prep.story, branch, worktree, base, plan: o.plan, notes: o.integrationNotes });
+  }
+
   let qe = null;
+  let fixingBugs = false;
   for (;;) {
     // Implementation and review loop: the review's stop hook blocks with findings until it approves.
     let approved = false;
     while (!approved) {
-      if (metrics.implementerRuns >= settings.maxImplementerRuns) return finish('unresolved', `still not approved after ${metrics.implementerRuns} implementer runs`);
-      metrics.implementerRuns++;
-      const res = runAgent(wt, {
-        name: 'implementer',
-        task: implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback }),
-        mode: 'implement',
-        model: wt.agent.models.implementer,
-        timeoutSec: settings.implementerTimeoutSec,
-      });
-      metrics.promptVersion = res.version;
-      const reported = extractResult(res.output);
-      commitAll(worktree, `${key}: Implementation`);
-      if (reported?.status === 'blocked') return finish('blocked', reported.reason ?? 'the implementer reported the story blocked');
-      if (!res.ok && !reported) {
-        feedback = `The previous run ${res.timedOut ? 'timed out' : `failed (exit ${res.status})`} before finishing. Continue the implementation.`;
-        continue;
+      if (skipNextRun) {
+        skipNextRun = false;
+      } else {
+        if (metrics.implementerRuns >= settings.maxImplementerRuns) return ctx ? stop('unresolved', `still not approved after ${metrics.implementerRuns} implementer runs`) : finish('unresolved', `still not approved after ${metrics.implementerRuns} implementer runs`);
+        let left = settings.implementerTimeoutSec;
+        let release = null;
+        if (ctx) {
+          try {
+            left = Math.min(left, checkBudget(ctx));
+          } catch (error) {
+            if (error instanceof LimitError) return stop(error.outcome, error.message);
+            throw error;
+          }
+          release = await ctx.deps.acquire(`${key}:implementer`);
+          ctx.metrics.agentRuns++;
+          ctx.metrics.byRole.orchestrator = (ctx.metrics.byRole.orchestrator ?? 0) + 1;
+        }
+        metrics.implementerRuns++;
+        const before = headSha(worktree);
+        const task = integration ?? implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback });
+        integration = null;
+        const { cli, model } = agentSettings(wt, 'orchestrator');
+        let res;
+        try {
+          res = runAgent(wt, { name: 'implementer', task, mode: 'implement', model, cli, noSubagents: Boolean(ctx), timeoutSec: left, usage: { stage: 'implement', story: key, round: metrics.implementerRuns } });
+        } finally {
+          release?.();
+        }
+        metrics.promptVersion = res.version;
+        const reported = extractResult(res.output);
+        commitAll(worktree, `${key}: Implementation`);
+        if (fixingBugs) {
+          recordEscaped('qe', (qe?.bugs ?? []).map((b) => (typeof b === 'string' ? { issue: b } : b)), filesChanged(worktree, before));
+          fixingBugs = false;
+        }
+        if (reported?.status === 'blocked') return ctx ? stop('blocked', reported.reason ?? 'the implementer reported the story blocked') : finish('blocked', reported.reason ?? 'the implementer reported the story blocked');
+        if (!res.ok && !reported) {
+          feedback = `The previous run ${res.timedOut ? 'timed out' : `failed (exit ${res.status})`} before finishing. Continue the implementation.`;
+          continue;
+        }
+        if (ctx) {
+          // Language server errors in the story's changed files go straight back to the orchestrator.
+          const diag = await ctx.deps.lsp.diagnostics(worktree, filesChanged(worktree, ctx.storyBaseSha));
+          if (diag.errors.length) {
+            feedback = `The language server reports errors in files this story changed. Fix them, then finish again:\n\n${formatDiagnostics({ ...diag, warnings: [] })}`;
+            continue;
+          }
+        }
       }
       const done = pipeline(worktree, base, ['done', key]);
-      if (/\(0 implementation file/.test(done.stdout)) return finish('no-changes', reported?.reason ?? 'the implementer changed no implementation files');
-      const stop = pipeline(worktree, base, ['hook', 'stop'], '{}');
+      if (/\(0 implementation file/.test(done.stdout)) return ctx ? stop('no-changes', 'no implementation files changed') : finish('no-changes', 'the implementer changed no implementation files');
+      const stopHook = pipeline(worktree, base, ['hook', 'stop'], '{}');
       let output = null;
       try {
-        output = stop.stdout.trim() ? JSON.parse(stop.stdout) : null;
+        output = stopHook.stdout.trim() ? JSON.parse(stopHook.stdout) : null;
       } catch {
         output = null;
       }
       if (output?.decision === 'block') {
         metrics.reviewBlocks++;
         feedback = output.reason;
+        recordEscaped('arch-review', lastReviewFindings(wt, key).filter((f) => f.severity !== 'minor'), []);
         continue;
       }
       const review = loadState(wt, key).review;
-      if (review.lastVerdict === 'ESCALATED') return finish('review-escalated', review.lastReason ?? 'the review did not converge');
-      if (review.lastVerdict !== 'APPROVED') return finish('unresolved', output?.systemMessage ?? `review verdict ${review.lastVerdict ?? 'none'}`);
+      if (review.lastVerdict === 'ESCALATED') return ctx ? stop('review-escalated', review.lastReason ?? 'the review did not converge') : finish('review-escalated', review.lastReason ?? 'the review did not converge');
+      if (review.lastVerdict !== 'APPROVED') return ctx ? stop('unresolved', output?.systemMessage ?? `review verdict ${review.lastVerdict ?? 'none'}`) : finish('unresolved', output?.systemMessage ?? `review verdict ${review.lastVerdict ?? 'none'}`);
       approved = true;
     }
 
@@ -252,20 +348,25 @@ export async function implementStory(config, opts) {
     if (qe.status !== 'product-bug') break;
     if (metrics.bugFixCycles >= settings.maxBugFixCycles) break;
     metrics.bugFixCycles++;
+    fixingBugs = true;
     feedback = `The automated tests found implementation bugs. Fix the implementation (not the tests):\n${(qe.bugs ?? []).map((b) => `- ${typeof b === 'string' ? b : JSON.stringify(b)}`).join('\n')}`;
   }
 
   const outcome = qe.status === 'verified' ? 'done' : `qe-${qe.status}`;
-  const result = finish(outcome, outcome === 'done' ? null : `QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}`);
-  appendJsonl(metricsFile(wt, 'implement-runs.jsonl'), [{ ts: nowIso(), story: key, outcome, implementer_runs: metrics.implementerRuns, review_blocks: metrics.reviewBlocks, bug_fix_cycles: metrics.bugFixCycles, minutes: result.minutes, prompt_version: metrics.promptVersion }]);
+  const qeReason = outcome === 'done' ? null : `QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}`;
+  const qeFindings = outcome === 'done' ? undefined : (qe.bugs ?? []).map((b) => (typeof b === 'string' ? b : b.title ?? b.issue ?? JSON.stringify(b)));
+  const result = finish(outcome, qeReason, qeFindings?.length ? { findings: qeFindings } : {});
+  recordOutcome(outcome, qeReason);
   commitAll(worktree, `${key}: Add verified test plan and automated tests`);
+  result.finalSha = headSha(worktree);
 
   if (pr && outcome === 'done') {
     const push = git(worktree, ['push', '-u', 'origin', branch]);
     if (push.status !== 0) return { ...result, reason: `push failed: ${tail(push.stderr, 300)}` };
     const baseBranch = base.replace(/^origin\//, '');
     const title = `${key}: ${fs.readFileSync(prep.story, 'utf8').match(/^#\s+(.+)$/m)?.[1]?.replace(new RegExp(`^${key}[:\\s-]*`), '') ?? key}`;
-    const body = `Implements ${path.relative(worktree, prep.story)} (generated by \`pipeline implement\`).\n\n- Architecture review: approved\n- Test plan and automated tests: verified\n- Implementer runs: ${metrics.implementerRuns}, review rounds blocked: ${metrics.reviewBlocks}, QE bug-fix cycles: ${metrics.bugFixCycles}`;
+    const orch = ctx ? `\n- Orchestration: ${ctx.metrics.mode}${ctx.plan?.mode === 'delegate' ? ` (${ctx.plan.subtasks.length} subtasks, ${ctx.metrics.pairRounds} pair rounds, ${ctx.metrics.takeovers} takeover(s))` : ''}, ${ctx.metrics.agentRuns} agent runs` : '';
+    const body = `Implements ${path.relative(worktree, prep.story)} (generated by \`pipeline implement\`).\n\n- Architecture review: approved\n- Test plan and automated tests: verified\n- Implementer runs: ${metrics.implementerRuns}, review rounds blocked: ${metrics.reviewBlocks}, QE bug-fix cycles: ${metrics.bugFixCycles}${orch}`;
     const created = run('gh', ['pr', 'create', '--base', baseBranch, '--head', branch, '--title', title, '--body', body], { cwd: worktree });
     const prUrl = created.status === 0 ? created.stdout.trim() : null;
     reportToBoard(worktree, key, prUrl);

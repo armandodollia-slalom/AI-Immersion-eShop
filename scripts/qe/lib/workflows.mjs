@@ -127,6 +127,7 @@ export async function planLoop(config, story, { force = false, seedFeedback = nu
         name: PRODUCER.plan,
         mode: 'write',
         timeoutSec: config.timeoutsSec.plan,
+        usage: { stage: 'plan', story: story.key, round },
         task: planTask(config, story, { mode: round === 1 ? mode : 'update', reasons: initial.reasons, storyDiff, feedback }),
       });
       if (!producer.ok) {
@@ -316,6 +317,7 @@ async function automationPass(config, story, { skipTests, maxRounds }) {
       name: PRODUCER.automation,
       mode: 'write',
       timeoutSec: config.timeoutsSec.automation,
+      usage: { stage: 'automation', story: story.key, round },
       task: automationTask(config, story, { mode, feedback, implFiles }),
     });
     const reported = extractResult(producer.output);

@@ -11,6 +11,7 @@
       "ready": "Ready",
       "inProgress": "In Progress",
       "review": "Pending Review",
+      "failed": "Failed",
       "done": "Done"
     },
     "storyLabel": "story",

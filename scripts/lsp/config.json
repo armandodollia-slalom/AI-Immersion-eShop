@@ -1,0 +1,18 @@
+{
+  "maxLanguageServers": 6,
+  "idleSec": 900,
+  "callTimeoutSec": 60,
+  "diagnosticsTimeoutSec": 20,
+  "defaultSolution": "eShop.slnx",
+  "restoreSolution": "eShop.Web.slnf",
+  "csharpLoadTimeoutSec": 900,
+  "servers": [
+    { "id": "csharp", "extensions": [".cs"], "languageIds": ["csharp"], "leased": true },
+    { "id": "typescript", "extensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"], "languageIds": ["typescript", "typescriptreact", "javascript", "javascriptreact"] },
+    { "id": "bash", "extensions": [".sh", ".bash"], "languageIds": ["shellscript"] },
+    { "id": "json", "extensions": [".json", ".jsonc"], "languageIds": ["json", "jsonc"] },
+    { "id": "yaml", "extensions": [".yml", ".yaml"], "languageIds": ["yaml"] },
+    { "id": "css", "extensions": [".css"], "languageIds": ["css"] },
+    { "id": "html", "extensions": [".html", ".htm"], "languageIds": ["html"] }
+  ]
+}

@@ -15,6 +15,15 @@ Rules:
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 - graphify-out/cache/semantic/ is committed and shared, so everyone gets the LLM-extracted doc/image nodes without an API key. After adding or changing docs or images (.md, .pdf, diagrams), run `scripts/graphify-build.sh --extract` and commit only the new files under graphify-out/cache/semantic/. Never commit anything else in graphify-out/.
 
+## Code intelligence (LSP)
+
+The MCP server `lsp` exposes language servers for C#, TypeScript/JavaScript, bash, JSON, YAML, CSS and HTML (`docs/code-intelligence.md`). graphify stays the entry point: use it first to find where to look and for investigations (architecture, where things live, relationships). Use the `lsp` tools for precise work at code graphify or a read already located:
+
+- Before changing existing code, confirm it with LSP when available: `lsp_goto_definition` and `lsp_hover` for the real definition and signature, `lsp_find_references` for every caller before you change a signature or behavior.
+- After every edit, run `lsp_diagnostics` on the edited files (Claude Code also reports new errors after edits automatically).
+- Rename with `lsp_rename` (`dry_run: true` first) instead of search and replace.
+- Paths are absolute and inside your own checkout; line and column are 1-indexed. If a call answers "C# language server unavailable", do not retry in a loop: use graphify and grep.
+
 ## AI development pipeline
 
 Stories go through the agent pipeline described in `docs/ai-pipeline/README.md` (architecture review, then QE test plans and automated tests).

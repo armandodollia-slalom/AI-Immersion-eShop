@@ -4,7 +4,7 @@ Agents take a user story from implementation to reviewed code with verified test
 
 | Stage | Folder | What it does | Docs |
 | --- | --- | --- | --- |
-| `implement` | `scripts/implement/` | Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages below | [implement.md](implement.md) |
+| `implement` | `scripts/implement/` | Implements every story in a folder headlessly: a worktree and branch per story, the implementer as orchestrator planning up to four subtasks for verifier pairs (implementer + fresh verifier per subtask, each in its own worktree, merged back by a Node harness), then the review and QE stages below | [implement.md](implement.md) |
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 | `board` | `scripts/board/` | Keeps the story's card on the GitHub Project board in step (In Progress, Pending Review with evidence) and picks up the stories assigned to you | [board.md](board.md) |
@@ -29,11 +29,11 @@ node scripts/pipeline/pipeline.mjs implement run path/to/stories [--parallel 2] 
 node scripts/pipeline/pipeline.mjs implement status
 ```
 
-Each story gets its own worktree and branch, the implementer agent, the architecture review loop and verified tests. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
+Each story gets its own worktree and branch; the implementer plans it into subtasks that verifier pairs implement and check in their own worktrees, then the architecture review loop and verified tests run. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
 
 ## Story board
 
-Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Pending Review, Done). Stories wait in Backlog until they are ready; assign one to yourself, move it to Ready and run the picker on your machine; it runs the whole pipeline and moves the card as it goes. See [board.md](board.md).
+Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Pending Review, Failed, Done). Stories wait in Backlog until they are ready; assign one to yourself, move it to Ready and run the picker on your machine; it runs the whole pipeline and moves the card as it goes, to Failed (with the reason and findings) when it cannot finish. See [board.md](board.md).
 
 ```bash
 node scripts/board/board.mjs pick            # implement the stories assigned to you, polling the board
@@ -59,7 +59,7 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe (plans for changed stories, in the background) | LLM |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
-| Weekly | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
+| Manual (local, or `workflow_dispatch`) | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
 `scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan false`) are listed in each stage's docs.
 
@@ -105,7 +105,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 - **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
 - **State:** `.agent-state/` (not committed) holds the active story, one `stories/<KEY>.json` per story with a section per stage, locks, background logs (`logs/`) and escalations (`escalations/<KEY>-<stage>.md`, which the next agent session is told about).
-- **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files.
+- **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files. `token-usage.jsonl` is shared: every agent run's tokens, models, cache hits and cost, reported per ticket and epic by `pipeline costs` (see [costs](costs.md)).
 
 ## Adding a stage
 
@@ -122,6 +122,7 @@ node scripts/pipeline/pipeline.mjs implement run <dir|story.md>... [--parallel N
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
+node scripts/pipeline/pipeline.mjs costs [KEY] [--epic <epic>] [--since <date>] [--json|--markdown]  # tokens, cache hits and cost per stage, ticket and epic
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
 node scripts/board/board.mjs setup|pick|mine|move|review|status   # see board.md

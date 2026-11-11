@@ -51,7 +51,7 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | `post-commit`, `post-merge` | plan loop in the background for stories added or changed |
 | `pre-push` | `qe check`: plans and tests for touched stories are verified and current |
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
-| weekly | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
+| manual (local, or `workflow_dispatch`) | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
 
 Opt out of automatic planning on commit with `git config qe.autoPlan false`; opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
 

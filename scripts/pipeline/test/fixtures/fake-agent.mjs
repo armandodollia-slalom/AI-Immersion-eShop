@@ -56,5 +56,19 @@ if (step.writeImpl) {
   fs.writeFileSync(step.writeImpl, `// fixed ${n}\n`);
 }
 
+if (step.writeFiles) {
+  for (const [file, text] of Object.entries(step.writeFiles)) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+  }
+}
+
+if (step.screenshot) {
+  const dir = /Save every screenshot under (\S+?) \(/.exec(prompt)?.[1];
+  if (dir) fs.writeFileSync(path.join(dir, step.screenshot), 'png');
+}
+
+if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+
 process.stdout.write(`Working...\n${step.result ? `AGENT_RESULT: ${JSON.stringify(step.result)}\n` : ''}`);
 process.exit(step.exit ?? 0);

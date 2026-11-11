@@ -1,0 +1,10 @@
+# Project-scoped Codex config (loaded only when the project is trusted).
+# "lsp": language-server code intelligence for this checkout, see docs/code-intelligence.md.
+[mcp_servers.lsp]
+command = "sh"
+args = ["-c", "exec node \"$(git rev-parse --show-toplevel)/scripts/lsp/mcp.mjs\""]
+# Codex passes only whitelisted variables to MCP servers; the call log records which pipeline agent called.
+env_vars = ["PIPELINE_AGENT_NAME", "PIPELINE_AGENT_MODE", "LSP_MAX_SERVERS", "LSP_SLNF"]
+startup_timeout_sec = 60
+tool_timeout_sec = 120
+default_tools_approval_mode = "approve"

@@ -10,7 +10,8 @@ flowchart LR
   T -->|board pick grabs it| P[In Progress<br/>implementer, review, QE]
   P -->|tests verified, PR opened| R[Pending Review<br/>PR + evidence]
   R -->|PR merged: Closes #issue| D[Done]
-  P -.->|pipeline stops| H[stays put, labeled needs-human]
+  P -.->|pipeline stops| F[Failed<br/>labeled needs-human, reason in a comment]
+  F -.->|you fix it and move it back| T
 ```
 
 | Column | Moved by |
@@ -19,9 +20,10 @@ flowchart LR
 | Ready | you, when a story is ready for implementation (`board move <KEY> ready --force` to retry a parked one) |
 | In Progress | `board pick` when it grabs the story; also `pipeline start <KEY>` (story-start hook) |
 | Pending Review | `pipeline implement --pr` after it opens the PR (headless); the Stop hook once tests are verified (interactive sessions, no PR) |
+| Failed | `board pick`, when `pipeline implement` does not finish a story (`blocked`, `unresolved`, `plan-rejected`, `pair-exhausted`, `limit-*`, `qe-*`, no story file, ...). The card also gets the `needs-human` label and a comment with the outcome, reason, findings, branch and log path. The picker never takes cards from Failed; retry with `board move <KEY> ready --force` after removing the label |
 | Done | `board pick`, on every poll: story issues that are closed move to Done. The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
 
-Hooks only move a card forward, so a replayed hook never drags a card back. The board is informational: GitHub errors are logged and never block an agent or change a pipeline outcome.
+Hooks only move a card forward, so a replayed hook never drags a card back. Failed sits after Pending Review in that order, so no hook (not even `pipeline start`) moves a card out of it; only a forced `board move` does. The board is informational: GitHub errors are logged and never block an agent or change a pipeline outcome.
 
 ## Picking up your stories
 
@@ -32,7 +34,9 @@ node scripts/board/board.mjs pick                # poll every 2 minutes; Ctrl-C 
 node scripts/board/board.mjs pick --once --parallel 2
 ```
 
-The picker takes open story issues in **Ready**, assigned to you, without the `needs-human` label. It claims each card (In Progress plus a comment naming your machine) before running `pipeline implement run <stories> --pr`, so a second poll or machine never picks the same story. If a story does not finish (`blocked`, `unresolved`, `qe-escalated`, already implemented, no story file on this checkout, ...), the picker comments the outcome, reason, branch and log path, and adds `needs-human`. Fix it, remove the label and move the card back to Ready to retry.
+The picker takes open story issues in **Ready**, assigned to you, without the `needs-human` label. It claims each card (In Progress plus a comment naming your machine) before running `pipeline implement run <stories> --pr`, so a second poll or machine never picks the same story. If a story does not finish (`blocked`, `unresolved`, `plan-rejected`, `pair-exhausted`, `limit-*`, `qe-escalated`, already implemented, no story file on this checkout, ...), the picker moves the card to **Failed**, comments the outcome, reason, findings (for example the verifier findings of a pair that ran out of rounds), branch and log path, and adds `needs-human`. Fix it, remove the label and move the card back to Ready (`board move <KEY> ready --force`) to retry.
+
+When the picker moves a closed story to Done, it also records the story's late outcome for the [implement decision log](implement.md#decision-log): whether its PR merged, how many commits and lines humans added on the branch before merge, and which BUG-* stories name it (`type: "late"` in `.agent-metrics/decision-outcomes.jsonl` of the checkout, left uncommitted).
 
 Run the picker from an up-to-date checkout of `main`: it reads the story files locally and `pipeline implement` bases each branch on `origin/main`.
 
@@ -52,7 +56,7 @@ gh auth refresh -s project                       # Projects need the project sco
 node scripts/board/board.mjs setup
 ```
 
-`setup` enables issues on the repo, creates the labels (`story`, `needs-human`, `frontend`, `backend`), creates and links the project (saving its number in `scripts/board/config.json`), sets the Status columns, adds a Board view, and creates an issue for every story without one (title from the story's heading, body with the story text and a link to the file) in Backlog. It also refreshes existing issue bodies when a story file changes, and renames columns in place (Todo became Ready) without losing their cards. Any repo collaborator can be assigned.
+`setup` enables issues on the repo, creates the labels (`story`, `needs-human`, `frontend`, `backend`), creates and links the project (saving its number in `scripts/board/config.json`), sets the Status columns, adds a Board view, and creates an issue for every story without one (title from the story's heading, body with the story text and a link to the file) in Backlog. It also refreshes existing issue bodies when a story file changes, renames columns in place (Todo became Ready) and adds new ones (Failed) without losing their cards. Run `board setup` once after pulling a change that adds a column; until then moving a card to the missing column is logged and skipped. Any repo collaborator can be assigned.
 
 The board is active only when `scripts/board/config.json` has a `projectNumber`, the checkout's `origin` is the configured repo (so test fixtures and forks never touch it), and `PIPELINE_BOARD` is not `0`. Everyone who runs the picker or the hooks needs `gh` logged in with the `project` scope.
 
@@ -62,7 +66,7 @@ The board is active only when `scripts/board/config.json` has a `projectNumber`,
 node scripts/board/board.mjs setup
 node scripts/board/board.mjs pick [--once] [--parallel N] [--interval <sec>] [--dry-run]
 node scripts/board/board.mjs mine
-node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|review|done [--force]
+node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|review|failed|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>]   # Pending Review + evidence by hand
 node scripts/board/board.mjs status [KEY]
 node scripts/board/board.mjs hook story-start <KEY> | hook stop   # called by the dispatcher

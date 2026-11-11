@@ -3,7 +3,7 @@ services:
   teststack-dashboard:
     image: "mcr.microsoft.com/dotnet/nightly/aspire-dashboard:13.6"
     ports:
-      - "18888:18888"
+      - "${DASHBOARD_HOST_PORT:-18888}:18888"
     expose:
       - "18889"
       - "18890"
@@ -20,7 +20,7 @@ services:
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
     ports:
-      - "18379:6379"
+      - "${REDIS_HOST_PORT:-18379}:6379"
     expose:
       - "6379"
     networks:
@@ -34,7 +34,7 @@ services:
       RABBITMQ_DEFAULT_USER: "guest"
       RABBITMQ_DEFAULT_PASS: "${EVENTBUS_PASSWORD}"
     ports:
-      - "18672:5672"
+      - "${EVENTBUS_HOST_PORT:-18672}:5672"
     expose:
       - "5672"
     networks:
@@ -50,7 +50,7 @@ services:
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     ports:
-      - "18432:5432"
+      - "${POSTGRES_HOST_PORT:-18432}:5432"
     expose:
       - "5432"
     networks:
@@ -75,14 +75,14 @@ services:
       BasketApiClient: "http://basket-api:${BASKET_API_PORT}"
       OrderingApiClient: "http://ordering-api:${ORDERING_API_PORT}"
       WebhooksApiClient: "http://webhooks-api:${WEBHOOKS_API_PORT}"
-      WebhooksWebClient: "http://localhost:18086"
-      WebAppClient: "http://localhost:18080"
+      WebhooksWebClient: "http://localhost:${WEBHOOKSCLIENT_HOST_PORT:-18086}"
+      WebAppClient: "http://localhost:${WEBAPP_HOST_PORT:-18080}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "identity-api"
       Seeding__Disabled: "true"
     ports:
-      - "18081:${IDENTITY_API_PORT}"
+      - "${IDENTITY_API_HOST_PORT:-18081}:${IDENTITY_API_PORT}"
     networks:
       - "aspire"
     restart: "unless-stopped"
@@ -105,12 +105,12 @@ services:
       EVENTBUS_USERNAME: "guest"
       EVENTBUS_PASSWORD: "${EVENTBUS_PASSWORD}"
       EVENTBUS_URI: "amqp://guest:${EVENTBUS_PASSWORD}@eventbus:5672"
-      Identity__Url: "http://host.docker.internal:18081"
+      Identity__Url: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "basket-api"
     ports:
-      - "18083:${BASKET_API_PORT}"
+      - "${BASKET_API_HOST_PORT:-18083}:${BASKET_API_PORT}"
     expose:
       - "${BASKET_API_PORT}"
     depends_on:
@@ -146,7 +146,7 @@ services:
       OTEL_SERVICE_NAME: "catalog-api"
       Seeding__Disabled: "true"
     ports:
-      - "18082:${CATALOG_API_PORT}"
+      - "${CATALOG_API_HOST_PORT:-18082}:${CATALOG_API_PORT}"
     expose:
       - "${CATALOG_API_PORT}"
     depends_on:
@@ -177,13 +177,13 @@ services:
       ORDERINGDB_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/orderingdb"
       ORDERINGDB_JDBCCONNECTIONSTRING: "jdbc:postgresql://postgres:5432/orderingdb"
       ORDERINGDB_DATABASENAME: "orderingdb"
-      Identity__Url: "http://host.docker.internal:18081"
+      Identity__Url: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "ordering-api"
       Seeding__Disabled: "true"
     ports:
-      - "18084:${ORDERING_API_PORT}"
+      - "${ORDERING_API_HOST_PORT:-18084}:${ORDERING_API_PORT}"
     expose:
       - "${ORDERING_API_PORT}"
     depends_on:
@@ -276,12 +276,12 @@ services:
       WEBHOOKSDB_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/webhooksdb"
       WEBHOOKSDB_JDBCCONNECTIONSTRING: "jdbc:postgresql://postgres:5432/webhooksdb"
       WEBHOOKSDB_DATABASENAME: "webhooksdb"
-      Identity__Url: "http://host.docker.internal:18081"
+      Identity__Url: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "webhooks-api"
     ports:
-      - "18085:${WEBHOOKS_API_PORT}"
+      - "${WEBHOOKS_API_HOST_PORT:-18085}:${WEBHOOKS_API_PORT}"
     expose:
       - "${WEBHOOKS_API_PORT}"
     depends_on:
@@ -425,7 +425,7 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "mobile-bff"
     ports:
-      - "18087:5000"
+      - "${MOBILE_BFF_HOST_PORT:-18087}:5000"
     networks:
       - "aspire"
     restart: "unless-stopped"
@@ -440,14 +440,14 @@ services:
       WEBHOOKS_API_HTTP: "http://webhooks-api:${WEBHOOKS_API_PORT}"
       services__webhooks-api__http__0: "http://webhooks-api:${WEBHOOKS_API_PORT}"
       WEBHOOKS_API_HTTPS: "https://webhooks-api:${WEBHOOKS_API_PORT}"
-      IdentityUrl: "http://host.docker.internal:18081"
-      CallBackUrl: "http://localhost:18086"
+      IdentityUrl: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
+      CallBackUrl: "http://localhost:${WEBHOOKSCLIENT_HOST_PORT:-18086}"
       WebhookClientOptions__SelfUrl: "http://webhooksclient:${WEBHOOKSCLIENT_PORT}/"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "webhooksclient"
     ports:
-      - "18086:${WEBHOOKSCLIENT_PORT}"
+      - "${WEBHOOKSCLIENT_HOST_PORT:-18086}:${WEBHOOKSCLIENT_PORT}"
     expose:
       - "${WEBHOOKSCLIENT_PORT}"
     networks:
@@ -476,13 +476,13 @@ services:
       EVENTBUS_USERNAME: "guest"
       EVENTBUS_PASSWORD: "${EVENTBUS_PASSWORD}"
       EVENTBUS_URI: "amqp://guest:${EVENTBUS_PASSWORD}@eventbus:5672"
-      IdentityUrl: "http://host.docker.internal:18081"
-      CallBackUrl: "http://localhost:18080"
+      IdentityUrl: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
+      CallBackUrl: "http://localhost:${WEBAPP_HOST_PORT:-18080}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "webapp"
     ports:
-      - "18080:${WEBAPP_PORT}"
+      - "${WEBAPP_HOST_PORT:-18080}:${WEBAPP_PORT}"
     depends_on:
       eventbus:
         condition: "service_started"

@@ -5,8 +5,9 @@ import { readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { gh, ghJson, graphql } from './github.mjs';
 
 // Columns in board order. Hooks only move a story forward; `board move` can move it anywhere.
-// Backlog is never picked up; Ready is the picker's lane.
-export const COLUMNS = ['backlog', 'ready', 'inProgress', 'review', 'done'];
+// Backlog is never picked up; Ready is the picker's lane. Failed holds stories the pipeline could not
+// finish: it sits after Pending Review so no hook moves a card out of it; a human moves it back to Ready.
+export const COLUMNS = ['backlog', 'ready', 'inProgress', 'review', 'failed', 'done'];
 // Earlier names of a column: `setup` renames them in place and keeps their cards.
 const FORMER_NAMES = { ready: ['Todo'] };
 // Removed columns: `setup` deletes them and moves their cards to the given column.
@@ -154,6 +155,26 @@ export function columnForState(state, { headless = false } = {}) {
   return null;
 }
 
+// The comment posted when the pipeline does not finish a story: outcome, reason, findings, branch and
+// log, from the implement run record (`.agent-state/implement/<KEY>.json`).
+export function failureComment(config, result, { host = 'this machine', maxFindings = 20 } = {}) {
+  const r = result ?? {};
+  const lines = [`The pipeline stopped: **${r.outcome ?? 'no result'}**${r.reason ? ` (${r.reason})` : ''}.`];
+  const findings = Array.isArray(r.findings) ? r.findings : [];
+  if (findings.length) {
+    lines.push('', '**Findings**', '');
+    for (const f of findings.slice(0, maxFindings)) {
+      if (typeof f === 'string') lines.push(`- ${f}`);
+      else lines.push(`- ${f.subtask ? `[${f.subtask}] ` : ''}${f.file ? `\`${f.file}${f.line ? `:${f.line}` : ''}\` ` : ''}${f.issue ?? f.detail ?? JSON.stringify(f)}${f.fix ? ` Fix: ${f.fix}` : ''}${f.screenshot ? ` (screenshot: \`${f.screenshot}\`)` : ''}`);
+    }
+    if (findings.length > maxFindings) lines.push(`- ... and ${findings.length - maxFindings} more`);
+  }
+  const where = [r.branch ? `Branch: \`${r.branch}\`.` : '', r.log ? `Log on \`${host}\`: \`${r.log}\`.` : ''].filter(Boolean).join(' ');
+  if (where) lines.push('', where);
+  lines.push('', `Fix it, remove the \`${config.board.blockedLabel}\` label and move the card back to ${config.board.columns.ready} (\`board move <KEY> ready --force\`) to retry.`);
+  return lines.join('\n');
+}
+
 // Stories the local pipeline should pick up: open story issues in Ready (never Backlog), assigned to `login`, not
 // parked for a human.
 export function pickable(config, items, login) {
@@ -186,6 +207,7 @@ const COLUMN_STYLE = {
   ready: ['PURPLE', 'Ready for implementation; your local `board pick` picks up the ones assigned to you'],
   inProgress: ['YELLOW', 'The pipeline is implementing the story'],
   review: ['BLUE', 'Implemented and verified; the PR is waiting for a human review'],
+  failed: ['RED', 'The pipeline could not finish the story; see the latest comment, then move it back to Ready to retry'],
   done: ['GREEN', 'Merged'],
 };
 

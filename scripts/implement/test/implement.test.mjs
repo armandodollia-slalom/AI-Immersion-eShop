@@ -39,7 +39,7 @@ before(() => {
   repo = path.join(tmp, 'shop');
   incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/board']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/board', 'scripts/models']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -48,6 +48,8 @@ before(() => {
   write(repo, 'scripts/qe/config.json', JSON.stringify(qeConfig, null, 2));
   const implConfig = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/implement/config.json'), 'utf8'));
   implConfig.implement.qePollSec = 0.1;
+  // This test covers the single-agent path; the orchestrated one is in orchestrate-e2e.test.mjs.
+  implConfig.implement.orchestrate = false;
   write(repo, 'scripts/implement/config.json', JSON.stringify(implConfig, null, 2));
   write(repo, '.gitignore', '.agent-state/\n');
   write(repo, 'src/Basket/Coupons.cs', '// coupons\n');

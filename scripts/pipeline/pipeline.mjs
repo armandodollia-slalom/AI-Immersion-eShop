@@ -3,6 +3,7 @@
 // stages listed in stages.json. See docs/ai-pipeline/README.md.
 import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/cli.mjs';
 import { isDisabled, loadConfig } from './lib/config.mjs';
+import { epicReport, findEpic, formatEpic, formatOverview, formatStory, overviewReport, storyReport } from './lib/costs.mjs';
 import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, runStage, sessionStartOutput } from './lib/dispatch.mjs';
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
@@ -22,8 +23,15 @@ Pipeline
   implement run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
                                 implement every story given, each on its own worktree and branch
   implement status [story]      progress of the latest implement run
+  implement cleanup [story...]  remove subtask worktrees a failed run left behind
+  implement decisions [--story KEY] [--json]
+                                orchestrator decisions and how they turned out
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
+  costs [story] [--epic <epic>] [--since <iso-date>] [--json] [--markdown]
+                                agent tokens, cache hits and cost: one ticket itemized by stage, one
+                                epic itemized by ticket and stage, or (no story) the overview by epic,
+                                ticket, stage, model and month
 
 Hooks (called by agent tool configs and .githooks)
   hook stop | hook session-start [--nested]
@@ -31,7 +39,7 @@ Hooks (called by agent tool configs and .githooks)
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -79,6 +87,23 @@ async function main() {
       const results = dispatchText(config, stages, 'commands', 'metrics', args);
       if (flags.json) console.log(JSON.stringify(Object.fromEntries(results.map((r) => [r.stage, JSON.parse(r.stdout)])), null, 2));
       else for (const { stage, stdout } of results) console.log(`== ${stage} ==\n${stdout.trimEnd()}\n`);
+      return 0;
+    }
+
+    case 'costs': {
+      const opts = { since: flags.since };
+      let report;
+      let format;
+      if (flags.epic) {
+        const epic = findEpic(config, flags.epic);
+        if (!epic) {
+          console.error(`Unknown epic "${flags.epic}".`);
+          return 2;
+        }
+        [report, format] = [epicReport(config, epic.key, opts), formatEpic];
+      } else if (positional[0]) [report, format] = [storyReport(config, requireStory(config, positional[0]).key, opts), formatStory];
+      else [report, format] = [overviewReport(config, opts), formatOverview];
+      console.log(flags.json ? JSON.stringify(report, null, 2) : format(report, { markdown: Boolean(flags.markdown) }));
       return 0;
     }
 

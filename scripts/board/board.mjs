@@ -10,8 +10,9 @@ import { INSTALL_ROOT, SCRIPTS_DIR, loadConfig } from '../pipeline/lib/config.mj
 import { loadState, updateState } from '../pipeline/lib/state.mjs';
 import { activeStory, listStories, resolveStory } from '../pipeline/lib/stories.mjs';
 import { log, nowIso, readJson, setLogTag, sleep } from '../pipeline/lib/util.mjs';
-import { COLUMNS, addLabel, columnForState, comment, findIssue, isActive, issueItem, listItems, moveStory, pickable, project, setColumn, setup, storyKind } from './lib/board.mjs';
+import { COLUMNS, addLabel, columnForState, comment, failureComment, findIssue, isActive, issueItem, listItems, moveStory, pickable, project, setColumn, setup, storyKind } from './lib/board.mjs';
 import { captureApiEvidence, featureVideo } from './lib/evidence.mjs';
+import { recordLateOutcome } from './lib/outcomes.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
 
 setLogTag('board');
@@ -212,13 +213,19 @@ async function pick(config, { once, dryRun, parallel, intervalSec }) {
       if (dryRun) continue;
       setColumn(config, item.itemId, 'done');
       log(`#${item.number} ${item.key} closed; moved to ${config.board.columns.done}.`);
+      try {
+        const late = recordLateOutcome(config, item.key, { listStories });
+        if (late) log(`${item.key}: outcome recorded (PR ${late.prMerged ? 'merged' : 'not merged'}, ${late.humanCommits ?? '?'} human commit(s)${late.bugStories.length ? `, bugs: ${late.bugStories.join(', ')}` : ''}).`);
+      } catch (error) {
+        log(`${item.key}: could not record the late outcome: ${error.message}`);
+      }
     }
     const ready = pickable(config, items, me);
     const batch = [];
     for (const item of ready) {
       const story = resolveStory(config, item.key);
       if (!story) {
-        if (!dryRun) park(config, item.number, `No story file for ${item.key} in \`${config.storiesDir}\` on this checkout. Pull the latest main, then move the card back to ${config.board.columns.ready}.`);
+        if (!dryRun) fail(config, item, `No story file for ${item.key} in \`${config.storiesDir}\` on this checkout. Pull the latest main, then move the card back to ${config.board.columns.ready}.`);
         continue;
       }
       batch.push({ item, story });
@@ -236,12 +243,23 @@ async function pick(config, { once, dryRun, parallel, intervalSec }) {
       for (const { item, story } of batch) {
         const result = readJson(path.join(config.root, config.stateDir, 'implement', `${story.key}.json`), {});
         if (result.outcome === 'done') continue;
-        park(config, item.number, `The pipeline stopped: **${result.outcome ?? 'no result'}**${result.reason ? ` (${result.reason})` : ''}.${result.branch ? ` Branch: \`${result.branch}\`.` : ''}${result.log ? ` Log on \`${os.hostname()}\`: \`${result.log}\`.` : ''}\n\nFix it, remove the \`${config.board.blockedLabel}\` label and move the card back to ${config.board.columns.ready} to retry.`);
+        fail(config, item, failureComment(config, result, { host: os.hostname() }));
       }
     }
     if (once || dryRun) return 0;
     await sleep(intervalSec * 1000);
   }
+}
+
+// A story the pipeline did not finish goes to the Failed lane (the picker never takes it, and no hook
+// moves a card out of it) with the reason, and is labeled for a human.
+function fail(config, item, message) {
+  try {
+    if (config.board.columns.failed) setColumn(config, item.itemId, 'failed');
+  } catch (error) {
+    log(`#${item.number}: could not move to ${config.board.columns.failed}: ${error.message} (run \`board setup\` to create the column)`);
+  }
+  park(config, item.number, message);
 }
 
 function park(config, number, message) {

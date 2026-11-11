@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -33,6 +33,45 @@ export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true }
     throw new Error(`${cmd} ${args.join(' ')} failed (${out.status}): ${out.stderr.trim()}`);
   }
   return out;
+}
+
+// Async twin of run(): lets a caller run several processes at once. Same result shape.
+export function runAsync(cmd, args, { cwd, input, env, timeoutSec, signal } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let settled = false;
+    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const finish = (status, extra = '') => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr: stderr + extra, timedOut });
+    };
+    const timer = timeoutSec
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGTERM');
+          setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+        }, timeoutSec * 1000)
+      : null;
+    child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
+    child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+    };
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+    child.on('error', (error) => finish(127, `\n${error.message}`));
+    child.on('close', (code, sig) => {
+      signal?.removeEventListener('abort', onAbort);
+      finish(code ?? (sig ? 1 : 0));
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(input ?? '');
+  });
 }
 
 export function readJson(file, fallback) {

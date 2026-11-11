@@ -129,7 +129,7 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
     if (added.status !== 0) throw new Error(`git worktree add failed: ${added.stderr}`);
   }
   try {
-    const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root) });
+    const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, usage: { stage: 'lessons', story: null }, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root) });
     if (!result.ok) throw new Error('lessons agent failed');
     const changed = git(root, ['status', '--porcelain']).stdout.split('\n').filter(Boolean).map((l) => l.slice(3));
     const outside = changed.filter((f) => !f.startsWith(`${config.lessonsDir}/`));

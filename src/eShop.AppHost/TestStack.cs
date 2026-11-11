@@ -19,30 +19,46 @@ internal static class TestStack
     // browser and the services to see the same identity URL, just like the external FQDN in Azure.
     public const string PublicHost = "host.docker.internal";
 
-    public const int WebAppPort = 18080;
-    public const int IdentityApiPort = 18081;
-    public const int CatalogApiPort = 18082;
-    public const int BasketApiPort = 18083;
-    public const int OrderingApiPort = 18084;
-    public const int WebhooksApiPort = 18085;
-    public const int WebhooksClientPort = 18086;
-    public const int MobileBffPort = 18087;
-    public const int DashboardPort = 18888;
-    public const int PostgresPort = 18432;
-    public const int RedisPort = 18379;
-    public const int RabbitMqPort = 18672;
+    // Host ports are published as compose interpolations (${WEBAPP_HOST_PORT:-18080}) so one generated file serves
+    // several isolated copies of the stack ("slots"). The defaults are slot 0; testing/teststack --slot <n> exports
+    // base + 1000*n for every variable. Names and defaults must match scripts/stack/config.json (a test checks the
+    // generated compose file against it).
+    public static readonly HostPort WebAppPort = new("WEBAPP_HOST_PORT", 18080);
+    public static readonly HostPort IdentityApiPort = new("IDENTITY_API_HOST_PORT", 18081);
+    public static readonly HostPort CatalogApiPort = new("CATALOG_API_HOST_PORT", 18082);
+    public static readonly HostPort BasketApiPort = new("BASKET_API_HOST_PORT", 18083);
+    public static readonly HostPort OrderingApiPort = new("ORDERING_API_HOST_PORT", 18084);
+    public static readonly HostPort WebhooksApiPort = new("WEBHOOKS_API_HOST_PORT", 18085);
+    public static readonly HostPort WebhooksClientPort = new("WEBHOOKSCLIENT_HOST_PORT", 18086);
+    public static readonly HostPort MobileBffPort = new("MOBILE_BFF_HOST_PORT", 18087);
+    public static readonly HostPort DashboardPort = new("DASHBOARD_HOST_PORT", 18888);
+    public static readonly HostPort PostgresPort = new("POSTGRES_HOST_PORT", 18432);
+    public static readonly HostPort RedisPort = new("REDIS_HOST_PORT", 18379);
+    public static readonly HostPort RabbitMqPort = new("EVENTBUS_HOST_PORT", 18672);
 
+    // Browser-facing URLs follow the slot's host ports, so Identity's client redirect URIs and the issuer match.
     public static string IdentityUrl => $"http://{PublicHost}:{IdentityApiPort}";
     public static string WebAppUrl => $"http://localhost:{WebAppPort}";
     public static string WebhooksClientUrl => $"http://localhost:{WebhooksClientPort}";
+
+    private const string DashboardServiceName = EnvironmentName + "-dashboard";
+    private const int DashboardContainerPort = 18888;
 
     public static bool IsEnabled(IConfiguration configuration) =>
         bool.TryParse(configuration["TestStack"], out var enabled) && enabled;
 
     public static IResourceBuilder<DockerComposeEnvironmentResource> AddTestStackEnvironment(this IDistributedApplicationBuilder builder) =>
         builder.AddDockerComposeEnvironment(EnvironmentName)
-            .WithDashboard(dashboard => dashboard.WithHostPort(DashboardPort))
-            .ConfigureComposeFile(file => file.Name = "eshop-teststack");
+            .WithDashboard(dashboard => dashboard.WithHostPort(DashboardPort.Default))
+            .ConfigureComposeFile(file =>
+            {
+                file.Name = "eshop-teststack";
+                // The dashboard only takes a fixed host port; publish it through the slot variable too.
+                if (file.Services.TryGetValue(DashboardServiceName, out var dashboard))
+                {
+                    dashboard.Ports = [$"{DashboardPort}:{DashboardContainerPort}"];
+                }
+            });
 
     /// <summary>
     /// Publishes a fixed host port for the resource's primary endpoint, lets the service reach the Docker host,
@@ -51,7 +67,7 @@ internal static class TestStack
     /// </summary>
     public static IResourceBuilder<T> WithTestStackService<T>(
         this IResourceBuilder<T> builder,
-        int? hostPort = null,
+        HostPort? hostPort = null,
         int? containerPort = null,
         bool seeded = false,
         Dictionary<string, string>? env = null)
@@ -67,7 +83,7 @@ internal static class TestStack
 
         return builder.PublishAsDockerComposeService((composeService, service) =>
         {
-            if (hostPort is int port)
+            if (hostPort is { } port)
             {
                 var targetPort = containerPort?.ToString() ?? GetPrimaryTargetPort(service);
                 service.Ports = [$"{port}:{targetPort}"];
@@ -114,5 +130,11 @@ internal static class TestStack
         var existing = service.Ports.Concat(service.Expose).FirstOrDefault()
             ?? throw new InvalidOperationException($"Cannot determine the container port for compose service '{service.Name}'.");
         return existing.Split(':')[^1];
+    }
+
+    /// <summary>A host port published as <c>${Variable:-Default}</c> in the generated compose file.</summary>
+    public readonly record struct HostPort(string Variable, int Default)
+    {
+        public override string ToString() => $"${{{Variable}:-{Default}}}";
     }
 }

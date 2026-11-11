@@ -55,6 +55,10 @@ fi
 step "Node dependencies"
 if have npm; then npm ci; else echo "npm not found; skipping (only needed for e2e tests)"; fi
 
+# --- Language servers for agents (MCP server "lsp", docs/code-intelligence.md) ---
+step "Language servers"
+if have npm; then scripts/lsp/setup.sh; else echo "npm not found; skipping language servers"; fi
+
 # --- graphify ---
 step "graphify"
 # Pinned: the shared semantic cache folder is keyed by graphify's extraction prompt,

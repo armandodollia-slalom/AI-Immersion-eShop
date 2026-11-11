@@ -22,6 +22,7 @@ Requires Docker (or a compatible engine via `TESTSTACK_DOCKER`), the .NET SDK, a
 | --- | --- |
 | `deploy/teststack/docker-compose.yaml`, `.env` | **Generated** by `testing/teststack publish` (`TestStack=true aspire publish`). Never edit them by hand. |
 | Compose customizations (ports, HTTP-only, seeder switch, identity URL) | C# in `src/eShop.AppHost/TestStack.cs`, enabled by `TestStack=true` in `AppHost.cs` |
+| Host port table and slot math | `scripts/stack/config.json` (`ports`), used by `testing/teststack` and `scripts/stack/slots.mjs`. A test checks that the generated compose file and `testing/teststack.json` agree with it. |
 | Service images | `aspire do prepare-teststack`, which uses the same `dotnet publish` container build as production |
 | Resolved image tags, ports, test passwords | `artifacts/teststack/.env.teststack` (generated, git-ignored) |
 
@@ -34,7 +35,7 @@ CI runs `testing/teststack publish --check`, which regenerates the files and fai
 
 `build` (which `up` runs for you) hashes `src/` plus the build props. It rebuilds the images only when that hash changes or an image is missing. Use `--force` to rebuild anyway. A full build takes about 1.5 minutes, and `up` from built images takes about 35 s.
 
-Images are built for the host's Linux architecture (arm64 on Apple silicon), so they run without emulation. Production publishing still targets linux-amd64. Set `TestStackPlatform=linux-amd64` (or `linux-arm64`) to override. Images get a stable local tag, `<service>:teststack`.
+Images are built for the host's Linux architecture (arm64 on Apple silicon), so they run without emulation. Production publishing still targets linux-amd64. Set `TestStackPlatform=linux-amd64` (or `linux-arm64`) to override. Images get a stable local tag per slot: `<service>:teststack` for slot 0 and `<service>:teststack-<n>` for slot n. The build itself tags `<service>:latest` before retagging, so image builds are serialized machine-wide through a lock in `~/.eshop-teststack/build.lock` (a second build waits for the first).
 
 On macOS without Docker Desktop, [colima](https://github.com/abiosoft/colima) works: `brew install colima docker docker-compose`, then `colima start --cpu 8 --memory 16 --vm-type vz --mount-type virtiofs`. `host.docker.internal` resolves inside containers with both.
 
@@ -51,6 +52,8 @@ On macOS without Docker Desktop, [colima](https://github.com/abiosoft/colima) wo
 | `status` | One readiness pass, without waiting. |
 | `validate [<name\|path>...]` | Parse and resolve scenarios (all by default). Needs no running stack. |
 | `hash-password <pw>` | Print an ASP.NET Identity V3 hash for `AspNetUsers.PasswordHash`. |
+| `rebuild-changed --base <ref>` | Rebuild only the images affected by `git diff <ref>...HEAD` plus uncommitted and untracked files, recreate only those containers if the stack is running, then `wait`. `--services a,b` names services instead of (or on top of) a diff. See [Slots](#slots-parallel-stacks). |
+| `services-for <files...>` | Print the compose services whose images those files affect (pure mapping, no Docker). |
 | `publish [--check]` | Regenerate `deploy/teststack`. `--check` fails on drift. |
 | `logs [svc...]`, `compose <args>` | Run `docker compose` against the stack. |
 
@@ -60,7 +63,7 @@ On macOS without Docker Desktop, [colima](https://github.com/abiosoft/colima) wo
 {"ok":true,"command":"load","scenario":"order-history","layers":["_base","default","order-history"],"mode":"soft","purgedMessages":0,"restarted":["ordering-api"],"elapsedMs":1840}
 ```
 
-When `ok` is false, the line also contains `error`. `status` and `wait` failures list the checks that are not ready.
+`up`, `load`, `reset`, `wait`, `status`, `build`, `down` and `rebuild-changed` also carry the slot: `"slot"`, `"project"`, `"webappUrl"`, `"identityUrl"` and `"ports"` (see [Slots](#slots-parallel-stacks)). When `ok` is false, the line also contains `error` (and `slot`). `status` and `wait` failures list the checks that are not ready.
 
 **Exit codes:**
 
@@ -154,6 +157,8 @@ AI features (embeddings, chat) are off in this stack, so `Catalog.Embedding` sta
 
 ## Ports and URLs (HTTP only)
 
+These are slot 0's ports. Slot n adds 1000 × n to every one of them (slot 1: webapp 19080, identity 19081, ...).
+
 | Service | Port |
 | --- | --- |
 | WebApp | 18080 |
@@ -171,10 +176,60 @@ AI features (embeddings, chat) are off in this stack, so `Catalog.Embedding` sta
 
 The test credentials are in `testing/teststack` (`postgres` / `teststack-postgres`, and so on).
 
-Identity is published as `http://host.docker.internal:18081`, so the browser and the containers use the same issuer URL:
+Identity is published as `http://host.docker.internal:18081` (slot n: `18081 + 1000n`), so the browser and the containers use the same issuer URL:
 
 - `playwright.teststack.config.ts` maps that host to 127.0.0.1 for you.
 - To log in from a normal browser, add `127.0.0.1 host.docker.internal` to `/etc/hosts`. Docker Desktop usually adds this already.
+
+## Slots (parallel stacks)
+
+Several isolated copies of the stack can run on one machine, for example one per agent worktree. Each copy is a **slot**:
+
+| | Slot 0 (default) | Slot n (1..8) |
+| --- | --- | --- |
+| Select | nothing, or `--slot 0` | `testing/teststack --slot <n> <command>` or `TESTSTACK_SLOT=<n>` |
+| Compose project | `eshop-teststack` | `eshop-teststack-<n>` |
+| Host ports | the table above | every port + 1000 × n |
+| State (env file, stamps, loader config) | `artifacts/teststack/` | `artifacts/teststack/slot-<n>/` (with its own generated `teststack.json`) |
+| Images | `<service>:teststack` | `<service>:teststack-<n>` |
+| Identity URLs | `http://host.docker.internal:18081`, clients `http://localhost:18080` / `:18086` | the same, on the slot's ports |
+
+Slot 0 behaves exactly as before. The compose file publishes every host port and browser-facing URL as `${WEBAPP_HOST_PORT:-18080}`-style variables (from `TestStack.cs`); `testing/teststack` exports the slot's values, so Identity's client redirect URIs, the issuer and the callbacks all follow the slot. With the defaults, slot 0 resolves to the same configuration as before.
+
+**Leasing.** Slot 0 is reserved for people and the existing QE flows. Agents lease slots 1..`poolSize` (`scripts/stack/config.json`, default 2, overridden by `TESTSTACK_SLOTS`):
+
+```bash
+node scripts/stack/slots.mjs lease --owner implement:PROMO-3 --wait-sec 600 [--pid <owner pid>]
+# {"ok":true,"slot":1,"owner":"implement:PROMO-3","project":"eshop-teststack-1","webappUrl":"http://localhost:19080",
+#  "identityUrl":"http://host.docker.internal:19081","dashboardUrl":"http://localhost:19888","ports":{"webapp":19080,...},...}
+testing/teststack --slot 1 up --scenario default
+TESTSTACK_URL=http://localhost:19080 npx playwright test -c playwright.teststack.config.ts ...
+testing/teststack --slot 1 down
+node scripts/stack/slots.mjs release --slot 1 --owner implement:PROMO-3
+node scripts/stack/slots.mjs list            # every pool slot, its owner and whether the lease is stale
+```
+
+- When no slot is free, `lease` polls until `--wait-sec` runs out, then prints `{"ok":false,...}` and exits 2.
+- Leases live machine-wide in `~/.eshop-teststack/leases/` (override with `TESTSTACK_STATE_HOME`), because they are taken from different worktrees and ports are machine-wide. Claims are serialized by an atomic `mkdir` mutex and each lease file is created with `O_EXCL`.
+- A lease is stale, and the next `lease` takes it over, when its owner pid is gone or it is older than `leaseTtlMinutes` (240) since it was taken or last renewed (`slots.mjs renew --slot <n>`). The owner pid defaults to the parent process of `slots.mjs` (the harness that spawned it); pass `--pid` when that is a short-lived shell.
+- `release` does not stop the stack. Run `down` first unless the next owner should reuse it.
+- `lease` warns (stderr and `warning`) when Docker's memory looks too small for one more stack.
+- The harness can import everything from `scripts/stack/lib/index.mjs` (`lease`, `release`, `renew`, `listLeases`, `slotInfo`, `slotPorts`, `servicesFor`, ...).
+
+**Incremental rebuilds.** After code changes in a worktree, rebuild only what changed:
+
+```bash
+testing/teststack --slot 1 rebuild-changed --base main
+# {"ok":true,"command":"rebuild-changed","base":"main","changedFiles":7,"services":["ordering-api","webapp"],"full":false,
+#  "recreated":["ordering-api","webapp"],"wait":{...},"elapsedMs":41000,"slot":1,...}
+testing/teststack services-for src/Shared/MigrateDbContextExtensions.cs   # -> identity-api, catalog-api, ordering-api, webhooks-api
+```
+
+The mapping walks each service project's MSBuild references: a file under a project folder selects that service; shared projects (`EventBus`, `EventBusRabbitMQ`, `IntegrationEventLogEF`, `eShop.ServiceDefaults`, `WebAppComponents`, `Ordering.Domain`, ...) select every service that references them; files linked from outside (`src/Shared/*.cs`, Basket's `basket.proto` in WebApp) select the projects that link them. `Directory.*.props`, `global.json`, `nuget.config`, the AppHost and `deploy/teststack` select every service. Each affected image is built with `aspire do build-<service>` and retagged for the slot, then only those containers are recreated (`compose up -d --no-deps`).
+
+`rebuild-changed` builds everything (`"full":true`) instead when the slot's images were not built from this worktree (another worktree used the slot since, which `artifacts/teststack/slot-<n>/images.ids` detects) or when every service is affected anyway. A rebuild trusts the diff: a change that was made and then reverted after the last build is not seen, so run `build --force` if in doubt.
+
+**Memory.** A stack is 14 containers (Postgres, Redis, RabbitMQ, the dashboard, 9 .NET services and the YARP mobile BFF). Measured with `docker stats` on Apple silicon: about 0.95 GB right after `up`, about 1.55 GB after a few hours of tests. Budget about 2 GB per slot (`stackMemoryMb` in `scripts/stack/config.json`); two slots plus slot 0 fit in a 16 GB Docker VM. Each slot has its own tags of the 9 service images (about 3.5 GB in `docker images`, mostly shared base layers); remove them with `docker image rm $(docker images --format '{{.Repository}}:{{.Tag}}' | grep ':teststack-<n>$')`.
 
 ## Agent workflow
 
