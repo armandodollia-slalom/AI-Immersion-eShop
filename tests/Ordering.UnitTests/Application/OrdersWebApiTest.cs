@@ -108,7 +108,7 @@ public class OrdersWebApiTest
         // Arrange
         var fakeOrderId = 123;
         var fakeDynamicResult = new Order();
-        _orderQueriesMock.GetOrderAsync(Arg.Any<int>())
+        _orderQueriesMock.GetOrderAsync(Arg.Any<int>(), Arg.Any<string>())
             .Returns(Task.FromResult(fakeDynamicResult));
 
         // Act
@@ -126,7 +126,7 @@ public class OrdersWebApiTest
         // Arrange
         var fakeOrderId = 123;
 #pragma warning disable NS5003
-        _orderQueriesMock.GetOrderAsync(Arg.Any<int>())
+        _orderQueriesMock.GetOrderAsync(Arg.Any<int>(), Arg.Any<string>())
             .Throws(new KeyNotFoundException());
 #pragma warning restore NS5003
 

@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { APIRequestContext, Browser, Page, expect } from '@playwright/test';
 import { login } from './scenario';
+import { IdentityClient } from './auth-basket-helpers';
+import { IDENTITY_URL } from './ports';
 
 export const ALICE_ID = 'a11ce000-0000-4000-8000-000000000001';
 export const BOB_ID = 'b0b00000-0000-4000-8000-000000000002';
@@ -92,4 +94,26 @@ export function changeStatus(
     headers: bearer(token, { 'x-requestid': requestId }),
     data: { orderNumber },
   });
+}
+
+/** Headless implicit-flow sign-in (no browser, slot-aware): returns a bearer token for the given API. */
+export async function implicitToken(user: string, api: keyof typeof swaggerClients, password = 'Pass123$'): Promise<string> {
+  const { clientId, scope, host } = swaggerClients[api];
+  const client = new IdentityClient();
+  const query = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'token',
+    scope,
+    redirect_uri: `http://${host}:8080/swagger/oauth2-redirect.html`,
+    state: randomUUID(),
+    nonce: randomUUID(),
+  });
+  const authorize = await client.get(`${IDENTITY_URL}/connect/authorize?${query}`);
+  const loginUrl = new URL(authorize.headers.location!, IDENTITY_URL).toString();
+  const login = await client.submitLogin(loginUrl, user, password);
+  expect(login.status, `login for ${user}`).toBe(302);
+  const callback = await client.get(new URL(login.headers.location!, IDENTITY_URL).toString());
+  const location = callback.headers.location!;
+  expect(location, 'authorize did not redirect with a token').toContain('access_token=');
+  return new URLSearchParams(new URL(location).hash.slice(1)).get('access_token')!;
 }

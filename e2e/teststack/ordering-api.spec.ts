@@ -117,9 +117,7 @@ test.describe('queries', () => {
   });
 
   test('a buyer cannot read another buyer\'s order details', async ({ request }) => {
-    // BUG: GET /api/orders/{id} (OrdersApi.GetOrderAsync -> OrderQueries.GetOrderAsync) never checks the buyer,
-    // so alice can read bob's order 7, including his shipping address (currently 200).
-    test.fixme(true, 'Ordering.API returns any order to any authenticated user (IDOR)');
+    // Order 7 belongs to bob; alice must not see it.
     const response = await request.get(`${ORDERING_URL}/7?${V1}`, { headers: bearer(alice) });
     expect([403, 404]).toContain(response.status());
   });

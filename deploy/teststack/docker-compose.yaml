@@ -141,11 +141,11 @@ services:
       CATALOGDB_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/catalogdb"
       CATALOGDB_JDBCCONNECTIONSTRING: "jdbc:postgresql://postgres:5432/catalogdb"
       CATALOGDB_DATABASENAME: "catalogdb"
+      Identity__Url: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://teststack-dashboard:18889"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "catalog-api"
       Seeding__Disabled: "true"
-      Identity__Url: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
     ports:
       - "${CATALOG_API_HOST_PORT:-18082}:${CATALOG_API_PORT}"
     expose:

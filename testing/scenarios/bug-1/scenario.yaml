@@ -1,0 +1,5 @@
+description: >
+  BUG-1 (order details must only be readable by the owning buyer): ordering-two-buyers already has
+  what the cases need (alice, identity a11ce000-..., owns orders 1-6 with Paid order 4 in Boston;
+  bob, identity b0b00000-..., owns Paid order 7 at 2 Bob Road, Portland), so this scenario only extends it.
+extends: ordering-two-buyers

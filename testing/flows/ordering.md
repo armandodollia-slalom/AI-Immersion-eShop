@@ -8,7 +8,7 @@ until the bug is fixed.
 | Spec | Scenario | Tests |
 | --- | --- | --- |
 | `ordering-checkout.spec.ts` | `ordering-two-buyers` | 6 pass |
-| `ordering-api.spec.ts` | `ordering-two-buyers` | 13 pass, 6 fixme |
+| `ordering-api.spec.ts` | `ordering-two-buyers` | 14 pass, 5 fixme |
 | `ordering-pipeline.spec.ts` | `ordering-stock` | 5 pass |
 | `webhooks-subscriptions.spec.ts` | `webhooks-subscriptions` | 11 pass, 2 fixme |
 
@@ -61,7 +61,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | Details return the address, items and total | Positive | `ordering-api` › order details return the address, items and total; an unknown order is 404 |
 | Unknown or non-numeric order id returns 404 | Negative | `ordering-api` › order details return the address, items and total; an unknown order is 404 |
 | bob's order list in the UI never shows alice's orders | Negative | `ordering-checkout` › bob's order list never shows alice's orders; `ordering-pipeline` › alice cannot see bob's orders |
-| A buyer reads another buyer's order by id | Negative | `ordering-api` › a buyer cannot read another buyer's order details (**fixme**, bug 1) |
+| A buyer reads another buyer's order by id | Negative | `ordering-api` › a buyer cannot read another buyer's order details |
 | Order details page in the WebApp | Edge | Not covered: the WebApp has no order details page |
 
 ## Ordering.API authentication and versioning
@@ -226,7 +226,6 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 
 | # | Issue | Evidence |
 | --- | --- | --- |
-| 1 | `GET /api/orders/{id}` has no ownership check | alice's token reads bob's order 7 (200) |
 | 2 | Cancel and ship have no ownership or role check | alice ships bob's Paid order 7 (200, status becomes Shipped) |
 | 3 | `POST /api/orders` returns 200 when the command fails validation | An order with no items returns 200, and no order is created |
 | 4 | `POST /api/orders` trusts `userId` from the body | bob's token creates an order on alice's account |
