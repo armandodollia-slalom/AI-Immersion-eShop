@@ -397,13 +397,15 @@ test('ui subtasks see the mockups; the verifier compares renders with the app ev
   assert.match(verdicts[0].items[0].mockup, /DEMO-1-coupon__Main\.png$/);
 });
 
-test('code subtasks and non-UI stories get no mockups', async () => {
+test('a ticket with mockups is a UI story; its code subtasks still get no mockups', async () => {
   const env = makeRepo();
   seedTicket(env.repo, { key: 'DEMO-1', slug: 'DEMO-1-thing', text: '# DEMO-1: [BE - Catalog.API] - Thing\n', mockups: { 'DEMO-1-x/Main.dc.html': '<x-dc></x-dc>' } });
   const agents = fakeAgents({ implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])])], 'pair-implementer': [writeIn('src/Catalog.API/A.cs', 'x')], 'pair-verifier': [async () => approve()] });
   const r = await orchestrate(context(env, makeConfig(env.repo), agents));
   assert.ok(r.ok, JSON.stringify(r));
-  for (const c of agents.calls) assert.doesNotMatch(c.task, /### Mockups/, c.name);
+  const [planCall, ...rest] = agents.calls;
+  assert.match(planCall.task, /This IS a UI story[\s\S]*### Mockups/, 'mockups make the [BE] ticket a UI story for the planner');
+  for (const c of rest) assert.doesNotMatch(c.task, /### Mockups/, c.name);
 });
 
 test('nits and scope: disputes go to the next verifier, accepted ones stop blocking, re-asserted twice stays blocking, follow-ups are recorded', async () => {
