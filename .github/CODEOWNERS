@@ -1,0 +1,5 @@
+# Code owners: every collaborator with access to the repo.
+# They are requested as optional reviewers on every PR. Code-owner review is
+# not required by branch protection; the number of required approvals is set
+# per PR by the pipeline's review gate, not here.
+* @armandodollia-slalom @landonkerwin @escharfer2

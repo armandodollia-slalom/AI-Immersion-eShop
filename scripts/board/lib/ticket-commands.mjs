@@ -11,6 +11,8 @@ import { epicSlugOf } from './board.mjs';
 import { isBug, kebab, walkFiles } from './legacy.mjs';
 import { STORY_FOOTER, applyMigration, deleteLocal, formatPlan, labelsFor, planMigration, verifyMigration, writeReport } from './migrate.mjs';
 import { boardAvailable, epicChildren, fetchTickets, issueIndex, readMeta, ticketFile, writeTicket } from './source.mjs';
+import { keepDecisions } from './escalation.mjs';
+import { keepTriage } from '../../review-gate/lib/triage-section.mjs';
 import { renderBody, sha256 } from './ticket-format.mjs';
 
 const defaultGh = (args, opts = {}) => exec('gh', args, opts);
@@ -94,7 +96,8 @@ export function publishCommand(config, { key, force = false, gh = defaultGh }) {
     return 1;
   }
   const ticket = { key, type: meta.type, title: meta.title, slug: meta.slug, source: meta.source, parent: meta.parent, blockedBy: ['story', 'bug'].includes(meta.type) ? blockersOf(text, key) : meta.blockedBy };
-  const { body } = renderBody(ticket, text, { assets: meta.assets, footer: ['story', 'bug'].includes(meta.type) ? STORY_FOOTER(config) : '' });
+  // The ## Decisions a human recorded on the issue are outside the source; keep them.
+  const body = keepTriage(keepDecisions(renderBody(ticket, text, { assets: meta.assets, footer: ['story', 'bug'].includes(meta.type) ? STORY_FOOTER(config) : '' }).body, current.body), current.body);
   const r = gh(['issue', 'edit', String(meta.issue.number), '-R', config.tickets.repo, '--body-file', '-'], { input: body });
   if (r.status !== 0) {
     console.error(`${key}: gh issue edit failed: ${String(r.stderr).trim()}`);

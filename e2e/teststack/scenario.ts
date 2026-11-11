@@ -12,7 +12,7 @@ export function loadScenario(name: string): { ok: boolean; elapsedMs: number; la
   // testing/teststack is a bash script; Windows cannot execute it directly.
   const command = process.platform === 'win32' ? 'bash' : teststack;
   const args = process.platform === 'win32' ? [teststack, 'load', name] : ['load', name];
-  const stdout = execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  const stdout = execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true });
   const result = JSON.parse(stdout.trim().split('\n').pop()!);
   if (!result.ok) {
     throw new Error(`teststack load ${name} failed: ${result.error}`);

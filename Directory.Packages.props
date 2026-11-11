@@ -12,6 +12,7 @@
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.0" />
     <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.6.0" />
     <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.0" />
     <PackageVersion Include="Aspire.Hosting.Yarp" Version="13.6.0" />
     <PackageVersion Include="Aspire.Npgsql" Version="13.6.0" />
     <PackageVersion Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.6.0" />

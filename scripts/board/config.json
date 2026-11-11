@@ -1,4 +1,9 @@
 {
+  "agent": {
+    "models": {
+      "escalationQuestions": "sonnet"
+    }
+  },
   "board": {
     "owner": "armandodollia-slalom",
     "ownerType": "user",
@@ -6,6 +11,14 @@
     "projectNumber": 1,
     "projectTitle": "eShop Story Board",
     "statusField": "Status",
+    "fields": {
+      "impact": "Impact",
+      "complexity": "Complexity",
+      "fixRisk": "Fix risk",
+      "severity": "Severity",
+      "confidence": "Confidence",
+      "reopens": "Human reopens"
+    },
     "columns": {
       "backlog": "Backlog",
       "ready": "Ready",
@@ -17,6 +30,12 @@
     },
     "storyLabel": "story",
     "blockedLabel": "needs-human",
+    "resolvedLabel": "escalation-resolved",
+    "questions": {
+      "maxQuestions": 3,
+      "timeoutSec": 300,
+      "logTailChars": 4000
+    },
     "epicLabel": "epic",
     "spikeLabel": "spike",
     "evidence": {

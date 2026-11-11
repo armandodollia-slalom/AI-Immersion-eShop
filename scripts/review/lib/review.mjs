@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
+import { decisionsBlock, readDecisions } from '../../pipeline/lib/human-decisions.mjs';
 import { implChanges, implDiff } from '../../pipeline/lib/git.mjs';
 import { nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { clearEscalation, escalate, loadState, lockFile, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
@@ -76,6 +77,7 @@ function reviewTask(config, story, round) {
     '### Story',
     '',
     fence(fs.readFileSync(path.join(config.root, story.file), 'utf8'), 'markdown'),
+    ...decisionsBlock(readDecisions(path.join(config.root, story.file)), 'verify'),
     '',
     '### Implementation diff (tests and plans excluded)',
     '',

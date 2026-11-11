@@ -92,7 +92,7 @@ test('signature changes are found in a diff', () => {
 
 test('implement cleanup stops the daemon of each subtask worktree before removing it', () => {
   const root = repo('cleanup-shop');
-  for (const dir of ['scripts/pipeline', 'scripts/implement', 'scripts/review', 'scripts/qe', 'scripts/board', 'scripts/models', 'scripts/pr-video']) fs.cpSync(path.join(source, dir), path.join(root, dir), { recursive: true, filter: (p) => !p.includes(`${path.sep}test`) });
+  for (const dir of ['scripts/pipeline', 'scripts/implement', 'scripts/review', 'scripts/qe', 'scripts/board', 'scripts/models', 'scripts/pr-video', 'scripts/review-gate']) fs.cpSync(path.join(source, dir), path.join(root, dir), { recursive: true, filter: (p) => !p.includes(`${path.sep}test`) });
   fs.mkdirSync(path.join(root, 'scripts/lsp'), { recursive: true });
   fs.copyFileSync(fake, path.join(root, 'scripts/lsp/lspd.mjs'));
   sh(root, 'git', ['add', '-A']);

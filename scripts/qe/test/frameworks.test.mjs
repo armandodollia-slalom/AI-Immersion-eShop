@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadConfig } from '../../pipeline/lib/config.mjs';
-import { storyTag, testFramework } from '../lib/workflows.mjs';
+import { hasTests, storyTag, testFramework } from '../lib/workflows.mjs';
 
 test('detects each test project framework from its csproj', () => {
   const config = loadConfig('qe');
@@ -27,4 +27,12 @@ test('config has a test command per framework, with the right filter', () => {
   assert.ok(!dotnet.mstest.includes('--filter-trait'));
   assert.deepEqual(dotnet.mstest.slice(-2), ['--filter', 'TestCategory={story}']);
   for (const cmd of Object.values(dotnet)) assert.ok(cmd.includes('--no-build'));
+});
+
+test('hasTests: only files with a test attribute need the story tag', () => {
+  assert.ok(hasTests('[Fact]\npublic void TC_PROMO_1_01() {}'));
+  assert.ok(hasTests('[Theory, InlineData(1)]'));
+  assert.ok(hasTests('[TestMethod]'));
+  assert.ok(hasTests('[DataTestMethod]'));
+  assert.ok(!hasTests('// Program is referenced for TC-PROMO-1-23\npublic sealed class PromotionsHost {}'));
 });
