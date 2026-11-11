@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { execFileSync } from 'child_process';
 import { Browser, Page } from '@playwright/test';
 import { test, expect } from '../fixtures';
@@ -274,11 +275,8 @@ test.describe('basket-edge scenario: cart UI', () => {
     await page.context().close();
   });
 
-  // BUG: BasketState.FetchBasketItemsAsync does catalogItems[item.ProductId] for every basket line, so a line
-  // whose product was removed from the catalog throws KeyNotFoundException ("The given key '99999' was not
-  // present in the dictionary") in the WebApp. CartMenu renders on every page, so after signing in oscar can't
-  // load any page at all. The cart should skip (or flag) the missing product and still show the valid line.
-  test.fixme('a basket line for a product no longer in the catalog does not break the site', async ({ browser }) => {
+  // BUG-7: a basket line whose product is no longer in the catalog is skipped instead of breaking every page.
+  test('a basket line for a product no longer in the catalog does not break the site', async ({ browser }) => {
     const page = await userPage(browser, 'oscar');
     await openCart(page);
     await expect(line(page, BACKPACK.name)).toBeVisible();
