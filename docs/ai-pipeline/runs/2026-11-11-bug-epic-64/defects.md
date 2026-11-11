@@ -262,7 +262,7 @@ worked on): symptom, root cause, fix, commit and impact.
 - **Symptom:** at about 08:55 the Copilot monthly quota ran out. Every agent
   answered `You have exceeded your monthly quota`, and within 15 minutes the
   batch recorded BUG-18 `pair-exhausted`, BUG-11/BUG-14 `plan-rejected` ("no
-  plan found"), BUG-8/BUG-16 `qe-blocked-on-plan`, skipped their dependents,
+  plan found"), BUG-8 `qe-blocked-on-plan`, skipped their dependents,
   closed four groups without a PR and moved 14 cards to Failed.
 - **Root cause:** an agent that fails because its provider refuses all requests
   looks like any failed agent run. The harness spent its plan retries, pair
@@ -330,3 +330,19 @@ policy for every Claude run.
 - **Impact:** one extra opus implementer run per resumed group ticket on every
   restart, plus BUG-14 failing (recoverable) and running an implementer
   concurrently with QE in the same worktree.
+
+## D13b: escalations kept forever, and a stale plan escalation
+
+- **Symptom:** BUG-16 ended `qe-blocked-on-plan` on every run since 05:04,
+  each time after a fresh opus implementer run. Its plan escalation was caused
+  by pipeline defect D4 (markdownlint MD025 in the QE commit), fixed at 05:15,
+  but escalation notes are never cleared by a fix, only by a stage re-run that
+  passes.
+- **Root cause:** D13 (first version) would have kept escalated outcomes until
+  `--force`, and did not cover `qe-blocked-on-plan`; it also could not tell a
+  handled escalation from a standing one.
+- **Fix:** keep `qe-escalated`, `qe-blocked-on-plan` and `review-escalated`
+  only while the matching `.agent-state/escalations/<KEY>-<stage>.md` is still
+  in the worktree. Commit `ce7e49e`. The operator re-ran BUG-16's QE plan stage
+  (verifier gate unchanged) to clear the stale escalation.
+- **Impact:** BUG-16 lost about 5 hours and three opus implementer runs.
