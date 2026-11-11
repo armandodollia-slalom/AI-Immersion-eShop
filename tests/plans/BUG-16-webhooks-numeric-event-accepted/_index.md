@@ -2,6 +2,10 @@
 story: BUG-16
 story-issue: "https://github.com/armandodollia-slalom/AI-Immersion-eShop/issues/38"
 story-sha: 1e79147e77ad
+plan-sha: b23f9b521f01
+verified-score: 9
+verified-at: "2026-11-11T16:29:36.560Z"
+verified-by: qe-plan@c3934e11/456099fb
 ---
 # Test plan: BUG-16 Webhooks.API accepts numeric event names outside the allowed list
 
