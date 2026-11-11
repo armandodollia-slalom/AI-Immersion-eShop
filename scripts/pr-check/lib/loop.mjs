@@ -121,6 +121,7 @@ async function callAgent(config, ctx, files, { role, agent, label, task, mode = 
       cwd: ctx.workRoot,
       timeoutSec: timeoutSec ?? config.prCheck.timeoutSec,
       promptFile: path.join(files.roundAbs, `${label}.prompt.md`),
+      usage: { stage: 'pr-check', story: ctx.story?.key ?? null, round: files.round ?? null, step: label },
     });
     fs.writeFileSync(path.join(files.roundAbs, `${label}.out.md`), result.output ?? '');
     const raw = extractResult(result.output ?? '');
@@ -246,6 +247,7 @@ function roundFiles(ctx, round, { clean = true } = {}) {
   if (clean) fs.rmSync(roundAbs, { recursive: true, force: true });
   fs.mkdirSync(roundAbs, { recursive: true });
   return {
+    round,
     roundAbs,
     roundDir: rel(ctx, roundAbs),
     prFile: rel(ctx, path.join(ctx.runDir, 'context', 'pr.md')),

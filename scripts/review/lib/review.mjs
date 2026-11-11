@@ -73,6 +73,7 @@ export function architectureReview(config, story, round) {
       model: config.agent.models.reviewer,
       timeoutSec: config.review.timeoutSec,
       task: reviewTask(config, story, round),
+      usage: { stage: 'review', story: story.key, round },
     });
     const raw = extractResult(result.output);
     if (raw && ['APPROVED', 'CHANGES_REQUESTED'].includes(raw.verdict)) {

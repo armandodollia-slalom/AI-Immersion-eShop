@@ -271,6 +271,7 @@ export async function implementStory(config, opts) {
         mode: 'implement',
         model: wt.agent.models.implementer,
         timeoutSec: settings.implementerTimeoutSec,
+        usage: { stage: 'implement', story: key, round: metrics.implementerRuns },
       });
       metrics.promptVersion = res.version;
       const reported = extractResult(res.output);

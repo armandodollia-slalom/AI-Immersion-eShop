@@ -158,6 +158,7 @@ export async function planLoop(config, story, { force = false, resume = false, s
         mode: 'write',
         model: config.agent.models.plan,
         timeoutSec: config.timeoutsSec.plan,
+        usage: { stage: 'plan', story: story.key, round },
         task: planTask(config, story, { mode: round === 1 ? mode : 'update', reasons: initial.reasons, storyDiff, feedback }),
       });
       if (!producer.ok) {
@@ -453,6 +454,7 @@ async function automationPass(config, story, { skipTests, maxRounds, targetHash,
       mode: 'write',
       model: config.agent.models.automation,
       timeoutSec: config.timeoutsSec.automation,
+      usage: { stage: 'automation', story: story.key, round },
       task: automationTask(config, story, { mode, feedback, implFiles }),
     });
     const reported = extractResult(producer.output);

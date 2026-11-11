@@ -1,0 +1,33 @@
+{
+  "$comment": "API list prices in USD per million tokens, used by scripts/pipeline/lib/usage.mjs to price every agent run when it is recorded. Never edit a past entry: when a price changes, append an entry with the date it took effect, so older runs keep the price they were billed at. effective null means since the model launched. cacheWrite5m/cacheWrite1h are the 5-minute and 1-hour prompt-cache write prices. longContext applies when the average prompt per request is above aboveInputTokens. Sources: Anthropic pricing page and release notes, checked 2026-11-10.",
+  "models": {
+    "claude-opus-5.5": [
+      { "effective": null, "input": 4, "output": 20, "cacheWrite5m": 5, "cacheWrite1h": 8, "cacheRead": 0.2 }
+    ],
+    "claude-sonnet-5.5": [
+      { "effective": null, "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.2 },
+      { "effective": "2026-10-07", "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.1 }
+    ],
+    "claude-haiku-5.5": [
+      {
+        "effective": null, "input": 0.1, "output": 0.5, "cacheWrite5m": 0.125, "cacheWrite1h": 0.2, "cacheRead": 0.01,
+        "longContext": { "aboveInputTokens": 100000, "input": 0.5, "output": 2.5, "cacheWrite5m": 0.625, "cacheWrite1h": 1, "cacheRead": 0.05 }
+      }
+    ],
+    "claude-fable-5.2": [
+      { "effective": null, "input": 8, "output": 40, "cacheWrite5m": 10, "cacheWrite1h": 16, "cacheRead": 0.2 }
+    ],
+    "claude-fable-5.1": [
+      { "effective": null, "input": 10, "output": 50, "cacheWrite5m": 12.5, "cacheWrite1h": 20, "cacheRead": 0.25 }
+    ],
+    "claude-opus-5": [
+      { "effective": null, "input": 5, "output": 25, "cacheWrite5m": 6.25, "cacheWrite1h": 10, "cacheRead": 0.5 }
+    ],
+    "claude-sonnet-5": [
+      { "effective": null, "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.2 }
+    ],
+    "claude-haiku-4.5": [
+      { "effective": null, "input": 1, "output": 5, "cacheWrite5m": 1.25, "cacheWrite1h": 2, "cacheRead": 0.1 }
+    ]
+  }
+}

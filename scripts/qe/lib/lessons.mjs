@@ -300,7 +300,7 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
       if (added.status !== 0) throw new Error(`git worktree add failed: ${added.stderr}`);
     }
     try {
-      const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root, digest) });
+      const result = runAgent(config, { name: 'qe-lessons', mode: 'write', cwd: root, usage: { stage: 'lessons', story: null }, timeoutSec: config.timeoutsSec.lessons, task: lessonsTask(config, actionable, root, digest) });
       if (!result.ok) throw new Error('lessons agent failed');
       const writable = [config.lessonsDir, ...(digest ? allowedPaths(config) : [])];
       const outside = changedFiles(root).filter((c) => !inside(c.file, writable));

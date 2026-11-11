@@ -42,6 +42,23 @@ export function storiesFromPaths(config, paths, reader) {
   return listStories(config, reader).filter((s) => keys.has(path.basename(s.file)));
 }
 
+// Epics are the epic-*.md files next to the stories folder; an epic owns every story key it mentions.
+export function listEpics(config, reader = fsReader(config.root)) {
+  const dir = path.posix.dirname(config.storiesDir);
+  return reader
+    .list(dir)
+    .filter((name) => /^epic-.+\.md$/.test(name))
+    .map((name) => {
+      const text = reader.read(`${dir}/${name}`) ?? '';
+      const title = /^#\s+(?:Epic:\s*)?(.+)$/m.exec(text)?.[1]?.trim() ?? name;
+      return { key: name.slice('epic-'.length, -3), title, file: `${dir}/${name}`, stories: new Set([...text.matchAll(/\b([A-Z][A-Z0-9]*-\d+)(?!\d)/g)].map((m) => m[1])) };
+    });
+}
+
+export function epicOf(config, key, epics = listEpics(config)) {
+  return epics.find((e) => e.stories.has(key)) ?? null;
+}
+
 export const storySha = (text) => sha(text.replace(/\r\n/g, '\n'));
 
 export const casePrefix = (key) => `TC-${key}-`;
