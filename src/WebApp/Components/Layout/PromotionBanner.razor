@@ -1,0 +1,44 @@
+@using eShop.WebApp.Services.Promotions
+@using eShop.WebAppComponents.Promotions
+@inject PromotionsService PromotionsService
+
+@if (promotion is not null)
+{
+    <aside class="promo-banner" aria-label="Promotion" data-promo-banner>
+        <div class="promo-banner-inner">
+            <p class="promo-banner-text"><strong>@promotion.Name</strong> <span>@promotion.Description</span></p>
+            <span class="promo-banner-countdown" data-promo-countdown data-ends-at="@promotion.EndsAt.ToString("o")"></span>
+            <a class="promo-banner-link" href="@shopHref">Shop the sale</a>
+        </div>
+    </aside>
+    <script src="js/promo-countdown.js"></script>
+}
+
+@code {
+    private ActivePromotion? promotion;
+    private string shopHref = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var promotions = await PromotionsService.GetActivePromotionsAsync();
+        promotion = promotions
+            .Where(p => !p.RequiresCoupon && p.Targets.Any(IsBannerTarget))
+            .OrderByDescending(p => p.Priority)
+            .ThenBy(p => p.Id)
+            .FirstOrDefault();
+
+        if (promotion is not null)
+        {
+            var target = promotion.Targets.First(IsBannerTarget);
+            shopHref = target.Scope switch
+            {
+                PromotionScope.Type => $"?type={target.TargetId}",
+                PromotionScope.Brand => $"?brand={target.TargetId}",
+                _ => "",
+            };
+        }
+    }
+
+    private static bool IsBannerTarget(PromotionTarget t) =>
+        t.Scope is PromotionScope.All or PromotionScope.Type or PromotionScope.Brand;
+}

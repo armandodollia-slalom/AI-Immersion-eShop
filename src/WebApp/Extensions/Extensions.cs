@@ -1,5 +1,7 @@
 ﻿using eShop.Basket.API.Grpc;
 using eShop.WebApp.Services.OrderStatus.IntegrationEvents;
+using eShop.WebApp.Services.Promotions;
+using eShop.WebApp.Services.Promotions.IntegrationEvents;
 using eShop.WebAppComponents.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -42,6 +44,14 @@ public static class Extensions
             .AddApiVersion(2.0)
             .AddAuthToken();
 
+        builder.Services.AddMemoryCache();
+        builder.Services.AddHttpClient<PromotionsService>(o =>
+            {
+                o.BaseAddress = new("https+http://promotions-api");
+                o.Timeout = TimeSpan.FromSeconds(2);
+            })
+            .AddApiVersion(1.0);
+
         builder.Services.AddHttpClient<OrderingService>(o => o.BaseAddress = new("https+http://ordering-api"))
             .AddApiVersion(1.0)
             .AddAuthToken();
@@ -55,6 +65,8 @@ public static class Extensions
         eventBus.AddSubscription<OrderStatusChangedToShippedIntegrationEvent, OrderStatusChangedToShippedIntegrationEventHandler>();
         eventBus.AddSubscription<OrderStatusChangedToCancelledIntegrationEvent, OrderStatusChangedToCancelledIntegrationEventHandler>();
         eventBus.AddSubscription<OrderStatusChangedToSubmittedIntegrationEvent, OrderStatusChangedToSubmittedIntegrationEventHandler>();
+        eventBus.AddSubscription<PromotionStartedIntegrationEvent, PromotionStartedIntegrationEventHandler>();
+        eventBus.AddSubscription<PromotionEndedIntegrationEvent, PromotionEndedIntegrationEventHandler>();
     }
 
     public static void AddAuthenticationServices(this IHostApplicationBuilder builder)
