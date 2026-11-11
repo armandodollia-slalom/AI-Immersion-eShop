@@ -71,7 +71,7 @@ A PR the gate clears is merged with `gh pr merge --auto --squash` (`implement.au
 | `gh-user` (default) | the `gh` CLI's logged-in user on the pipeline machine | today: `main` requires no approvals from people |
 | `app` | a GitHub App with a ruleset bypass, its installation token in the variable named by `appTokenEnv` (`REVIEW_GATE_APP_TOKEN`) becomes `GH_TOKEN` for the merge | once `main` requires approvals from people, a PR that needs none can only merge through a bypass |
 
-`implement.autoMerge.enabled` is the **kill switch**. It ships **off** (`false`): every PR that would auto-merge is reviewed instead, and its notice says "auto-merge is switched off; it would have auto-merged", so the team can watch what the gate would do before trusting it. Turn it on in `scripts/implement/config.json`; turn it off the same way at any time. A merge GitHub refuses (auto-merge not allowed on the repo, a missing App token) sends the PR to review with the reason.
+`implement.autoMerge.enabled` is the **kill switch**, **on** (`true`). Set it to `false` in `scripts/implement/config.json` to stop all auto-merges: every PR that would auto-merge is then reviewed instead, and its notice says "auto-merge is switched off; it would have auto-merged". A merge GitHub refuses (auto-merge not allowed on the repo, a missing App token) sends the PR to review with the reason.
 
 `--auto` lets GitHub wait for its own requirements; with none (today), it merges at once. For the waiting case, the repository needs **Allow auto-merge** (Settings → General → Pull Requests). The gate itself only asks for the merge once the PR's checks are green.
 
@@ -140,7 +140,7 @@ From them it **proposes** changes to the approvals policy table, computed in cod
 | Switch | Effect |
 | --- | --- |
 | `implement.reviewGate.enabled: false`, or `REVIEW_GATE=0` | The gate does nothing; PRs stay as the pipeline opened them |
-| `implement.autoMerge.enabled` (default `false`) | The auto-merge kill switch: off, a PR that qualifies is reviewed (1 approval) instead |
+| `implement.autoMerge.enabled` (default `true`) | The auto-merge kill switch: off, a PR that qualifies is reviewed (1 approval) instead |
 | `implement.autoMerge.identity` | `gh-user` or `app` ([Auto-merge](#auto-merge)) |
 | `PIPELINE_NO_PR=1` (experiments) | No PRs, so nothing to gate |
 | board inactive (no project, a fork, a test repo, `PIPELINE_BOARD=0`) | The gate does nothing |
