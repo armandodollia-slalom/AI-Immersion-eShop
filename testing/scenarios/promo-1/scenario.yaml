@@ -1,5 +1,5 @@
 description: >
-  Default data plus seven promotions in promotionsdb (PROMO-1): the four the seeder creates (ids 1-4,
+  Default data plus seven promotions in promotionsdb (PROMO-1): the four the seeder creates (ids 1-4, PROMO-2 schema and data,
   id 4 coupon-only with coupons FALL10 and WELCOME5), a Draft (5), one that ended yesterday (6) and one
   that starts tomorrow (7). Users alice and bob come from default.
 extends: default

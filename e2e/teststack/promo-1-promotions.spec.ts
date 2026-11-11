@@ -13,8 +13,9 @@ const WEBHOOKS_CLIENT_URL = `http://localhost:${port('webhooksclient')}`;
 const ACTIVE = `${PROMOTIONS_URL}/api/promotions/active?api-version=1.0`;
 const LIST = `${PROMOTIONS_URL}/api/promotions?api-version=1.0`;
 const ALICE_ID = 'a11ce000-0000-4000-8000-000000000001';
-const SEEDED_NAMES = ['15% off everything', '$20 off your order', 'Buy 2 get 1 free', 'Coupon only: 10% off'];
-const ALL_NAMES = [...SEEDED_NAMES, 'Draft 5% off', 'Ended yesterday', 'Starts tomorrow'];
+// PROMO-2: /active leaves out the coupon-only promotion (4) and the list endpoint is paged (PaginatedItems).
+const ACTIVE_NAMES = ['Fall Hiking Sale', '$10 off orders over $150', 'Buy 2 Get 1 Free'];
+const ALL_NAMES = [...ACTIVE_NAMES, 'Coupon only: 10% off', 'Draft 5% off', 'Ended yesterday', 'Starts tomorrow'];
 
 test.describe.configure({ mode: 'serial' });
 
@@ -50,6 +51,8 @@ const tokenClaims = (exp: number) => ({
   client_id: 'webapp',
   sub: ALICE_ID,
   scope: ['promotions'],
+  // PROMO-2: the list endpoint requires the admin policy (scope promotions and role admin).
+  role: 'admin',
 });
 
 test('TC-PROMO-1-19 GET /active returns the same result with a valid token', async ({ request }) => {
@@ -68,7 +71,7 @@ test('TC-PROMO-1-19 GET /active returns the same result with a valid token', asy
     expect(withToken.status()).toBe(200);
     expect(anonymous.status()).toBe(200);
     const body = await withToken.json();
-    expect(body.map((p: { name: string }) => p.name)).toEqual(SEEDED_NAMES);
+    expect(body.map((p: { name: string }) => p.name)).toEqual(ACTIVE_NAMES);
     expect(body).toEqual(await anonymous.json());
   });
 });
@@ -83,7 +86,7 @@ test('TC-PROMO-1-20 GET /api/promotions with a promotions-scope token returns ev
 
   await test.step('200 with all 7 promotions, active or not', async () => {
     expect(response.status()).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()).data;
     expect(body).toHaveLength(7);
     expect(body.map((p: { name: string }) => p.name).sort()).toEqual([...ALL_NAMES].sort());
     expect(body.map((p: { status: string }) => p.status).sort()).toEqual(['Draft', 'Published', 'Published', 'Published', 'Published', 'Published', 'Published']);
@@ -113,7 +116,7 @@ test('TC-PROMO-1-21 signing in to the WebApp yields a token with the promotions 
   await test.step('GET /api/promotions with that token', async () => {
     const response = await page.request.get(LIST, { headers: bearer(token) });
     expect(response.status()).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()).data;
     expect(body).toHaveLength(7);
     expect(body.map((p: { name: string }) => p.name).sort()).toEqual([...ALL_NAMES].sort());
   });
