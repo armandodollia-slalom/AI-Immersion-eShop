@@ -264,7 +264,7 @@ The board is active only when `scripts/board/config.json` has a `projectNumber`,
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `board-epic-assign` | an epic is assigned or unassigned | `board sync-epic`: the epic's stories get its assignees |
-| `board-escalation-resolve` | a failure comment is edited (Resolved ticked), a `Qn:` reply, or `escalation-resolved` added by hand | `board resolve-check`: untick and list what is missing, or swap the labels, record `## Decisions` in the issue body and confirm ([escalations](escalations.md#questions-and-the-resolve-checkbox)) |
+| `board-escalation-resolve` | a failure comment is edited (Resolved ticked), or `escalation-resolved` added by hand (new comments, `Qn:` replies included, do not start it) | `board resolve-check`: untick and list what is missing, or swap the labels, record `## Decisions` in the issue body and confirm ([escalations](escalations.md#questions-and-the-resolve-checkbox)) |
 
 Both use only `github.token` with `issues: write`; moving cards needs the project scope, so it happens in `board sync` on a pipeline machine.
 
