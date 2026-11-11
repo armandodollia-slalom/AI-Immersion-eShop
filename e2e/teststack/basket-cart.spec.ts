@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { execFileSync } from 'child_process';
 import { Browser, Page } from '@playwright/test';
 import { test, expect } from '../fixtures';
