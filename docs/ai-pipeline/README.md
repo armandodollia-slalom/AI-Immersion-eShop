@@ -7,7 +7,7 @@ Agents take a user story from implementation to reviewed code with verified test
 | `implement` | `scripts/implement/` | Implements every story in a folder headlessly: a worktree and branch per story, the implementer agent, then the review and QE stages below | [implement.md](implement.md) |
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
-| `board` | `scripts/board/` | Keeps the story's card on the GitHub Project board in step (In Progress, Testing, Pending Review with evidence) and picks up the stories assigned to you | [board.md](board.md) |
+| `board` | `scripts/board/` | Keeps the story's card on the GitHub Project board in step (In Progress, Pending Review with evidence) and picks up the stories assigned to you | [board.md](board.md) |
 
 Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
 
@@ -33,7 +33,7 @@ Each story gets its own worktree and branch, the implementer agent, the architec
 
 ## Story board
 
-Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Todo, In Progress, Testing, Pending Review, Done). Assign a story to yourself in Todo and run the picker on your machine; it runs the whole pipeline and moves the card as it goes. See [board.md](board.md).
+Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Testing, Pending Review, Done). Stories wait in Backlog until they are ready; assign one to yourself, move it to Ready and run the picker on your machine; it runs the whole pipeline and moves the card as it goes. See [board.md](board.md).
 
 ```bash
 node scripts/board/board.mjs pick            # implement the stories assigned to you, polling the board
@@ -55,7 +55,7 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | --- | --- | --- | --- | --- |
 | `pipeline start` | (command) | `story-start` | review, qe, board (card to In Progress) | none |
 | Agent session start/resume | `SessionStart` | `hook session-start` | review, qe | none |
-| Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then board (Testing, then Pending Review) | LLM, only after `pipeline done` |
+| Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then board (Pending Review) | LLM, only after `pipeline done` |
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe (plans for changed stories, in the background) | LLM |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |

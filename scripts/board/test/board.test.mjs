@@ -14,25 +14,28 @@ test('story kind comes from the [FE]/[BE] tag in the title', () => {
 
 test('cards only move forward unless forced', () => {
   assert.ok(isForward(null, 'inProgress'));
+  assert.ok(isForward('backlog', 'ready'));
+  assert.ok(!isForward('ready', 'backlog'));
   assert.ok(isForward('inProgress', 'testing'));
   assert.ok(!isForward('review', 'testing'));
   assert.ok(!isForward('testing', 'testing'));
 });
 
-test('the stop hook asks for Testing while QE runs and Pending Review once verified (interactive only)', () => {
+test('the stop hook never sets Testing; it asks for Pending Review once verified (interactive only)', () => {
   assert.equal(columnForState({ automation: { status: 'idle' } }), null);
-  assert.equal(columnForState({ automation: { status: 'running' } }), 'testing');
-  assert.equal(columnForState({ automation: { status: 'idle', requestedHash: 'h' } }), 'testing');
+  assert.equal(columnForState({ automation: { status: 'running' } }), null);
+  assert.equal(columnForState({ automation: { status: 'idle', requestedHash: 'h' } }), null);
   assert.equal(columnForState({ done: { hash: 'h' }, automation: { status: 'verified', requestedHash: null } }), 'review');
   assert.equal(columnForState({ done: { hash: 'h' }, automation: { status: 'verified', requestedHash: null } }, { headless: true }), null);
   assert.equal(columnForState({ done: null, automation: { status: 'verified' } }), null);
 });
 
-test('the picker takes open story cards in Todo assigned to the user and skips parked ones', () => {
-  const item = (over) => ({ key: 'BUG-1', column: 'todo', state: 'OPEN', repo: 'acme/shop', assignees: ['Me'], labels: ['story'], ...over });
+test('the picker takes open story cards in Ready (never Backlog) assigned to the user and skips parked ones', () => {
+  const item = (over) => ({ key: 'BUG-1', column: 'ready', state: 'OPEN', repo: 'acme/shop', assignees: ['Me'], labels: ['story'], ...over });
   const items = [
     item({ number: 1 }),
     item({ number: 2, column: 'inProgress' }),
+    item({ number: 9, column: 'backlog' }),
     item({ number: 3, assignees: ['someone'] }),
     item({ number: 4, labels: ['story', 'needs-human'] }),
     item({ number: 5, state: 'CLOSED' }),

@@ -7,7 +7,8 @@
     "projectTitle": "eShop Story Board",
     "statusField": "Status",
     "columns": {
-      "todo": "Todo",
+      "backlog": "Backlog",
+      "ready": "Ready",
       "inProgress": "In Progress",
       "testing": "Testing",
       "review": "Pending Review",

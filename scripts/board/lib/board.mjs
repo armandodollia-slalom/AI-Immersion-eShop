@@ -5,12 +5,15 @@ import { readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { gh, ghJson, graphql } from './github.mjs';
 
 // Columns in board order. Hooks only move a story forward; `board move` can move it anywhere.
-export const COLUMNS = ['todo', 'inProgress', 'testing', 'review', 'done'];
+// Backlog is never picked up; Ready is the picker's lane. Testing is set by hand (no hook moves there).
+export const COLUMNS = ['backlog', 'ready', 'inProgress', 'testing', 'review', 'done'];
+// Earlier names of a column: `setup` renames them in place and keeps their cards.
+const FORMER_NAMES = { ready: ['Todo'] };
 const KEY_TITLE = /^([A-Z][A-Z0-9]*-\d+):/;
 
 export const storyKeyOf = (title) => KEY_TITLE.exec(title ?? '')?.[1] ?? null;
 export const columnKey = (config, name) => COLUMNS.find((c) => config.board.columns[c] === name) ?? null;
-export const isForward = (from, to) => COLUMNS.indexOf(to) > COLUMNS.indexOf(from ?? 'todo') || (from == null && to === 'todo');
+export const isForward = (from, to) => COLUMNS.indexOf(to) > COLUMNS.indexOf(from ?? 'backlog') || (from == null && to === 'backlog');
 
 // "[FE - ...]" stories change visible UI (they get a video); "[BE - ...]" stories are APIs (they get
 // the requests and responses of their verified tests).
@@ -125,6 +128,7 @@ export function listItems(config) {
       items.push({
         itemId: n.id,
         column: columnKey(config, n.fieldValueByName?.name),
+        status: n.fieldValueByName?.name ?? null,
         number: n.content.number,
         title: n.content.title,
         url: n.content.url,
@@ -140,23 +144,22 @@ export function listItems(config) {
   }
 }
 
-// Column a story's pipeline state calls for in the stop hook: Testing while QE automation runs,
-// Pending Review once its tests are verified (headless runs report after the PR exists instead).
+// Column a story's pipeline state calls for in the stop hook: Pending Review once its tests are
+// verified (headless runs report after the PR exists instead). Testing is only ever set by hand.
 export function columnForState(state, { headless = false } = {}) {
   const a = state.automation ?? {};
   if (a.status === 'verified' && !a.requestedHash) return state.done && !headless ? 'review' : null;
-  if (['starting', 'running'].includes(a.status) || a.requestedHash) return 'testing';
   return null;
 }
 
-// Stories the local pipeline should pick up: open story issues in Todo, assigned to `login`, not
+// Stories the local pipeline should pick up: open story issues in Ready (never Backlog), assigned to `login`, not
 // parked for a human.
 export function pickable(config, items, login) {
   const me = login.toLowerCase();
   return items.filter(
     (i) =>
       i.key &&
-      i.column === 'todo' &&
+      i.column === 'ready' &&
       i.state === 'OPEN' &&
       i.repo.toLowerCase() === config.board.repo.toLowerCase() &&
       i.assignees.some((a) => a.toLowerCase() === me) &&
@@ -177,9 +180,10 @@ const LABELS = (config) => [
 ];
 
 const COLUMN_STYLE = {
-  todo: ['GRAY', 'Assign a story to yourself here; your local `board pick` picks it up'],
+  backlog: ['GRAY', 'Not ready for implementation; the pipeline never picks these up, even when assigned'],
+  ready: ['PURPLE', 'Ready for implementation; your local `board pick` picks up the ones assigned to you'],
   inProgress: ['YELLOW', 'The pipeline is implementing the story'],
-  testing: ['ORANGE', 'Reviewed implementation; QE is writing and verifying the tests'],
+  testing: ['ORANGE', 'Set by hand while someone is testing the story'],
   review: ['BLUE', 'Implemented and verified; the PR is waiting for a human review'],
   done: ['GREEN', 'Merged'],
 };
@@ -190,7 +194,7 @@ function storyIssueBody(config, story, text) {
   return [
     `**Story file:** [\`${story.file}\`](${blob})`,
     '',
-    `Assign this issue to yourself while it is in **${config.board.columns.todo}**: \`node scripts/board/board.mjs pick\` on your machine picks it up and runs the pipeline, moving the card through **${config.board.columns.inProgress}**, **${config.board.columns.testing}** and **${config.board.columns.review}**.`,
+    `Assign this issue to yourself and move it to **${config.board.columns.ready}** when it is ready for implementation (cards in **${config.board.columns.backlog}** are never picked up): \`node scripts/board/board.mjs pick\` on your machine picks it up and runs the pipeline, moving the card to **${config.board.columns.inProgress}** and then **${config.board.columns.review}** with the PR.`,
     '',
     '---',
     '',
@@ -223,6 +227,7 @@ export function setup(config, { listStories, log, writeProjectNumber }) {
   log(view);
 
   const created = [];
+  const updated = [];
   for (const story of listStories(config)) {
     const text = fs.readFileSync(path.join(config.root, story.file), 'utf8');
     let issue = findIssue(config, story.key);
@@ -236,11 +241,18 @@ export function setup(config, { listStories, log, writeProjectNumber }) {
       saveCache(config, cache);
       issue = cache.issues[story.key];
       created.push(story.key);
+    } else {
+      // Keep issue bodies in step with the story file and the board's instructions.
+      const body = storyIssueBody(config, story, text);
+      if (ghJson(['issue', 'view', String(issue.number), '-R', repo, '--json', 'body']).body.trim() !== body.trim()) {
+        gh(['issue', 'edit', String(issue.number), '-R', repo, '--body-file', '-'], { input: body });
+        updated.push(story.key);
+      }
     }
     const item = issueItem(config, issue);
-    if (!item.column) setColumn(config, item.id, 'todo');
+    if (!item.column) setColumn(config, item.id, 'backlog');
   }
-  log(`${created.length} issue(s) created${created.length ? `: ${created.join(', ')}` : ''}; every story is on the board`);
+  log(`${created.length} issue(s) created${created.length ? `: ${created.join(', ')}` : ''}, ${updated.length} issue body(ies) refreshed; every story is on the board`);
   return project(config).url;
 }
 
@@ -260,14 +272,20 @@ function ensureColumns(config, log) {
   const wanted = COLUMNS.map((c) => config.board.columns[c]);
   if (wanted.every((name) => p.options[name])) return log('columns ready');
   const singleSelectOptions = COLUMNS.map((c) => ({ name: config.board.columns[c], color: COLUMN_STYLE[c][0], description: COLUMN_STYLE[c][1] }));
-  const extras = Object.keys(p.options).filter((name) => !wanted.includes(name));
+  // Options are matched by name, so a renamed column would drop its cards: note them and put them back.
+  const renamed = new Map();
+  for (const c of COLUMNS) for (const old of FORMER_NAMES[c] ?? []) if (p.options[old] && !p.options[config.board.columns[c]]) renamed.set(old, c);
+  const moving = renamed.size ? listItems(config).filter((i) => renamed.has(i.status)) : [];
+  const extras = Object.keys(p.options).filter((name) => !wanted.includes(name) && !renamed.has(name));
   for (const name of extras) singleSelectOptions.push({ name, color: 'GRAY', description: '' });
   const input = JSON.stringify({
     query: 'mutation($input:UpdateProjectV2FieldInput!){updateProjectV2Field(input:$input){projectV2Field{... on ProjectV2SingleSelectField{id}}}}',
     variables: { input: { fieldId: p.fieldId, singleSelectOptions } },
   });
   gh(['api', 'graphql', '--input', '-'], { input });
-  log(`columns set: ${wanted.join(' | ')}`);
+  resetMemo();
+  for (const i of moving) setColumn(config, i.itemId, renamed.get(i.status));
+  log(`columns set: ${wanted.join(' | ')}${moving.length ? `; ${moving.length} card(s) kept through the rename` : ''}`);
 }
 
 function ensureBoardView(config) {

@@ -23,7 +23,7 @@ const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
   setup                         enable issues, create the labels, the project and its columns, and an
                                 issue on the board for every story (idempotent; run again for new stories)
   pick [--once] [--parallel N] [--interval <sec>] [--dry-run]
-                                implement the stories in Todo assigned to you (gh's logged-in user),
+                                implement the stories in Ready assigned to you (gh's logged-in user),
                                 then keep polling (--once: a single pass)
   mine                          the stories assigned to you and their columns
   move <story> <column> [--force]
@@ -132,8 +132,8 @@ function requireActive(config) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Hooks: In Progress when a story starts, Testing once QE automation runs, Pending Review once the
-// tests are verified (interactive sessions; headless runs report after the PR exists)
+// Hooks: In Progress when a story starts, Pending Review once the tests are verified (interactive
+// sessions; headless runs report after the PR exists). Testing is set by hand.
 // ---------------------------------------------------------------------------------------------
 
 function hook(config, [event, key]) {
@@ -218,25 +218,25 @@ async function pick(config, { once, dryRun, parallel, intervalSec }) {
     for (const item of ready) {
       const story = resolveStory(config, item.key);
       if (!story) {
-        if (!dryRun) park(config, item.number, `No story file for ${item.key} in \`${config.storiesDir}\` on this checkout. Pull the latest main, then move the card back to ${config.board.columns.todo}.`);
+        if (!dryRun) park(config, item.number, `No story file for ${item.key} in \`${config.storiesDir}\` on this checkout. Pull the latest main, then move the card back to ${config.board.columns.ready}.`);
         continue;
       }
       batch.push({ item, story });
     }
-    if (!batch.length) console.log(`${nowIso()} nothing assigned to ${me} in ${config.board.columns.todo}.`);
+    if (!batch.length) console.log(`${nowIso()} nothing assigned to ${me} in ${config.board.columns.ready}.`);
     else console.log(`${nowIso()} picked up: ${batch.map((b) => `${b.story.key} (#${b.item.number})`).join(', ')}`);
 
     if (batch.length && !dryRun) {
       // Claim the cards first so another poll (or machine) never picks them twice.
       for (const { item, story } of batch) {
         moveStory(config, story.key, 'inProgress', { force: true });
-        comment(config, item.number, `Picked up by @${me}'s pipeline on \`${os.hostname()}\` (\`pipeline implement\`). This card moves to ${config.board.columns.testing} when QE starts and to ${config.board.columns.review} with the PR.`);
+        comment(config, item.number, `Picked up by @${me}'s pipeline on \`${os.hostname()}\` (\`pipeline implement\`). This card moves to ${config.board.columns.review} with the PR.`);
       }
       spawnSync(process.execPath, [PIPELINE_CLI, 'implement', 'run', ...batch.map((b) => b.story.file), '--pr', '--parallel', String(parallel)], { cwd: config.root, stdio: 'inherit' });
       for (const { item, story } of batch) {
         const result = readJson(path.join(config.root, config.stateDir, 'implement', `${story.key}.json`), {});
         if (result.outcome === 'done') continue;
-        park(config, item.number, `The pipeline stopped: **${result.outcome ?? 'no result'}**${result.reason ? ` (${result.reason})` : ''}.${result.branch ? ` Branch: \`${result.branch}\`.` : ''}${result.log ? ` Log on \`${os.hostname()}\`: \`${result.log}\`.` : ''}\n\nFix it, remove the \`${config.board.blockedLabel}\` label and move the card back to ${config.board.columns.todo} to retry.`);
+        park(config, item.number, `The pipeline stopped: **${result.outcome ?? 'no result'}**${result.reason ? ` (${result.reason})` : ''}.${result.branch ? ` Branch: \`${result.branch}\`.` : ''}${result.log ? ` Log on \`${os.hostname()}\`: \`${result.log}\`.` : ''}\n\nFix it, remove the \`${config.board.blockedLabel}\` label and move the card back to ${config.board.columns.ready} to retry.`);
       }
     }
     if (once || dryRun) return 0;
