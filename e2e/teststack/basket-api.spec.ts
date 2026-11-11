@@ -81,9 +81,7 @@ test.describe('basket-edge scenario: Basket gRPC API', () => {
     await basketCall('DeleteBasket', undefined, aliceToken);
   });
 
-  // BUG: Basket.API's BasketItem declares Quantity < 1 invalid (IValidatableObject), but the gRPC
-  // UpdateBasket never validates, so quantities of 0 or -3 are stored in Redis and returned as-is.
-  test.fixme('UpdateBasket rejects zero or negative quantities', async () => {
+  test('UpdateBasket rejects zero or negative quantities', async () => {
     const res = await basketCall('UpdateBasket', encodeItems([{ productId: 7, quantity: -3 }, { productId: 6, quantity: 0 }]), aliceToken);
     expect(res.grpcStatus).toBe(INVALID_ARGUMENT);
     expect(redisBasket(USER_IDS.alice)).toBeNull();
