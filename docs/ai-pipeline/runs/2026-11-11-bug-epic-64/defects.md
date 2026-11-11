@@ -346,3 +346,49 @@ policy for every Claude run.
   in the worktree. Commit `ce7e49e`. The operator re-ran BUG-16's QE plan stage
   (verifier gate unchanged) to clear the stale escalation.
 - **Impact:** BUG-16 lost about 5 hours and three opus implementer runs.
+
+## D15: CI's generated-stack drift check was not a harness check
+
+- **Symptom:** #70, #71 and #97 fail CI `teststack`: `deploy/teststack is out
+  of date with the AppHost`. BUG-4's implementer added `Identity__Url` to the
+  compose file by hand, in a different place than the generator writes it.
+- **Root cause:** `implement.checks` ran only the build; the implementer
+  instructions say to run `testing/teststack publish`, but nothing checked it.
+- **Fix:** a second check runs `testing/teststack publish --check` when the
+  branch changes `src/eShop.AppHost` or `deploy/teststack`. Commit `e249243`.
+- **Impact:** three group PRs fail CI until a human regenerates the file on
+  `catalog-write-auth` and merges it up the stack.
+
+## D16: per-service unit tests never matched
+
+- **Symptom:** #70 and #71 fail `Application.UnitTests`
+  (`ApiResourcesAndScopesStayAligned`, expected 3 scopes, found 4) although
+  every round's checks "passed".
+- **Root cause:** `unitTests.project` is `tests/{service}.UnitTests` with
+  `{service}` the `src/` folder name: `Basket.API`, `Ordering.API`,
+  `Identity.API`... Only `ClientApp` and `eShop.AppHost` have matching
+  projects, so the harness ran no Basket, Ordering or Application unit tests
+  for any ticket.
+- **Fix:** match the service name, the name without `.API`, or its first
+  part, and fall back to `tests/Application.UnitTests` (which covers Identity,
+  Webhooks and the processors). Commit `ef25d0c`.
+- **Impact:** verifiers approved changes that break existing unit tests;
+  caught only by CI on the group PRs.
+
+## D17: shared spec files make earlier tickets' tests "stale"
+
+- **Symptom:** the complete `catalog-item-validation` group (6 tickets) got no
+  PR: `push failed:` with an empty reason. The pre-push QE check said BUG-4,
+  BUG-13 and BUG-19: "tests or scenario edited after verification".
+- **Root cause:** `automationSha` hashes the whole content of every test file
+  that mentions a ticket's case ids. Tickets of one group add cases to the
+  same spec file, so each later ticket changes the hash of the earlier ones.
+  The failed push's reason was empty because the hook prints its FAIL lines
+  on stdout.
+- **Fix:** before a unit is pushed, `reverifyStale` runs `qe check`, and QE
+  automates each stale ticket again in the unit worktree (its verifier
+  re-runs) and commits; a ticket that does not verify again ends the unit
+  `qe-reverify-failed`. The pre-push gate is unchanged and never bypassed.
+  The push reason includes stdout. Commit `532790c`.
+- **Impact:** the largest group of the run (6 bugs) was held back; any stacked
+  group whose tickets share spec files hits this.
