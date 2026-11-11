@@ -420,3 +420,16 @@ policy for every Claude run.
   each merge (metrics logs merge as a union). Test in `epic.test.mjs`.
   Commit `0865621`.
 - **Impact:** the `basket-cart` group (3 bugs) was held back one run.
+
+## D20: a card in Failed could not reach Pending Review
+
+- **Symptom:** BUG-14 was verified and its group PR #102 opened, but the board
+  answered "verified ignored: not allowed from Failed".
+- **Root cause:** the board's transition table allowed `verified` only from In
+  Progress and Testing. The docs expect a re-run to claim a failed card first,
+  but a ticket that is only merged by a later run (its worker was `done`) is
+  not claimed.
+- **Fix:** `verified` is allowed from Failed. Test in `flow.test.mjs`;
+  `board.md` updated. Commit `a162378`. The operator re-sent BUG-14's review
+  event.
+- **Impact:** one card showed Failed while its PR was open.
