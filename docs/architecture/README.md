@@ -158,4 +158,4 @@ architecture-policy/       Architecture Policy Pack (rules, hooks, arch-review a
 scripts/                   AI development pipeline, board, QE, PR check, graphify and LSP tooling
 ```
 
-The repository also contains an AI development pipeline (implementation, architecture review, QE and PR check agents) that delivers stories into this codebase. It is documented separately in [docs/ai-pipeline](../ai-pipeline/README.md).
+The repository also contains an AI development pipeline (implementation, architecture review, QE and PR check agents) that delivers stories into this codebase; its bug-fix PRs pass a [review gate](../ai-pipeline/review-gate.md) that maps every change to the services above and treats shared infrastructure (EventBus, ServiceDefaults, integration-event contracts, the AppHost) as its own systems. It is documented separately in [docs/ai-pipeline](../ai-pipeline/README.md).

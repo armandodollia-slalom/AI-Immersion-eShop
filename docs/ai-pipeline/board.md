@@ -14,6 +14,8 @@ flowchart LR
   Q -->|QE finds a product bug| P
   Q -->|tests verified, PR opened| R[Pending Review<br/>PR + evidence]
   R -->|PR merged: Closes #issue<br/>board sync| D[Done]
+  R -.->|bug fix sent back by a person:<br/>review gate, board sync| P
+  D -.->|bug fix reopened:<br/>review gate, board sync| P
   P -.->|pipeline stops| F[Failed<br/>needs-human, reason in a comment]
   Q -.->|pipeline stops| F
   F -.->|you answer the questions and tick Resolved:<br/>escalation-resolved, board sync| T
@@ -27,9 +29,9 @@ flowchart LR
 | Ready | you, when a story is ready for implementation |
 | In Progress | the **claim** when `pipeline implement run` (or an interactive `pipeline start <KEY>`) begins the story, with a comment naming the user and machine; and the **product-bug** event when QE finds bugs in the implementation and the story goes back to the implementer, with a comment listing the bugs |
 | Testing | the **testing** event: the architecture review approved the code and QE started writing and verifying the automated tests (again after every bug fix) |
-| Pending Review | the **verified** event: the tests are verified and the PR is open (headless), or the line of work is done and verified (interactive, no PR). The issue gets the review notes and evidence; the epic gets the same links |
+| Pending Review | the **verified** event: the tests are verified and the PR is open (headless), or the line of work is done and verified (interactive, no PR). The issue gets the review notes and evidence; the epic gets the same links. A bug-fix PR is then [gated](review-gate.md): it auto-merges (Low risk, high confidence) or waits for a person's approval while the card stays here |
 | Failed | the **failed** event: any outcome of `pipeline implement run` other than done (`blocked`, `unresolved`, `plan-rejected`, `pair-exhausted`, `limit-*`, `qe-*`, a blocker that failed, a PR that could not be opened, ...). The card gets the `needs-human` label and a comment with the outcome, up to three questions for a human, the details (escalation notes, findings, branch, log) collapsed, and a **Resolved** checkbox ([escalations](escalations.md#questions-and-the-resolve-checkbox)) |
-| Done | `board sync`: closed story issues move to Done. The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
+| Done | `board sync`: closed story issues move to Done (also when the review gate auto-merged the PR). The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
 
 The board is informational: GitHub errors are logged and never block an agent or change a pipeline outcome.
 

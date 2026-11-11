@@ -102,6 +102,7 @@ All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are i
 | `plan` | `plan-written` | the plan agent's summary of how it split the story; `excluded` lists what it left out and why | each case: id, title, type, layer, `covers` and its `## Why` |
 | `plan-verify`, `automation-verify` | `approved`, `denied` | the verifier's summary and `score` | each gap: case, category, subtype, location, `root_stage`, `subject` (the agent it is attributed to) |
 | `review` | `approved`, `changes-requested` | the reviewer's summary (`architecture-reviewer`, or `arch-review-agent` for the policy pack with `policy_decision`) | each finding: severity, category, `rule`, `repeat`, file, line, `fix` |
+| `bug-triage` | `auto-merge`, `wait`, `review` | the [review gate](review-gate.md)'s assessment of a published bug-fix PR: its severity with the explanation, and what triggered review | each ticket: the three ratings, severity (base, bump, floor), confidence, reopens, systems |
 | `automation` | `product-bug` | the automation agent's summary of why the implementation, not the test, is wrong | each bug: case, expected, actual, location |
 
 Plan decisions are logged each round that passes the structural check, so each pairs with that round's verifier decision. Calibration audits are not logged here (they go to `calibration.jsonl`).

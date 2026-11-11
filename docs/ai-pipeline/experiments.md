@@ -27,7 +27,7 @@ Each arm is `implement run --epic <EPIC> --delivery <mode>` in its own worktree 
 | `PIPELINE_EXPERIMENT_ID`, `PIPELINE_EXPERIMENT_ARM`, `PIPELINE_DELIVERY` | Every usage, decision, outcome, subtask-run and implement-run record gets `experiment_id`, `experiment_arm` and `delivery` ([costs](costs.md#where-the-data-lives)) |
 | `PIPELINE_BOARD=off` | No board reads or writes: `implement run` neither syncs nor claims cards, and the runner's board events spawn nothing (`scripts/implement/lib/board-events.mjs`) |
 | `PIPELINE_LESSONS=off` | No lessons or factory-retro writes: `qe lessons` returns `disabled`, its recovery and the post-merge auto run are skipped, so one arm cannot teach the agents of another mid-experiment |
-| `PIPELINE_NO_PR=1` | No pushes and no PRs, whatever the flags |
+| `PIPELINE_NO_PR=1` | No pushes and no PRs, whatever the flags (so the review gate has nothing to assess or merge) |
 | `PIPELINE_TICKETS_OFFLINE=1` | The arm reads its copied tickets; nothing is fetched |
 
 When the arm finishes, its result is merged into the arm branch so every arm has one tree to grade: the epic (or bug-group) branches of an epic arm, or every story branch that finished `done` of a story arm, in key order. A story branch that does not merge (stories built apart that conflict) is left out and counted (`integrationConflicts`). The experiment's state, logs and grades are in `.agent-state/experiments/<id>/`.
