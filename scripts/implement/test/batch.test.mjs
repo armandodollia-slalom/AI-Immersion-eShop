@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { blockersOf, collectStories, orderStories, worktreeFor } from '../lib/batch.mjs';
-import { plan } from '../lib/implement.mjs';
+import { plan, skippedOutcome } from '../lib/implement.mjs';
 
 function storiesDir(stories) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-unit-'));
@@ -58,6 +58,23 @@ test('a later run resumes the stories an interrupted run left part-way, in their
   fs.writeFileSync(path.join(runs, 'B-1.json'), JSON.stringify({ key: 'B-1', status: 'finished', outcome: 'error' }));
   assert.equal(plan(config, [dir])[0].resume, true);
   fs.rmSync(wt, { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a story still escalated from a previous run keeps its outcome and its dependents stay blocked; --force retries it', () => {
+  const dir = storiesDir({ 'B-1-a.md': '# B-1 A\n', 'B-2-b.md': `# B-2 B\n\n${blocked('B-1')}`, 'B-3-c.md': '# B-3 C\n' });
+  const config = { baseRef: 'origin/main', root: dir, stateDir: '.agent-state', implement: { branchPrefix: 'feat/', worktreeDir: '../{repo}-wt' } };
+  const runs = path.join(dir, '.agent-state', 'implement');
+  fs.mkdirSync(runs, { recursive: true });
+  fs.writeFileSync(path.join(runs, 'B-1.json'), JSON.stringify({ key: 'B-1', worktree: dir, status: 'finished', outcome: 'qe-escalated' }));
+  fs.writeFileSync(path.join(runs, 'B-3.json'), JSON.stringify({ key: 'B-3', worktree: dir, status: 'finished', outcome: 'review-escalated' }));
+  const by = Object.fromEntries(plan(config, [dir]).map((s) => [s.key, s]));
+  assert.match(by['B-1'].skip, /qe-escalated in a previous run: waits for a human/);
+  assert.deepEqual(skippedOutcome(by['B-1']).outcome, 'qe-escalated');
+  assert.equal(by['B-3'].escalatedBefore, 'review-escalated');
+  assert.deepEqual(by['B-2'].deps, ['B-1'], 'the escalated blocker still blocks B-2');
+  const forced = Object.fromEntries(plan(config, [dir], { force: true }).map((s) => [s.key, s]));
+  assert.equal(forced['B-1'].skip, null);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

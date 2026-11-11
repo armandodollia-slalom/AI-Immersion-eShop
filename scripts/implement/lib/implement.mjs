@@ -30,6 +30,11 @@ const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on
 // them itself a few times.
 const INTERRUPTED = new Set(['error', 'qe-crashed', 'qe-not-started', 'qe-timed-out']);
 const RETRYABLE = new Set(['error', 'qe-not-started']);
+// Outcomes that wait for a human (the escalation in .agent-state/escalations/): a later run keeps the
+// outcome instead of running the story again to the same end; --force retries it.
+const NEEDS_HUMAN = new Set(['qe-escalated', 'review-escalated']);
+// The outcome a story skipped by plan() reports: its standing escalation, or `skipped`.
+export const skippedOutcome = (s) => ({ outcome: s.escalatedBefore ?? 'skipped', reason: s.skip });
 
 export const runsDir = (config) => path.join(config.root, config.stateDir, 'implement');
 const runFile = (config, key) => path.join(runsDir(config), `${key}.json`);
@@ -52,6 +57,9 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
     if (prev?.outcome === 'done' && prev.branch && revExists(config.root, `refs/heads/${prev.branch}`)) {
       s.skip = `done in a previous run (--force to redo)`;
       s.doneBefore = true;
+    } else if (NEEDS_HUMAN.has(prev?.outcome)) {
+      s.skip = `${prev.outcome} in a previous run: waits for a human (--force to retry)`;
+      s.escalatedBefore = prev.outcome;
     }
     // A record without a worktree (an epic run's story that died before reporting one) resumes in the
     // story's own worktree path.
@@ -62,7 +70,8 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
   // from an earlier one, still on their branch) count.
   const ancestors = new Map();
   for (const s of stories) {
-    s.deps = s.deps.filter((k) => !byKey.get(k).skip || byKey.get(k).doneBefore);
+    // An escalated blocker stays a dependency, so its dependents are skipped as when it first ended.
+    s.deps = s.deps.filter((k) => !byKey.get(k).skip || byKey.get(k).doneBefore || byKey.get(k).escalatedBefore);
     ancestors.set(s.key, new Set(s.deps.flatMap((k) => [k, ...ancestors.get(k)])));
   }
   for (const s of stories) {
@@ -86,9 +95,9 @@ export function describePlan(stories) {
 
 export async function runBatch(config, stories, { parallel = 1, pr = false, script }) {
   fs.mkdirSync(runsDir(config), { recursive: true });
-  const outcome = new Map(stories.filter((s) => s.skip).map((s) => [s.key, { outcome: 'skipped', reason: s.skip }]));
+  const outcome = new Map(stories.filter((s) => s.skip).map((s) => [s.key, skippedOutcome(s)]));
   for (const s of stories) {
-    if (s.doneBefore) continue;
+    if (s.doneBefore || s.escalatedBefore) continue;
     saveRun(config, s.key, s.skip ? { outcome: 'skipped', reason: s.skip, status: 'finished' } : { status: 'queued', outcome: null, reason: null, branch: s.branch, worktree: s.worktree, base: s.base });
   }
   const retries = new Map();

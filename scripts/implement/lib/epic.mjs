@@ -27,7 +27,7 @@ import { boardEvent } from './board-events.mjs';
 import { OUTCOMES_FILE } from './decisions.mjs';
 import { EPIC_PLAN_STAGE, deliveryShape, epicDeps, epicPlanDecision, epicPlanTask, epicPrBody, epicSlug, epicTestKey, groupDeps, groupOutcome, groupsDecision, journeyTicket, nextStories, noteMarkdown, singleGroups, validateNote } from './epic-plan.mjs';
 import { commitAll, commitEnv, headSha, mergeInProgress, mustGit, unmergedFiles } from './gitops.mjs';
-import { plan as planStories, runsDir, startWorker } from './implement.mjs';
+import { plan as planStories, runsDir, skippedOutcome, startWorker } from './implement.mjs';
 import { lspAdapter } from './lsp.mjs';
 import { waitForMemory } from './resources.mjs';
 import { agentSettings, createContext, runSelf } from './orchestrate.mjs';
@@ -598,11 +598,12 @@ async function runUnitStories(env, { parallel, deferReview }) {
   const outcome = new Map();
   const pending = new Set();
   for (const s of planned) {
-    if (s.skip) outcome.set(s.key, { outcome: 'skipped', reason: s.skip });
+    if (s.skip) outcome.set(s.key, skippedOutcome(s));
     else pending.add(s.key);
   }
   const merged = new Set(planned.filter((s) => state.stories?.[s.key]?.merged).map((s) => s.key));
-  const failed = new Set();
+  // A standing escalation counts as failed, so its dependents are skipped for it.
+  const failed = new Set(planned.filter((s) => s.escalatedBefore && !merged.has(s.key)).map((s) => s.key));
   const running = new Map();
   const order = planned.map((s) => s.key);
   const finishStory = async (s, result) => {

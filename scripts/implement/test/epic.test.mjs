@@ -366,6 +366,22 @@ test('bug epic: an agent provider outage stops the run without failing or skippi
   }
 });
 
+test('bug epic: a ticket still escalated from an earlier run is not run again and still blocks its dependents', async () => {
+  const env = makeRepo({ bugs: true });
+  const runs = path.join(env.repo, '.agent-state', 'implement');
+  fs.mkdirSync(runs, { recursive: true });
+  fs.writeFileSync(path.join(runs, 'BUG-1.json'), JSON.stringify({ key: 'BUG-1', status: 'finished', outcome: 'qe-escalated' }));
+  const worker = fakeWorker();
+  const note = { stories: [], prGroups: [{ id: 'cart', tickets: ['BUG-1', 'BUG-2'] }, { id: 'auth', tickets: ['BUG-3'] }] };
+  const f = fakeDeps(note, { startWorker: worker.startWorker });
+  const r = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+  assert.deepEqual(worker.calls.map((c) => c.key), ['BUG-3'], 'BUG-1 is not run again');
+  const byKey = Object.fromEntries(r.results.map((x) => [x.key, x]));
+  assert.equal(byKey['BUG-1'].outcome, 'qe-escalated');
+  assert.match(byKey['BUG-2'].reason, /^blocker BUG-1 ended qe-escalated/);
+  assert.deepEqual(f.prs.map((p) => p.branch), ['bugfix/shop/auth']);
+});
+
 test('bug epic: a stacked group gets the tickets of the groups below it synced before its PR check and push', async () => {
   const env = makeRepo({ bugs: true });
   const worker = fakeWorker({ notes: true });
