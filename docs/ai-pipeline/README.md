@@ -267,6 +267,7 @@ node scripts/pipeline/pipeline.mjs experiment grade|report <id> [--json]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
 node scripts/pipeline/pipeline.mjs costs [KEY] [--epic <epic>] [--since <date>] [--json|--markdown]  # tokens, cache hits and cost per stage, ticket and epic
+node scripts/pipeline/pipeline.mjs dashboard [KEY...] [--epic <epic>] [--refs a,b] [--rate 220] [--publish]  # epic + story cost/waste dashboards (HTML); also runs after `implement run`
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]|pre-tool
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
 node scripts/pr-check/pr-check.mjs run --pr 42 [--no-fix]   # adversarial PR check until 10/10

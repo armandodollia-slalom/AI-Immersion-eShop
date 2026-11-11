@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnBackground } from '../pipeline/lib/background.mjs';
 import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
+import { generateDashboards } from '../pipeline/lib/dashboard.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
 import { epicTickets, loadTicket } from '../pipeline/lib/tickets.mjs';
@@ -117,8 +118,20 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
   for (const r of failedResults(results, { pr: pr && !epicRun })) boardEvent(config.root, r.key, ['fail', r.key]);
   console.log(`\n${formatSummary(results)}`);
   if (epicSummary) console.log(`\n${epicSummary.key}: ${epicSummary.outcome}${epicSummary.prs?.length ? `  ${epicSummary.prs.join(' ')}` : ''}${epicSummary.reason ? `\n           ${epicSummary.reason}` : ''}`);
+  dashboardsAfterRun(config, { epic: epicRun?.epic.key ?? null, stories: epicRun ? null : results.map((r) => r.key) });
   const storiesOk = results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done');
   return storiesOk && (!epicSummary || ['done', 'joined'].includes(epicSummary.outcome)) ? 0 : 1;
+}
+
+// The cost dashboards (`pipeline dashboard`) are rebuilt after every run; a failure here never fails the run.
+function dashboardsAfterRun(config, { epic, stories }) {
+  if (config.dashboard?.afterRun === false || (!epic && !stories?.length)) return;
+  try {
+    const r = generateDashboards(config, { epic, stories: epic ? null : stories, publish: Boolean(config.dashboard?.publishAfterRun) });
+    console.log(`\nDashboards: ${Object.values(r.files).join('  ')}${Object.keys(r.urls).length ? `\n            ${Object.values(r.urls).join('  ')}` : ''}`);
+  } catch (e) {
+    log(`dashboard: skipped (${e.message})`);
+  }
 }
 
 // `pipeline resume` fans out to every stage and waits for each, so the batch restarts detached.

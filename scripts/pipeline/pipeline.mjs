@@ -3,6 +3,7 @@
 // stages listed in stages.json. See docs/ai-pipeline/README.md.
 import { readPayload, readStdin, parseArgs, requireStory, runMain } from './lib/cli.mjs';
 import { isDisabled, loadConfig } from './lib/config.mjs';
+import { generateDashboards } from './lib/dashboard.mjs';
 import { epicReport, findEpic, formatEpic, formatOverview, formatStory, overviewReport, storyReport } from './lib/costs.mjs';
 import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, loadStages, runStage, sessionStartOutput } from './lib/dispatch.mjs';
 import { experimentReport, formatReport, gradeExperiment, runExperiment } from './lib/experiment.mjs';
@@ -53,6 +54,11 @@ Pipeline
                                 agent tokens, cache hits and cost: one ticket itemized by stage, one
                                 epic itemized by ticket and stage, or (no story) the overview by epic,
                                 ticket, stage, model and month
+  dashboard [story...] [--epic <epic>] [--refs <ref,...>] [--out <dir>] [--rate <usd/h>] [--publish] [--json]
+                                HTML cost dashboards (epic-level and story-level): tokens, cost, human
+                                time x rate, waste from rework and CLI switches, PR-check escalations
+                                and cost per heal, from the metrics on the epic's branches; --publish
+                                pushes them to the GitHub Pages repos in config.json dashboard.pages
 
 Hooks (called by agent tool configs and .githooks)
   hook stop | hook session-start [--nested] | hook pre-tool
@@ -60,7 +66,7 @@ Hooks (called by agent tool configs and .githooks)
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel', 'refs', 'out', 'rate']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -134,6 +140,29 @@ async function main() {
       } else if (positional[0]) [report, format] = [storyReport(config, requireStory(config, positional[0]).key, opts), formatStory];
       else [report, format] = [overviewReport(config, opts), formatOverview];
       console.log(flags.json ? JSON.stringify(report, null, 2) : format(report, { markdown: Boolean(flags.markdown) }));
+      return 0;
+    }
+
+    case 'dashboard': {
+      if (!flags.epic && !positional.length) {
+        console.error(`Usage: ${CMD} dashboard [story...] [--epic <epic>] [--refs <ref,...>] [--out <dir>] [--rate <usd/h>] [--publish] [--json]`);
+        return 2;
+      }
+      const stories = positional.map((k) => requireStory(config, k).key);
+      const result = generateDashboards(config, {
+        epic: flags.epic ?? null,
+        stories,
+        refs: flags.refs ? String(flags.refs).split(',').map((r) => r.trim()).filter(Boolean) : null,
+        out: flags.out ?? null,
+        rate: flags.rate ? Number(flags.rate) : null,
+        publish: Boolean(flags.publish),
+      });
+      const { total } = result.data;
+      if (flags.json) console.log(JSON.stringify({ dir: result.dir, files: result.files, urls: result.urls, total }, null, 2));
+      else {
+        console.log(`Dashboards: ${total.runs} runs, ${(total.tokens / 1e6).toFixed(2)}M tokens, $${total.cost.toFixed(2)} (${result.data.first}-${result.data.last} ${result.data.tz})`);
+        for (const kind of ['epic', 'story']) console.log(`  ${kind}: ${result.files[kind]}${result.urls[kind] ? `\n         ${result.urls[kind]}` : ''}`);
+      }
       return 0;
     }
 

@@ -39,5 +39,26 @@
     ".agent-state",
     "graphify-out",
     ".github/agents/lessons"
-  ]
+  ],
+  "dashboard": {
+    "rate": 220,
+    "timeZone": "America/Chicago",
+    "tzLabel": "CST",
+    "idleGapMin": 30,
+    "out": "artifacts/dashboards",
+    "afterRun": true,
+    "publishAfterRun": false,
+    "pages": {
+      "teststack-bug-findings": {
+        "epic": "renuka-tumati/epic64-dashboard",
+        "story": "renuka-tumati/epic64-story-dashboard"
+      }
+    },
+    "runLog": {
+      "teststack-bug-findings": {
+        "label": "run log PR #96",
+        "url": "https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/96"
+      }
+    }
+  }
 }
