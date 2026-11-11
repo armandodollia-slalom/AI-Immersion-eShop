@@ -223,6 +223,21 @@ export async function mergeStory(env, story) {
   }
 }
 
+// Each ticket's cached text in its story worktree (with the implementer's Implementation Notes, which
+// its plan's story-sha covers) replaces the unit worktree's copy taken before the story ran, so the
+// unit's PR check and the pre-push QE check read the text the plan was verified against.
+export function syncTickets(env, keys, state) {
+  for (const key of keys) {
+    const storyWt = state.stories?.[key]?.worktree ?? worktreeFor(env.config, { key });
+    const src = ticketDir(loadConfig('implement', storyWt), key);
+    if (!fs.existsSync(path.join(src, 'story.md'))) continue;
+    const dst = ticketDir(env.wtConfig, key);
+    fs.rmSync(dst, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.cpSync(src, dst, { recursive: true });
+  }
+}
+
 // The ticket's text (with Implementation Notes) back to its issue, and its card to Pending Review
 // naming the unit branch (and the unit's PR once it exists; no PR per ticket).
 function reportStory(env, story, pr = null) {
@@ -486,6 +501,8 @@ async function deliverUnit(env, unit, units, epicWt) {
     if (qe.status !== 'verified') return finish(`epic-qe-${qe.status}`, { reason: `epic-level QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}` });
   }
 
+  syncTickets(uenv, unit.keys, state);
+
   // The PR check for the whole unit, in one run: every ticket (frontend ones get the design lens) and
   // the journeys. Each ticket's row in the PR body shows the unit's result.
   let prChecks = { ...(state.units?.[unit.id]?.prChecks ?? {}) };
@@ -513,6 +530,7 @@ async function deliverUnit(env, unit, units, epicWt) {
   const title = feature ? `Epic: ${(epic.title ?? epic.key).replace(/^Epic:\s*/i, '')}` : `Fix ${unit.keys.join(', ')}: ${unit.group.title}`;
   const opened = deps.openPr(uenv, { title, body });
   if (!opened.url) {
+    log(`no PR: ${opened.reason}`);
     if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
     return finish('done', { reason: opened.reason });
   }

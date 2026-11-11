@@ -12,6 +12,7 @@ import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 import { loadConfig } from '../../pipeline/lib/config.mjs';
 import { loadTicket, resetTicketMemo } from '../../pipeline/lib/tickets.mjs';
 import { readJsonl } from '../../pipeline/lib/util.mjs';
+import { ticketDir } from '../../board/lib/source.mjs';
 import { epicToJoin, loadEpicRun, runEpic } from '../lib/epic.mjs';
 import { deliveryShape, epicDeps, epicPrBody, groupDeps, nextStories, ownsConflict, singleGroups, validateGroups, validateNote } from '../lib/epic-plan.mjs';
 import { groupRow, labelDecisions } from '../lib/decisions.mjs';
@@ -65,7 +66,7 @@ const fakeLsp = () => ({ start: async () => ({}), stop: async () => {}, stopAll:
 
 // A story worker that implements the story on its branch (from the base it was given) and reports an
 // outcome. `outcomes` overrides per key; `files` sets the file each story writes.
-function fakeWorker({ outcomes = {}, files = {}, delay = 20 } = {}) {
+function fakeWorker({ outcomes = {}, files = {}, delay = 20, notes = false } = {}) {
   const calls = [];
   let running = 0;
   const peak = { n: 0, overlap: [] };
@@ -81,6 +82,8 @@ function fakeWorker({ outcomes = {}, files = {}, delay = 20 } = {}) {
       write(s.worktree, files[s.key] ?? `src/${s.key}.cs`, `// ${s.key}\n`);
       git(s.worktree, 'add', '-A');
       git(s.worktree, 'commit', '-qm', `${s.key}: Implementation`);
+      // The implementer's Implementation Notes go into the story worktree's ticket cache.
+      if (notes) write(ticketDir(loadConfig('implement', s.worktree), s.key), 'story.md', `# ${s.key}\n\n## Implementation Notes\n\nDone.\n`);
       await sleep(delay);
       return { key: s.key, outcome: outcomes[s.key] ?? 'done', reason: outcomes[s.key] ? 'nope' : null, branch: s.branch, worktree: s.worktree, mode: 'self', agentRuns: 3, cost_usd: 1.5 };
     } finally {
@@ -290,14 +293,19 @@ test('feature epic: a failed story skips its dependents, independents still merg
 
 test('bug epic: the orchestrator groups the bugs; each group gets its branch, its PR and its board evidence', async () => {
   const env = makeRepo({ bugs: true });
-  const worker = fakeWorker();
+  const worker = fakeWorker({ notes: true });
   const note = { summary: 'two areas', stories: [], prGroups: [{ id: 'cart', title: 'Cart totals', tickets: ['BUG-1', 'BUG-2'], reason: 'same root cause', risk: 'low' }, { id: 'auth', title: 'Login', tickets: ['BUG-3'], reason: 'security fix ships alone', risk: 'high' }] };
-  const f = fakeDeps(note, { startWorker: worker.startWorker });
+  // The unit's PR check (and its push's QE check) read the tickets as the stories left them.
+  const checkedTexts = [];
+  const prCheck = async (uenv, keys) => (keys.forEach((k) => checkedTexts.push(fs.readFileSync(path.join(ticketDir(uenv.wtConfig, k), 'story.md'), 'utf8'))), { verdict: 'PASS', score: 10, openFindings: [] });
+  const f = fakeDeps(note, { startWorker: worker.startWorker, prCheck });
   const r = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 2, pr: true, deps: f.deps, log: () => {} });
   assert.equal(r.epic.outcome, 'done', JSON.stringify(r.epic));
   assert.match(f.agentCalls[0].task, /bug epic[\s\S]*prGroups/);
   assert.doesNotMatch(f.agentCalls[0].task, /at most \d+ tickets per group/, 'no cap by default');
   assert.deepEqual(f.prs.map((p) => p.branch).sort(), ['bugfix/shop/auth', 'bugfix/shop/cart']);
+  assert.equal(checkedTexts.length, 3);
+  for (const t of checkedTexts) assert.match(t, /## Implementation Notes/, 'the unit worktree has the story worktree\'s ticket text');
   const cart = f.prs.find((p) => p.branch === 'bugfix/shop/cart');
   assert.match(cart.body, /Closes #21\nCloses #22/);
   assert.doesNotMatch(cart.body, /#23/);
