@@ -383,6 +383,7 @@ public static class CatalogApi
         CatalogItem productToUpdate)
     {
         var errors = CatalogItemValidation.Validate(productToUpdate);
+        await CatalogItemValidation.AddReferenceErrorsAsync(productToUpdate, services.Context, errors);
         if (errors.Count > 0)
         {
             return TypedResults.ValidationProblem(errors);
@@ -430,6 +431,7 @@ public static class CatalogApi
         CatalogItem product)
     {
         var errors = CatalogItemValidation.Validate(product);
+        await CatalogItemValidation.AddReferenceErrorsAsync(product, services.Context, errors);
         if (errors.Count > 0)
         {
             return TypedResults.ValidationProblem(errors);

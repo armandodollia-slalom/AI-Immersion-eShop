@@ -123,8 +123,7 @@ test.describe('Catalog.API admin writes', () => {
       expect((await (await getItem(request, 1)).json()).name).toBe('Edge 01 Penny Boot');
     });
 
-    // BUG: unknown brand or type ids cause a foreign-key violation and a 500.
-    adminTest.fixme('unknown brand or type ids are rejected with 400', async ({ request }) => {
+    adminTest('TC-BUG-19-13 unknown brand or type ids are rejected with 400', async ({ request }) => {
       await expectProblem(await post(request, { ...newItem, catalogTypeId: 999 }), 400);
       await expectProblem(await post(request, { ...newItem, catalogBrandId: 999 }), 400);
     });
@@ -214,8 +213,7 @@ test.describe('Catalog.API admin writes', () => {
       await expectProblem(await request.put(`${API}/items/4?api-version=2.0`, { data: { ...newItem, id: 5 } }), 400);
     });
 
-    // BUG: unknown brand or type ids cause a foreign-key violation and a 500.
-    adminTest.fixme('v2 PUT with an unknown type id is 400', async ({ request }) => {
+    adminTest('v2 PUT with an unknown type id is 400', async ({ request }) => {
       await expectProblem(await request.put(`${API}/items/7?api-version=2.0`, { data: { ...newItem, id: 7, catalogTypeId: 999 } }), 400);
     });
   });
