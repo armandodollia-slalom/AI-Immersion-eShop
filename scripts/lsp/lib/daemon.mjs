@@ -1,11 +1,10 @@
 // lspd: one daemon per checkout. It runs lsp-mcp-server as a child (which starts the language servers lazily and
 // stops idle ones), serves any number of MCP sessions and control requests over a unix socket, and holds the
 // machine-wide lease for the checkout's C# server.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   acquireLease,
   connect,
@@ -34,12 +33,23 @@ const INSTRUCTIONS = [
   'When a C# call answers "C# language server unavailable", do not retry in a loop: use graphify and grep instead.',
 ].join(' ');
 
-// Prefers the worktree's server.mjs; a worktree cut before it existed uses this checkout's copy
-// (server.mjs takes the worktree from LSP_WORKSPACE_ROOT either way).
-const windowsServerScript = (worktree) => {
-  const own = path.join(worktree, 'scripts', 'lsp', 'server.mjs');
-  return fs.existsSync(own) ? own : fileURLToPath(new URL('../server.mjs', import.meta.url));
-};
+// Windows cannot exec server.sh directly, so it runs through Git for Windows' bash. That bash is located from
+// git itself: a bare `bash` on PATH may be WSL's (System32/WindowsApps), which runs in Linux and cannot start
+// the Windows dotnet and node.
+let cachedGitBash;
+export function gitBash() {
+  if (cachedGitBash !== undefined) return cachedGitBash;
+  cachedGitBash = 'bash';
+  try {
+    const exec = spawnSync('git', ['--exec-path'], { encoding: 'utf8', windowsHide: true }).stdout?.trim();
+    // <Git>/mingw64/libexec/git-core (or <Git>/mingw32/...) -> <Git>/bin/bash.exe
+    const candidate = exec && path.resolve(exec, '..', '..', '..', 'bin', 'bash.exe');
+    if (candidate && fs.existsSync(candidate)) cachedGitBash = candidate;
+  } catch {
+    // git missing: fall back to bash on PATH
+  }
+  return cachedGitBash;
+}
 
 export function lspMcpConfig(config, worktree) {
   return {
@@ -51,10 +61,9 @@ export function lspMcpConfig(config, worktree) {
       id: s.id,
       extensions: s.extensions,
       languageIds: s.languageIds,
-      // Windows cannot exec server.sh (bash); server.mjs is its Node port.
       ...(s.command || process.platform !== 'win32'
         ? { command: s.command ?? path.join(worktree, 'scripts/lsp/server.sh'), args: s.args ?? [s.id] }
-        : { command: process.execPath, args: [windowsServerScript(worktree), ...(s.args ?? [s.id])] }),
+        : { command: gitBash(), args: [path.join(worktree, 'scripts/lsp/server.sh').replace(/\\/g, '/'), ...(s.args ?? [s.id])] }),
       rootPatterns: ['.git'],
     })),
   };
