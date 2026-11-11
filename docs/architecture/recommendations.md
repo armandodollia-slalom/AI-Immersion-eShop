@@ -28,7 +28,8 @@ Suggestions for what to change or add, grounded in the current code. Each item c
 
 ### 1. Secure Catalog writes and validate token audience
 
-- **Evidence:** `Catalog.API` never calls `AddDefaultAuthentication`/`RequireAuthorization`; `POST/PUT/DELETE /api/catalog/items` are anonymous and a price update fans out to webhooks. `ServiceDefaults/AuthenticationExtensions.cs` sets `ValidateAudience = false`, so a token issued for `webhooks` is accepted by `orders`.
+- **Status:** Catalog writes are done (BUG-4): POST/PUT/DELETE require an `Admin` bearer token, reads stay anonymous. Audience validation is still open.
+- **Evidence:** `ServiceDefaults/AuthenticationExtensions.cs` sets `ValidateAudience = false`, so a token issued for `webhooks` is accepted by `orders`.
 - **Do:** add JWT auth to Catalog; protect write routes with an `Admin`/`catalog.write` policy and keep reads anonymous. Turn on audience validation (each API already configures `Identity:Audience`). Add scope-based policies per API.
 
 ### 2. Outbox relay

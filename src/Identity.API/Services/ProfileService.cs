@@ -19,7 +19,11 @@
             if (user == null)
                 throw new ArgumentException("Invalid subject identifier");
 
-            var claims = GetClaimsFromUser(user);
+            var claims = GetClaimsFromUser(user).ToList();
+            foreach (var role in await _userManager.GetRolesAsync(user))
+            {
+                claims.Add(new Claim(JwtClaimTypes.Role, role));
+            }
             context.IssuedClaims = claims.ToList();
         }
 

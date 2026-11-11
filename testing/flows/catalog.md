@@ -35,7 +35,6 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 | Create or update with an unknown brand or type id | 500 (foreign key violation) | `catalog-admin` "unknown brand or type ids ...", "v2 PUT with an unknown type id is 400" |
 | v2 PUT body id differs from the route id | 500 | `catalog-admin` "v2 PUT with a body id different from the route id is 400" |
 | v1 PUT without an id | 404 "Item with id 0 not found." (the null check on an `int` is dead code) | `catalog-admin` "v1 PUT without an id in the body is 400" |
-| Write endpoints have no authorization | Anonymous POST, PUT and DELETE succeed | `catalog-admin` "anonymous callers cannot create, update or delete items" |
 
 ## WebApp flows
 
@@ -209,7 +208,8 @@ There is no authentication on these endpoints (bug, see above). A price change o
   - Malformed, empty, array and wrongly typed bodies return 400 with nothing stored (`catalog-admin` "malformed, empty, wrongly typed ...").
   - `text/plain` returns 415 (`catalog-admin` "a non-JSON content type is 415").
   - A missing or unsupported version returns 400 (`catalog-admin` "a missing or unsupported API version is 400").
-  - Missing name, empty name, negative price, duplicate id, unknown brand or type, anonymous caller: bugs, `catalog-admin` fixme tests.
+  - Missing name, empty name, negative price, duplicate id, unknown brand or type: bugs, `catalog-admin` fixme tests.
+  - Anonymous callers get 401 on POST, PUT and DELETE; writes need an access token with the `Admin` role (`catalog-admin` "anonymous callers cannot create, update or delete items").
 
 ### Update an item
 
