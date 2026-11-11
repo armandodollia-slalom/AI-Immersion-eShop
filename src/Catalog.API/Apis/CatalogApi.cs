@@ -101,20 +101,24 @@ public static class CatalogApi
             .WithName("UpdateItem")
             .WithSummary("Create or replace a catalog item")
             .WithDescription("Create or replace a catalog item")
-            .WithTags("Items");
+            .WithTags("Items")
+            .RequireAuthorization("CatalogAdmin");
         v2.MapPut("/items/{id:int}", UpdateItem)
             .WithName("UpdateItem-V2")
             .WithSummary("Create or replace a catalog item")
             .WithDescription("Create or replace a catalog item")
-            .WithTags("Items");
+            .WithTags("Items")
+            .RequireAuthorization("CatalogAdmin");
         api.MapPost("/items", CreateItem)
             .WithName("CreateItem")
             .WithSummary("Create a catalog item")
-            .WithDescription("Create a new item in the catalog");
+            .WithDescription("Create a new item in the catalog")
+            .RequireAuthorization("CatalogAdmin");
         api.MapDelete("/items/{id:int}", DeleteItemById)
             .WithName("DeleteItem")
             .WithSummary("Delete catalog item")
-            .WithDescription("Delete the specified catalog item");
+            .WithDescription("Delete the specified catalog item")
+            .RequireAuthorization("CatalogAdmin");
 
         return app;
     }
