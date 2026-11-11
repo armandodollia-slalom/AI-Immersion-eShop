@@ -5,6 +5,47 @@ description: >
   that reaches Paid 15-50 s after loading.
 extends: default
 postgres:
+  identitydb:
+    - table: AspNetUsers
+      rows:
+        # Administrator: the only role allowed to ship orders (Ordering.API policy OrderingAdmin).
+        - Id: ad000000-0000-4000-8000-000000000003
+          UserName: admin
+          NormalizedUserName: ADMIN
+          Email: AdminSmith@email.com
+          NormalizedEmail: ADMINSMITH@EMAIL.COM
+          EmailConfirmed: true
+          PasswordHash: AQAAAAIAAYagAAAAEA8l5zVyTkJ12JxTVsqtD9qlMFT8uoxwjycqv33/PHCbIDfXMczZEJpaTNVfz8CCuA==  # Pass123$
+          SecurityStamp: ADMINSECURITYSTAMP000000000003
+          ConcurrencyStamp: adminsecuritystamp0000000000003
+          PhoneNumber: "1234567890"
+          PhoneNumberConfirmed: false
+          TwoFactorEnabled: false
+          LockoutEnabled: true
+          AccessFailedCount: 0
+          CardHolderName: Admin Smith
+          CardNumber: XXXXXXXXXXXX1881
+          CardType: 1
+          SecurityNumber: "789"
+          Expiration: "12/24"
+          Name: Admin
+          LastName: Smith
+          Street: 15703 NE 61st Ct
+          City: Redmond
+          State: WA
+          Country: U.S.
+          ZipCode: "98052"
+    - table: AspNetRoles
+      rows:
+        # The role that Ordering.API's OrderingAdmin policy requires for ship.
+        - Id: ad0e0000-0000-4000-8000-0000000000a1
+          Name: Admin
+          NormalizedName: ADMIN
+          ConcurrencyStamp: adminrole0000000000000000000001
+    - table: AspNetUserRoles
+      rows:
+        - UserId: ad000000-0000-4000-8000-000000000003
+          RoleId: ad0e0000-0000-4000-8000-0000000000a1
   webhooksdb:
     - table: Subscriptions
       rows:

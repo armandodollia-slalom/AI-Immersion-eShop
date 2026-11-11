@@ -4,12 +4,15 @@ using Order = eShop.Ordering.API.Application.Queries.Order;
 
 public static class OrdersApi
 {
+    public const string OrderingAdminPolicy = "OrderingAdmin";
+
     public static RouteGroupBuilder MapOrdersApiV1(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("api/orders").HasApiVersion(1.0);
 
         api.MapPut("/cancel", CancelOrderAsync);
-        api.MapPut("/ship", ShipOrderAsync);
+        api.MapPut("/ship", ShipOrderAsync)
+            .RequireAuthorization(OrderingAdminPolicy);
         api.MapGet("{orderId:int}", GetOrderAsync);
         api.MapGet("/", GetOrdersByUserAsync);
         api.MapGet("/cardtypes", GetCardTypesAsync);
@@ -19,7 +22,7 @@ public static class OrdersApi
         return api;
     }
 
-    public static async Task<Results<Ok, BadRequest<string>, ProblemHttpResult>> CancelOrderAsync(
+    public static async Task<Results<Ok, BadRequest<string>, NotFound, ProblemHttpResult>> CancelOrderAsync(
         [FromHeader(Name = "x-requestid")] Guid requestId,
         CancelOrderCommand command,
         [AsParameters] OrderServices services)
@@ -27,6 +30,12 @@ public static class OrdersApi
         if (requestId == Guid.Empty)
         {
             return TypedResults.BadRequest("Empty GUID is not valid for request ID");
+        }
+
+        // Buyers may only cancel their own orders; anything else looks like it doesn't exist.
+        if (!await IsOwnOrderAsync(command.OrderNumber, services))
+        {
+            return TypedResults.NotFound();
         }
 
         var requestCancelOrder = new IdentifiedCommand<CancelOrderCommand, bool>(command, requestId);
@@ -48,7 +57,7 @@ public static class OrdersApi
         return TypedResults.Ok();
     }
 
-    public static async Task<Results<Ok, BadRequest<string>, ProblemHttpResult>> ShipOrderAsync(
+    public static async Task<Results<Ok, BadRequest<string>, NotFound, ProblemHttpResult>> ShipOrderAsync(
         [FromHeader(Name = "x-requestid")] Guid requestId,
         ShipOrderCommand command,
         [AsParameters] OrderServices services)
@@ -56,6 +65,11 @@ public static class OrdersApi
         if (requestId == Guid.Empty)
         {
             return TypedResults.BadRequest("Empty GUID is not valid for request ID");
+        }
+
+        if (!await services.Queries.OrderExistsAsync(command.OrderNumber))
+        {
+            return TypedResults.NotFound();
         }
 
         var requestShipOrder = new IdentifiedCommand<ShipOrderCommand, bool>(command, requestId);
@@ -75,6 +89,19 @@ public static class OrdersApi
         }
 
         return TypedResults.Ok();
+    }
+
+    private static async Task<bool> IsOwnOrderAsync(int orderNumber, OrderServices services)
+    {
+        try
+        {
+            var userId = services.IdentityService.GetUserIdentity();
+            return await services.Queries.GetOrderAsync(orderNumber, userId) is not null;
+        }
+        catch (KeyNotFoundException)
+        {
+            return false;
+        }
     }
 
     public static async Task<Results<Ok<Order>, NotFound>> GetOrderAsync(int orderId, [AsParameters] OrderServices services)

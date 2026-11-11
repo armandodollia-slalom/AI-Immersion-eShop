@@ -1,0 +1,6 @@
+description: >
+  BUG-2 (cancel only by the order's owner, ship only by role Admin): ordering-two-buyers already has what the
+  cases need (alice, identity a11ce000-..., owns orders 1-6 incl. Submitted 1 and 2 and Paid 4; bob owns Paid
+  order 7 and Shipped order 8). The Identity user "admin" (role Admin, password Pass123$) comes from
+  ordering-two-buyers, which seeds it for the ship endpoint.
+extends: ordering-two-buyers
