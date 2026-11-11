@@ -46,8 +46,8 @@ The agent's usage is recorded like every other run (stage `bug-triage` in `token
 
 | Decision | When | What happens |
 | --- | --- | --- |
-| **auto-merge** | the PR severity is **Low**, every ticket has **high confidence**, no ticket has a **human reopen**, the PR's **checks pass**, and `implement.autoMerge.enabled` | until the gate's auto-merge step lands, reviewed like any other PR |
-| **wait** | everything qualifies but the checks are still running (or none reported yet) | the label `approvals:0` and the notice; `board sync` evaluates the PR again |
+| **auto-merge** | the PR severity is **Low**, every ticket has **high confidence**, no ticket has a **human reopen**, the PR's **checks pass**, and `implement.autoMerge.enabled` | see [Auto-merge](#auto-merge) |
+| **wait** | everything qualifies but the checks are still running (or none reported yet) | the label `approvals:0` and the notice; `board sync` evaluates the PR again ([Re-evaluation](#re-evaluation)) |
 | **review** | anything else: Medium, High or Severe, low confidence, a human reopen, failing checks, a ticket that was not assessed, auto-merge switched off | **1 required approval** (the [approvals policy](#approvals-policy) table; never fewer than 1), the labels `approvals:N` and `needs-human`, review requests, and the notice. The card stays in Pending Review |
 
 Reviewers are requested from each ticket's **assignees**, or, for a ticket without one, the **CODEOWNERS** of the files it touches (`.github/CODEOWNERS`); never the PR's author. CODEOWNERS stay optional reviewers on every PR, and the team can bring in more reviewers themselves: the gate only sets the **number** of required approvals.
@@ -61,6 +61,27 @@ A PR that needed people stays that way: later evaluations never auto-merge it, e
 GitHub rulesets set one approval count per branch, not per PR, so `.github/workflows/review-quorum.yml` enforces the count per PR. It runs on `pull_request` (opened, pushed, labeled, ...) and `pull_request_review` (submitted, edited, dismissed), and passes when approvals from **distinct people**, not the author, given on the **latest push** (an approval from before it is stale), reach the PR's `approvals:N` label. Each reviewer's latest approving or "changes requested" review counts; a comment does not change a verdict. A PR without the label, or with `approvals:0`, passes. The check runs `scripts/review-gate/quorum.mjs` from the **base branch**, so a PR cannot change how its own approvals are counted; changes to `.github/workflows/`, `.github/CODEOWNERS` and `scripts/review-gate/` are severity floor paths for the same reason.
 
 **Making it required is a repository setting**, armando's call: Settings → Rules → Rulesets → the ruleset for `main` → "Require status checks to pass" → add `review-quorum`. Until then it is a visible check that nothing blocks on. `main` has no branch protection and no required approvals today; the gate does not change any repository setting.
+
+## Auto-merge
+
+A PR the gate clears is merged with `gh pr merge --auto --squash` (`implement.autoMerge.method`), labeled `auto-merged` (and `approvals:0`), and its notice says so. Its issues close through `Closes #N`, and the cards reach Done through the existing `closed` event of `board sync`. Every merge goes through **one function**, `mergePr` in `lib/github.mjs`, with the identity in `implement.autoMerge.identity`:
+
+| Identity | Who merges | When |
+| --- | --- | --- |
+| `gh-user` (default) | the `gh` CLI's logged-in user on the pipeline machine | today: `main` requires no approvals from people |
+| `app` | a GitHub App with a ruleset bypass, its installation token in the variable named by `appTokenEnv` (`REVIEW_GATE_APP_TOKEN`) becomes `GH_TOKEN` for the merge | once `main` requires approvals from people, a PR that needs none can only merge through a bypass |
+
+`implement.autoMerge.enabled` is the **kill switch**. It ships **off** (`false`): every PR that would auto-merge is reviewed instead, and its notice says "auto-merge is switched off; it would have auto-merged", so the team can watch what the gate would do before trusting it. Turn it on in `scripts/implement/config.json`; turn it off the same way at any time. A merge GitHub refuses (auto-merge not allowed on the repo, a missing App token) sends the PR to review with the reason.
+
+`--auto` lets GitHub wait for its own requirements; with none (today), it merges at once. For the waiting case, the repository needs **Allow auto-merge** (Settings → General → Pull Requests). The gate itself only asks for the merge once the PR's checks are green.
+
+## Re-evaluation
+
+`board sync` evaluates every open gated PR again (it finds them by their `approvals:N` label, `approvals:0` included), from what GitHub holds (the PR's gate state, each ticket's `## Triage`, the PR's checks), so any machine can do it:
+
+- a PR **waiting** for its checks auto-merges once they pass, goes to review when they fail, and goes to review when someone **pushed** to it after it was assessed (the assessment no longer matches the diff);
+- a PR with a new human reopen goes back to review (see below);
+- a PR that needs people stays that way.
 
 ## Human reopens
 
@@ -99,6 +120,8 @@ The re-runs start from [`implement requeue`](escalations.md#requeue-on-a-timer) 
 | Switch | Effect |
 | --- | --- |
 | `implement.reviewGate.enabled: false`, or `REVIEW_GATE=0` | The gate does nothing; PRs stay as the pipeline opened them |
+| `implement.autoMerge.enabled` (default `false`) | The auto-merge kill switch: off, a PR that qualifies is reviewed (1 approval) instead |
+| `implement.autoMerge.identity` | `gh-user` or `app` ([Auto-merge](#auto-merge)) |
 | `PIPELINE_NO_PR=1` (experiments) | No PRs, so nothing to gate |
 | board inactive (no project, a fork, a test repo, `PIPELINE_BOARD=0`) | The gate does nothing |
 

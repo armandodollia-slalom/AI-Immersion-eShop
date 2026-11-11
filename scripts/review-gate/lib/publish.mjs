@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { nowIso, readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { assessPr, logTriageDecision, mainCheckout, recordTicket } from './assessment.mjs';
+import { autoMergePr } from './automerge.mjs';
 import { applyReview, decideGate, gateState, readPrState } from './gate.mjs';
 import { issueAssignees, prNumber, prView } from './github.mjs';
 import { parseCodeowners } from './systems.mjs';
@@ -32,13 +33,17 @@ const safe = (fn, fallback) => {
 export function gatePr(config, a, { gh, prior = null, cwd = config.root, log = () => {} }) {
   const s = config.implement.reviewGate;
   const repo = config.board.repo;
-  let decision = decideGate(a, { settings: s, autoMerge: config.implement.autoMerge, prior });
-  // Auto-merge comes in a later step of the gate; until then a qualifying PR is reviewed like any other.
-  if (decision.action === 'auto-merge') decision = { ...decision, action: 'review', approvals: 1, triggers: ['auto-merge is not available yet'], reasons: ['auto-merge is not available yet'] };
+  const decision = decideGate(a, { settings: s, autoMerge: config.implement.autoMerge, prior });
   const pr = safe(() => prView(gh, repo, a.pr), null);
   const assignees = Object.fromEntries(a.tickets.map((t) => [t.key, t.issue ? safe(() => issueAssignees(gh, repo, t.issue.number), []) : []]));
   const state = gateState(a, decision, prior);
-  const applied = applyReview(config, gh, a, decision, state, { assignees, codeowners: readCodeowners(cwd), author: pr?.author ?? null, currentLabels: pr?.labels ?? [] });
+  const context = { assignees, codeowners: readCodeowners(cwd), author: pr?.author ?? null, currentLabels: pr?.labels ?? [] };
+  if (decision.action === 'auto-merge') {
+    const m = autoMergePr(config, gh, a, decision, state, context);
+    log(`${a.pr}: ${m.merged ? `auto-merge (${m.state.merge.identity}, ${m.state.merge.method})` : m.problems[0]}`);
+    return { decision: m.decision, state: m.state, problems: m.merged ? m.problems : m.problems.slice(1) };
+  }
+  const applied = applyReview(config, gh, a, decision, state, context);
   log(`${a.pr}: ${decision.action}${decision.action === 'review' ? ` (${decision.approvals} approval(s): ${decision.triggers.join('; ')})` : ''}${applied.reviewers.length ? `; review requested from ${applied.reviewers.join(', ')}` : ''}`);
   for (const p of applied.problems) log(`${a.pr}: ${p}`);
   return { decision, state: { ...state, reviewers: applied.reviewers }, problems: applied.problems };

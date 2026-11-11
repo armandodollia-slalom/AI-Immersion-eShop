@@ -2,7 +2,7 @@
 //   1. human reopens of triaged tickets (card moved back, issue reopened, "changes requested" reviews):
 //      severity bump, `## Decisions` note for the re-run, `reopened` label, board event, metrics record,
 //      and the PR's gate back to review when it is still open;
-//   2. open gated PRs evaluated again (a PR waiting for its checks; see the gate's auto-merge);
+//   2. open gated PRs evaluated again: a PR waiting for its checks auto-merges once they pass;
 //   3. closed gated PRs recorded for the retro (see pr-review.mjs).
 // Everything is informational: a GitHub error is logged and the rest of the sync goes on.
 import { appendJsonl, nowIso } from '../../pipeline/lib/util.mjs';
@@ -10,6 +10,7 @@ import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { extractDecisions, upsertDecisions } from '../../board/lib/escalation.mjs';
 import { OUTCOMES_FILE } from '../../implement/lib/decisions.mjs';
 import { setTriageFields } from './fields.mjs';
+import { autoMergePr } from './automerge.mjs';
 import { applyReview, decideGate, gateState, readPrState } from './gate.mjs';
 import { addIssueLabel, checksState, disableAutoMerge, ghJson, issueAssignees, issueBody, prReviewComments, prReviews, prView, setIssueBody } from './github.mjs';
 import { readCodeowners } from './publish.mjs';
@@ -80,19 +81,23 @@ export function rebuildAssessment(config, gh, pr, state, { log = () => {} } = {}
   return { pr: view.url ?? pr, view, tickets, severity, systems, class: prClass({ severity: severity.level, shared: systems.shared || systems.contract }), ci, headSha: view.headRefOid ?? null, assessedAt: state.assessedAt ?? null, errors: [] };
 }
 
-// Evaluates an open gated PR again and applies the result (the notice, labels, reviewers). `onAutoMerge`
-// handles a PR that now qualifies. Returns { decision, state }.
-export function regate(config, gh, pr, { prior, cwd = config.root, log = () => {}, onAutoMerge = null, extraState = {} }) {
+// Evaluates an open gated PR again and applies the result (the notice, labels, reviewers), auto-merging
+// a PR that now qualifies. Returns { decision, state, merged }.
+export function regate(config, gh, pr, { prior, cwd = config.root, log = () => {}, extraState = {} }) {
   const repo = config.board.repo;
   const a = rebuildAssessment(config, gh, pr, prior, { log });
   const decision = decideGate(a, { settings: config.implement.reviewGate, autoMerge: config.implement.autoMerge, prior });
   const state = { ...gateState(a, decision, prior), ...extraState };
-  if (decision.action === 'auto-merge' && onAutoMerge) return onAutoMerge(a, decision, state);
-  const effective = decision.action === 'auto-merge' ? { ...decision, action: 'review', approvals: 1, triggers: ['auto-merge is not available yet'], reasons: ['auto-merge is not available yet'] } : decision;
   const assignees = Object.fromEntries(a.tickets.map((t) => [t.key, t.issue ? safe(() => issueAssignees(gh, repo, t.issue.number), []) : []]));
-  const applied = applyReview(config, gh, a, effective, { ...gateState(a, effective, prior), ...extraState }, { assignees, codeowners: readCodeowners(cwd), author: a.view.author, currentLabels: a.view.labels ?? [] });
+  const context = { assignees, codeowners: readCodeowners(cwd), author: a.view.author, currentLabels: a.view.labels ?? [] };
+  if (decision.action === 'auto-merge') {
+    const m = autoMergePr(config, gh, a, decision, state, context);
+    log(`${pr}: ${m.merged ? 'checks green; auto-merge' : m.problems[0]}`);
+    return { decision: m.decision, state: m.state, merged: m.merged };
+  }
+  const applied = applyReview(config, gh, a, decision, state, context);
   for (const p of applied.problems) log(`${pr}: ${p}`);
-  return { decision: effective, state };
+  return { decision, state };
 }
 
 // Open PRs the gate has labeled (`approvals:N`, including approvals:0 for a PR waiting for its checks).
@@ -104,7 +109,7 @@ export function gatedPrs(config, gh, { state = 'open' } = {}) {
 
 // The board sync step. deps: { gh, items (board cards with severity, column, state, stateReason),
 // markerOf(number) -> the last pipeline marker, commentsOf(number), applyEvent(key, event), metricsConfig,
-// log, onAutoMerge }. Returns { reopens: [keys], regated: [pr urls] }.
+// log }. Returns { reopens: [keys], regated: [pr urls] }.
 export function syncGate(config, deps) {
   const { gh, items = [], log = () => {} } = deps;
   const at = deps.now ?? nowIso();
@@ -155,7 +160,7 @@ export function syncGate(config, deps) {
         // A reopened ticket blocks the PR's auto-merge for good.
         if (fresh.length || regate_.has(p.url)) disableAutoMerge(gh, config.board.repo, p.url);
         if (fresh.length || regate_.has(p.url) || prior.action === 'wait') {
-          regate(config, gh, p.url, { prior: { ...prior, countedReviews: counted }, cwd: deps.cwd ?? config.root, log, onAutoMerge: deps.onAutoMerge, extraState: { countedReviews: counted } });
+          regate(config, gh, p.url, { prior: { ...prior, countedReviews: counted }, cwd: deps.cwd ?? config.root, log, extraState: { countedReviews: counted } });
           out.regated.push(p.url);
           regate_.delete(p.url);
         }
@@ -171,7 +176,7 @@ export function syncGate(config, deps) {
         const prior = readPrState(gh, config.board.repo, url);
         if (!prior) return;
         disableAutoMerge(gh, config.board.repo, url);
-        regate(config, gh, url, { prior, cwd: deps.cwd ?? config.root, log, onAutoMerge: deps.onAutoMerge });
+        regate(config, gh, url, { prior, cwd: deps.cwd ?? config.root, log });
         out.regated.push(url);
       },
       null,
