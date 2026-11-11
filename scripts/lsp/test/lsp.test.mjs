@@ -25,7 +25,8 @@ describe('socket paths', () => {
       assert.match(worktreeHash(dir), /^[0-9a-f]{12}$/);
       assert.equal(worktreeHash(link), worktreeHash(dir));
       const p = daemonPaths(dir);
-      assert.equal(path.basename(p.socket), `${p.hash}.sock`);
+      if (process.platform === 'win32') assert.match(p.socket, new RegExp(`^\\\\\\\\\\.\\\\pipe\\\\eshop-lsp-[0-9a-f]{8}-${p.hash}$`));
+      else assert.equal(path.basename(p.socket), `${p.hash}.sock`);
       assert.ok(Buffer.byteLength(p.socket) < 104, p.socket);
       assert.notEqual(daemonPaths(os.tmpdir()).socket, p.socket);
     } finally {
@@ -236,7 +237,8 @@ describe('lspd daemon', { timeout: 120000 }, () => {
       }
     })();
     fs.mkdirSync(paths.dir, { recursive: true });
-    fs.writeFileSync(paths.socket, '');
+    // A named pipe (Windows) cannot be left behind as a stale file.
+    if (process.platform !== 'win32') fs.writeFileSync(paths.socket, '');
     fs.writeFileSync(paths.pidFile, JSON.stringify({ pid: deadPid(), worktree, socket: paths.socket }));
     const st = lspd('start', '--worktree', worktree);
     assert.equal(st.ok, true, JSON.stringify(st));

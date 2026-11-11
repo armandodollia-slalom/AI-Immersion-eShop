@@ -10,6 +10,11 @@
   "agentsDir": ".github/agents",
   "lessonsDir": ".github/agents/lessons",
   "baseRef": "origin/main",
+  "bot": {
+    "enabled": true,
+    "namePattern": "dev-bot-{login}",
+    "credentialsDir": "~/.config/eshop-pipeline"
+  },
   "storyGuard": {
     "folders": [".agent-state/board"]
   },

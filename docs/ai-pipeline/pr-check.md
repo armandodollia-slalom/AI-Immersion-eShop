@@ -36,7 +36,7 @@ Or ask the `pr-check` agent (Copilot or Claude Code) to check a PR; it runs the 
 | `--base <ref>` | the PR base, else `PIPELINE_BASE_REF` | what the diff is taken against |
 | `--videos a,b` | links in the PR description, else `test-results/` | video files, folders or URLs |
 | `--no-fix` | fix | report only, one round |
-| `--max-rounds <n>`, `--debate-turns <n>` | 6, 2 | loop limits |
+| `--max-rounds <n>`, `--debate-turns <n>` | 6, 2 | loop limits (`--no-fix` always runs one round) |
 | `--comment`, `--push` | off | post the report on the PR; push the fix commits |
 | `--json` | off | print `result.json` instead of the report |
 | `--resume` | off | continue the interrupted run of the same check from its last saved round |
@@ -145,7 +145,7 @@ Each run writes to `.agent-state/pr-check/<id>/` (`<id>` is `pr-<n>`, or the sto
 - `context/pr.md`, `context/frames.json`, `context/mockups/` (mockup renders) and `videos/`: what the agents were given.
 - `round-<n>/`: `diff.patch`, every prompt and agent output, `debate.json` (each finding with its full thread), `coverage.json`, and `rulings.json`.
 
-Every round is appended to `.agent-metrics/pr-checks.jsonl`, which `metrics` and `pipeline metrics` summarize. Each record keeps the upheld findings (id, lens, severity, title, detail, requirement, evidence, and `repeat` when the finding survived a fix round) and the findings the judge dismissed, with the judge's reason. Commit it with the work it describes, like the other metrics.
+Every round is appended to `.agent-metrics/pr-checks.jsonl`, which `metrics` and `pipeline metrics` summarize. The [review gate](review-gate.md) reads it too: a bug fix has high confidence only when its PR check reached 10/10 in at most two rounds. Each record keeps the upheld findings (id, lens, severity, title, detail, requirement, evidence, and `repeat` when the finding survived a fix round) and the findings the judge dismissed, with the judge's reason. Commit it with the work it describes, like the other metrics.
 
 ## How agents improve
 

@@ -32,20 +32,37 @@ export const leaseDir = () => path.join(runtimeDir(), 'leases');
 export const realWorktree = (worktree) => fs.realpathSync(path.resolve(worktree));
 export const worktreeHash = (worktree) => createHash('sha256').update(realWorktree(worktree)).digest('hex').slice(0, 12);
 
+// Windows has no unix domain sockets: Node serves IPC on named pipes there. A pipe is not a file
+// and disappears with its server, so it is named after the runtime dir (keeping LSP_RUNTIME_DIR
+// isolation) and never chmod-ed or deleted.
+const isWindows = process.platform === 'win32';
+const socketPath = (dir, hash) =>
+  isWindows
+    ? `\\\\.\\pipe\\eshop-lsp-${createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 8)}-${hash}`
+    : path.join(dir, `${hash}.sock`);
+
+export const removeSocket = (socket) => {
+  if (!isWindows) fs.rmSync(socket, { force: true });
+};
+
+export const protectSocket = (socket) => {
+  if (!isWindows) fs.chmodSync(socket, 0o600);
+};
+
 export function daemonPaths(worktree) {
   const hash = worktreeHash(worktree);
   const dir = runtimeDir();
   return {
     hash,
     dir,
-    socket: path.join(dir, `${hash}.sock`),
+    socket: socketPath(dir, hash),
     pidFile: path.join(dir, `${hash}.json`),
     lockFile: path.join(dir, `${hash}.lock`),
   };
 }
 
 function git(cwd, args) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed in ${cwd}: ${(r.stderr || '').trim()}`);
   return r.stdout.trim();
 }

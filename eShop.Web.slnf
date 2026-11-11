@@ -16,6 +16,7 @@
       "src\\WebAppComponents\\WebAppComponents.csproj",
       "src\\WebApp\\WebApp.csproj",
       "src\\WebhookClient\\WebhookClient.csproj",
+      "src\\Promotions.API\\Promotions.API.csproj",
       "src\\Webhooks.API\\Webhooks.API.csproj",
       "src\\eShop.AppHost\\eShop.AppHost.csproj",
       "src\\eShop.ServiceDefaults\\eShop.ServiceDefaults.csproj",

@@ -55,7 +55,11 @@ export function collectStories(inputs, cwd = process.cwd()) {
       title: /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? meta?.title ?? key,
       // The cached text is the truth (an edited issue may have new blockers since migration).
       blockedBy: blockersOf(text, key),
-      implemented: /^##\s+Implementation Notes\b/m.test(text),
+      // Implemented: the story has Implementation Notes, or its issue is closed (its PR merged; the
+      // notes may never have been published back to the issue).
+      implemented: /^##\s+Implementation Notes\b/m.test(text) || String(meta?.issue?.state ?? '').toUpperCase() === 'CLOSED',
+      // The issue's labels when the ticket was last fetched (escalation-resolved lets plan() re-run it).
+      labels: meta?.issue?.labels ?? [],
     });
   }
   return [...byKey.values()].sort((a, b) => keyOrder(a.key, b.key));

@@ -92,6 +92,7 @@ test('globs: * stays in a segment, ** crosses them, a bare path covers its subtr
 
 test('scope enforcement lists changed files outside owns', () => {
   assert.deepEqual(scopeViolations(['src/A/x.cs', 'src/B/y.cs', 'Directory.Packages.props'], ['src/A/**', 'Directory.Packages.props']), ['src/B/y.cs']);
+  assert.deepEqual(scopeViolations(['src/A/x.cs', '.agent-metrics/token-usage.jsonl', '.agent-metrics/decisions.jsonl', '.agent-state/x.json'], ['src/A/**']), [], 'files the harness writes are never out of scope');
 });
 
 test('topological order keeps plan order and puts dependencies first', () => {

@@ -1,10 +1,9 @@
 // Unit tests for the board stage's pure logic (no GitHub calls).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { COLUMNS, epicColumn, epicSlugOf, failureComment, isForward, storyKind } from '../lib/board.mjs';
+import { COLUMNS, epicColumn, epicSlugOf, isForward, storyKind } from '../lib/board.mjs';
+import { failureDetails } from '../lib/escalation.mjs';
 import { parseNetwork, redact, renderEvidence, tracesFromReport } from '../lib/evidence.mjs';
-
-const config = { board: { repo: 'acme/shop', storyLabel: 'story', blockedLabel: 'needs-human', columns: { ready: 'Ready', failed: 'Failed' } } };
 
 test('story kind comes from the [FE]/[BE] tag in the title', () => {
   assert.equal(storyKind('# PROMO-6: [FE - WebApp, WebAppComponents] - Display\n'), 'ui');
@@ -31,9 +30,8 @@ test('Testing sits between In Progress and Pending Review; Failed between Pendin
   assert.ok(!isForward('failed', 'ready'), 'only a forced move (a human) retries it');
 });
 
-test('the failure comment carries the outcome, reason, findings, branch and log', () => {
-  const body = failureComment(
-    config,
+test('the failure details carry the findings, branch and log', () => {
+  const body = failureDetails(
     {
       outcome: 'pair-exhausted',
       reason: 'subtask api was not approved after 3 rounds',
@@ -43,12 +41,10 @@ test('the failure comment carries the outcome, reason, findings, branch and log'
     },
     { host: 'box' },
   );
-  assert.match(body, /\*\*pair-exhausted\*\* \(subtask api was not approved after 3 rounds\)/);
   assert.match(body, /- \[api\] `src\/A\.cs:12` no owner check Fix: check buyer id/);
   assert.match(body, /screenshot: `\/tmp\/s\/round-3\/cart\.png`/);
   assert.match(body, /- plain text finding/);
   assert.match(body, /Branch: `feat\/demo-1-x`\. Log on `box`: `\.agent-state\/logs\/implement-DEMO-1\.log`/);
-  assert.match(body, /remove the `needs-human` label and move the card back to Ready/);
 });
 
 test('secrets in JSON and form bodies are redacted', () => {

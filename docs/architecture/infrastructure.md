@@ -11,15 +11,26 @@
 | `postgres` | `ankane/pgvector:latest` container | Persistent; hosts `catalogdb`, `identitydb`, `orderingdb`, `webhooksdb` |
 | `identity-api`, `catalog-api`, `basket-api`, `ordering-api`, `order-processor`, `payment-processor`, `webhooks-api`, `webapp`, `webhooksclient` | .NET projects | Wired via `WithReference` (connection strings + service discovery) and `WaitFor` |
 | `mobile-bff` | YARP | Routes configured in `Extensions.ConfigureMobileBffRoutes` |
-| `foundry` (opt-in `UseFoundry=true`) | Azure AI Foundry | `chatModel` = gpt-4.1-mini, `textEmbeddingModel` = text-embedding-3-small, referenced by catalog-api and webapp |
+| `foundry` (opt-in `UseFoundry=true`) | Microsoft Foundry | `chatModel` = gpt-4.1-mini, `textEmbeddingModel` = text-embedding-3-small, referenced by catalog-api and webapp |
 | Ollama (code toggle `useOllama`) | Container | `llama3.1` chat, `all-minilm` embeddings |
-| `aca` | Azure Container Apps environment | Deployment target for `aspire deploy` / `azd` |
+| `aca` | Azure Container Apps environment | Deployment target for `aspire deploy` / `azd`; added only when TestStack mode is off |
+| Docker Compose environment (`TestStack=true`) | Compose environment (`TestStack.cs`) | Replaces `aca` for the reproducible test stack; see below |
 
 Other AppHost behaviours:
 
 - `AddForwardedHeaders()` sets `ASPNETCORE_FORWARDEDHEADERS_ENABLED` for every project (needed behind ACA ingress).
 - `ESHOP_USE_HTTP_ENDPOINTS=1` forces HTTP launch profiles (used by Playwright CI).
 - Identity receives every client's callback URL, creating an intentional cyclic reference.
+
+### TestStack mode
+
+`TestStack=true` (set by `testing/teststack`) swaps the `aca` environment for a Docker Compose environment and applies compose-only customizations from `src/eShop.AppHost/TestStack.cs`. The rest of the model is shared. See [testing/README.md](../../testing/README.md).
+
+- Every project uses its `http` launch profile.
+- Each service and infrastructure container publishes a fixed host port (slot 0: webapp 18080, identity-api 18081, catalog-api 18082, basket-api 18083, ordering-api 18084, webhooks-api 18085, webhooksclient 18086, mobile-bff 18087, dashboard 18888, postgres 18432, redis 18379, eventbus 18672).
+- Ports are emitted as compose variables (`${WEBAPP_HOST_PORT:-18080}`), so one generated compose file serves several isolated **slots**. Slot n adds 1000 × n to every port; `testing/teststack --slot <n>` exports the slot's values, and agents lease slots through `scripts/stack/slots.mjs`.
+- Identity, the WebApp and the WebhookClient get browser-reachable URLs (`http://host.docker.internal:<identity port>` as issuer), so redirect URIs follow the slot.
+- Identity, catalog and ordering start with their built-in seeding off (`Seeding__Disabled=true`); `testing/teststack` loads scenario data instead.
 
 ## 2. Service defaults (`eShop.ServiceDefaults`)
 
@@ -76,12 +87,24 @@ Each service applies its own EF Core migrations and seed data on startup (`Migra
 
 | Workflow | What it does |
 | --- | --- |
-| `pr-validation.yml` | `dotnet build eShop.Web.slnf` and `dotnet test` (unit + functional; functional tests spin up containers via Aspire/Testcontainers-style fixtures) |
+| `pr-validation.yml` | `dotnet build eShop.Web.slnf` and `dotnet test` (unit + functional; functional tests spin up containers via Aspire/Testcontainers-style fixtures). A `teststack` job checks the generated compose file is current (`testing/teststack publish --check`) and validates the scenarios (`testing/teststack validate`) |
 | `pr-validation-maui.yml` | Installs MAUI workloads and builds the mobile apps |
 | `playwright.yml` | Runs Playwright E2E (`e2e/`: browse, cart, checkout, login setup) against the running AppHost |
 | `lint.yml` | ESLint (JS/TS under `scripts/`, `e2e/`, root configs), markdownlint (`**/*.md`) and `dotnet format --verify-no-changes` (C#) on every PR; run locally with `npm run lint` |
+| `ai-pipeline.yml` | Checks agent definitions are in sync and models are allowed, runs the pipeline script tests, and calls `qe-check.yml` |
+| `qe-check.yml` | Reusable: `qe check` fails when an existing test plan or test suite of a touched story is unverified or stale |
+| `qe-lessons.yml` | Manual: QE calibration, metrics and lessons; proposes lessons in a PR |
+| `pr-check.yml` | Adversarial AI PR check against the story (see [pr-check](../ai-pipeline/pr-check.md)) |
+| `pr-demo-video.yml` | Starts the test stack, records the PR's teststack specs and publishes the videos and API summary to the PR |
+| `board-epic-assign.yml` | When an epic issue is (un)assigned, gives its open stories the same assignees |
+| `review-quorum.yml` | On PRs and reviews: the `review-quorum` check passes once distinct non-author approvals on the latest push reach the PR's `approvals:N` label, set by the [review gate](../ai-pipeline/review-gate.md) on bug-fix PRs (a PR without it passes) |
+| `graphify-cache-prune.yml` | Weekly: opens a PR that prunes unused graphify semantic-cache entries |
 
-Test projects (approximate test-method counts): Ordering.UnitTests (40), ClientApp.UnitTests (40), Catalog.FunctionalTests (19), Application.UnitTests (17), Ordering.FunctionalTests (11), Basket.UnitTests (9), eShop.AppHost.UnitTests (5), Basket.FunctionalTests (2), Webhooks.FunctionalTests (2). There are no tests for PaymentProcessor, OrderProcessor, Identity.API, or the RabbitMQ event bus.
+The AI workflows are described in [docs/ai-pipeline](../ai-pipeline/README.md).
+
+Two Playwright configurations exist: `playwright.config.ts` runs `e2e/*.spec.ts` against the AppHost, and `playwright.teststack.config.ts` runs `e2e/teststack/*.spec.ts` (API and browser specs for auth, basket, catalog, ordering, the order lifecycle, the mobile BFF and webhooks) against the Docker Compose test stack with scenario data (`testing/scenarios/`). Every e2e test is recorded on video.
+
+Test projects (approximate test-method counts): Ordering.UnitTests (40), ClientApp.UnitTests (40), Catalog.FunctionalTests (19), Application.UnitTests (17), Ordering.FunctionalTests (11), Basket.UnitTests (9), eShop.AppHost.UnitTests (5), Basket.FunctionalTests (2), Webhooks.FunctionalTests (2). There are no unit or functional tests for PaymentProcessor, OrderProcessor, Identity.API, or the RabbitMQ event bus; they are exercised only end to end by the teststack specs (`auth-identity-api`, `order-lifecycle`, `ordering-pipeline`).
 
 ## 7. Deployment
 
