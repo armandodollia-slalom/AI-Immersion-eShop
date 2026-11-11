@@ -386,6 +386,24 @@ test('the lessons run holds a factory retro over the decision log and keeps only
   gitc('branch', '-D', branch);
 });
 
+test('the factory retro proposes approvals policy changes from the review gate\'s pr-review records, as a PR', () => {
+  const now = new Date().toISOString();
+  const prs = Array.from({ length: 5 }, (_, i) => ({ ts: now, type: 'pr-review', pr: `https://github.com/acme/shop/pull/${70 + i}`, class: 'High', severity: 'High', stories: [`BUG-${70 + i}`], merged: true, approvals: 1, gate: { autoMerged: false }, reviewers: [{ order: 1, foundNew: true }, { order: 2, foundNew: true }], timeToFirstReviewMin: 30, timeToMergeMin: 300, mergedAt: now }));
+  write('.agent-metrics/decision-outcomes.jsonl', `${prs.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  agentScript({ 'qe-lessons': [{ writeFiles: { 'scripts/implement/config.json': '{"agent tried": true}\n' }, result: { status: 'done', proposals: [] } }] });
+  const result = qe(['lessons', '--no-push']);
+  assert.equal(result.status, 0, result.stderr);
+  const { branch } = JSON.parse(result.stdout.slice(result.stdout.indexOf('{')));
+  assert.match(prompts(), /"reviews": \{[\s\S]*"class": "High"[\s\S]*"secondReviewerFound"/);
+  // The agent's own edit of the policy file is discarded; the harness applies its guarded proposal.
+  const table = JSON.parse(gitc('show', `${branch}:scripts/implement/config.json`).stdout).implement.reviewGate.approvals;
+  assert.equal(table.High, 2);
+  assert.equal(table.default, 1);
+  assert.match(gitc('log', '-1', '--format=%B', branch).stdout, /Proposed approvals policy changes \(needs human review\)[\s\S]*`High`: 1 → 2 approval\(s\): in 5 High PRs with 2\+ reviewers, reviewer 2 found something/);
+  gitc('branch', '-D', branch);
+  fs.rmSync(path.join(repo, '.agent-metrics/decision-outcomes.jsonl'));
+});
+
 test('a lessons run killed mid-retro is resumed from the start, then escalated after repeated crashes', async () => {
   const runFile = path.join(repo, '.agent-state/lessons-run.json');
   const runOf = () => JSON.parse(fs.readFileSync(runFile, 'utf8'));

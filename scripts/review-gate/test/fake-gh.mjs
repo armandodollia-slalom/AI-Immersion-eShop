@@ -79,7 +79,7 @@ export function fakeGh(repo = 'acme/shop') {
       if (a === 'pr' && b === 'list') {
         const want = flag(args, '--label');
         const st = flag(args, '--state') ?? 'open';
-        const list = [...state.prs.values()].filter((p) => (!want || p.labels.includes(want)) && (st === 'all' || p.state.toLowerCase() === st));
+        const list = [...state.prs.values()].filter((p) => (!want || p.labels.includes(want)) && (st === 'all' || (st === 'closed' ? ['closed', 'merged'].includes(p.state.toLowerCase()) : p.state.toLowerCase() === st)));
         return ok(list.map((p) => ({ number: p.number, url: p.url, state: p.state, labels: p.labels.map((name) => ({ name })), headRefName: p.headRefName })));
       }
       if (a === 'pr' && b === 'edit') {

@@ -107,9 +107,29 @@ What happens next depends on the PR:
 
 The re-runs start from [`implement requeue`](escalations.md#requeue-on-a-timer) (by hand or on its timer): `board sync --json` lists the reopened tickets (`reopened`), and requeue runs them with `--force`, apart from the tickets a human resolved. The run removes the `reopened` label when it starts (`board clear-reopened`); the reopen itself stays on the ticket.
 
+## Review data for the retro
+
+When a gated PR closes (merged or not), `board sync` writes one `type: "pr-review"` record to `.agent-metrics/decision-outcomes.jsonl` in the main checkout, next to the `late` records (`lib/pr-review.mjs`):
+
+| Part | Fields |
+| --- | --- |
+| PR class features | `class`, `severity`, per ticket in `tickets` the three ratings, `severity`, `confidence`, `high` and `reopensBeforeMerge`; `systems`, `systemCount`, `shared`, `contract`, `overridePaths` hit, `ticketCount`, `diff` {`additions`, `deletions`, `files`}, `confidence` (the lowest ticket's) |
+| Review | `gate` {`action`, `autoMerged`}, `requiredApprovals` and actual `approvals`; per reviewer in `reviewers`: `login`, `order`, the `verdicts` sequence, `substantiveComments` (at least `substantiveCommentChars`, 20, and not a plain "LGTM" or nit), `ledToCommits` (a commit followed their feedback) and `foundNew`; `changesRequestedRounds`, `timeToFirstReviewMin`, `timeToMergeMin`, `commitsAfterOpen`, `humanCommits` |
+| Outcome | known at close (`reopensAfterMerge` 0, no `followUpBugs`, no `reverts`); the later outcome is **joined in** from the `reopen` records (after the merge), the `late` records' `bugStories` (BUG-* tickets naming these keys) and `type: "revert"` records (the sync looks for `This reverts commit <merge sha>` on the base branch) |
+
+`foundNew` is a heuristic the retro reads as a rate over many PRs, never a verdict on one reviewer: the reviewer left a substantive comment on a file no earlier reviewer commented on, or their substantive feedback led to a commit when the earlier reviewers left none.
+
+The [factory retro](qe.md#auto-improvement) groups these records by PR class (`reviews` in its digest, `lib/review-retro.mjs`):
+
+- how often the **2nd and 3rd reviewers** found something the earlier ones didn't (`secondReviewerFound`, `thirdReviewerFound`);
+- **escapes by approval count** (`escapesByApprovals`: merged PRs reopened after merge, named by a follow-up BUG ticket, or reverted);
+- **review latency per extra reviewer** (`latencyByReviewers`: median minutes to the first review and to merge).
+
+From them it **proposes** changes to the approvals policy table, computed in code with guards: nothing for a class with fewer than `retro.minSample` (5) PRs reviewed by people; one more approval when the next reviewer keeps finding new things (`raiseFindRate` 0.3) or merged PRs escape (`raiseEscapeRate` 0.2); one fewer when the last required reviewer rarely does (`lowerFindRate` 0.05) and nothing escaped; **never fewer than 1** for a PR that is not auto-merged. The lessons run writes the proposals into `implement.reviewGate.approvals` on its branch and opens its usual PR with a "Proposed approvals policy changes" section, which armando approves or closes; the retro never changes the policy itself, and the `qe-lessons` agent cannot edit that file. The same data backs a proposal to **widen auto-merge beyond Low** (a class whose reviewers find nothing and whose PRs never escape); that is only ever written in the PR, because the gate's rule is code a person changes.
+
 ## Approvals policy
 
-`implement.reviewGate.approvals` maps a PR class to its required approvals: the entry for the class (`High+shared`), else for its severity (`High`), else `default`. Today every class needs **1**. A PR that does not auto-merge never needs fewer than 1, whatever the table says.
+`implement.reviewGate.approvals` maps a PR class to its required approvals (the [retro](#review-data-for-the-retro) proposes changes as a PR): the entry for the class (`High+shared`), else for its severity (`High`), else `default`. Today every class needs **1**. A PR that does not auto-merge never needs fewer than 1, whatever the table says.
 
 ```json
 "approvals": { "default": 1, "Low": 1, "Medium": 1, "High": 1, "Severe": 1 }

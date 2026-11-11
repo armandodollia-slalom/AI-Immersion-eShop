@@ -17,6 +17,7 @@ import { featureVideo } from './evidence.mjs';
 import { resolvedLabel } from './escalation.mjs';
 import { applyEvent, issueComments, latestMarker, postComment } from './flow.mjs';
 import { recordLateOutcome } from './outcomes.mjs';
+import { git } from '../../pipeline/lib/git.mjs';
 import { gateConfig, gateOff } from '../../review-gate/lib/config.mjs';
 import { realGh } from '../../review-gate/lib/github.mjs';
 import { syncGate } from '../../review-gate/lib/sync.mjs';
@@ -27,7 +28,15 @@ export function reviewGateSync(config, items, { log = () => {} } = {}) {
   const reopenedLabel = gc.implement.reviewGate?.labels?.reopened ?? 'reopened';
   if (gateOff(gc)) return { reopens: [], regated: [], reopenedLabel };
   const comments = (n) => issueComments(config, n).map((c) => ({ author: c.author?.login ?? c.author ?? null, body: c.body ?? '', createdAt: c.createdAt ?? null }));
-  const r = syncGate(gc, { gh: realGh, items, log, markerOf: (n) => latestMarker(issueComments(config, n)), commentsOf: comments, applyEvent: (key, ev) => applyEvent(config, key, ev, { log }), metricsConfig: config });
+  // The base branch's recent log, for reverts of merged gated PRs.
+  const baseLog = () => {
+    git(config.root, ['fetch', '-q', 'origin']);
+    return git(config.root, ['log', '--since=90.days', '--format=%H%x1f%s%x1f%b%x1e', config.baseRef ?? 'origin/main']).stdout.split('\x1e').map((e) => e.trim()).filter(Boolean).map((e) => {
+      const [sha, subject, body] = e.split('\x1f');
+      return { sha, subject, body };
+    });
+  };
+  const r = syncGate(gc, { gh: realGh, items, log, markerOf: (n) => latestMarker(issueComments(config, n)), commentsOf: comments, applyEvent: (key, ev) => applyEvent(config, key, ev, { log }), metricsConfig: config, baseLog });
   return { ...r, reopenedLabel };
 }
 

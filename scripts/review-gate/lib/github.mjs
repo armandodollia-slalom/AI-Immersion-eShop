@@ -27,7 +27,7 @@ export function ghLines(gh, args) {
 export const prNumber = (pr) => Number(/\/pull\/(\d+)/.exec(String(pr))?.[1] ?? String(pr).replace(/^#/, '')) || null;
 const commentId = (c) => Number(/issuecomment-(\d+)/.exec(c.url ?? '')?.[1] ?? 0) || null;
 
-const PR_FIELDS = 'number,url,state,author,createdAt,mergedAt,closedAt,headRefName,headRefOid,baseRefName,additions,deletions,changedFiles,labels,body,title,isDraft';
+const PR_FIELDS = 'number,url,state,author,createdAt,mergedAt,closedAt,headRefName,headRefOid,baseRefName,additions,deletions,changedFiles,labels,body,title,isDraft,mergeCommit';
 
 export function prView(gh, repo, pr) {
   const p = ghJson(gh, ['pr', 'view', String(pr), '-R', repo, '--json', PR_FIELDS]);

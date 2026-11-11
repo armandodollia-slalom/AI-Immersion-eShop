@@ -12,6 +12,7 @@ import { listStories } from '../../pipeline/lib/stories.mjs';
 import { lessonsDisabled } from '../../pipeline/lib/run-tags.mjs';
 import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, readJson, releaseLock, run, selfProcess, writeJson } from '../../pipeline/lib/util.mjs';
 import { digestIsEmpty, retroDigest, retroSince } from './retro.mjs';
+import { applyProposals } from '../../review-gate/lib/review-retro.mjs';
 import { VERIFIER, metricsFile, runVerifier } from './verify.mjs';
 import { LENSES } from '../../pr-check/lib/loop.mjs';
 
@@ -189,6 +190,7 @@ function lessonsTask(config, reports, root, digest = null) {
       '',
       `The decision log since ${digest.since}: why each agent decided what it did. Look for root causes that a lessons rule cannot fix (an unclear agent definition, a gap in the docs or the story template, a policy rule that keeps misfiring, a verifier that is too strict or too lax) and fix them by editing files under: ${allowedPaths(config).join(', ')}.`,
       'Only propose changes the evidence supports across stories; list every file you change in `proposals` with the evidence. Leave everything else alone.',
+      'The `reviews` section is how people reviewed the bug-fix PRs the review gate sent them, by PR class. Its `proposals` for the approvals policy are computed and applied by the harness (never edit `implement.reviewGate` yourself); use the section to explain them and to find causes elsewhere (for example a triage rating that keeps sending trivial PRs to people).',
       '',
       '```json',
       JSON.stringify(digest, null, 2),
@@ -200,6 +202,29 @@ function lessonsTask(config, reports, root, digest = null) {
 }
 
 const allowedPaths = (config) => config.lessons.retro?.allowedPaths ?? [];
+
+// The review gate's approvals policy (`implement.reviewGate` in scripts/implement/config.json of `root`,
+// else of the pipeline's own checkout): the table and the retro's proposal settings.
+const IMPLEMENT_CONFIG = 'scripts/implement/config.json';
+function reviewPolicy(root) {
+  const file = [root, INSTALL_ROOT].map((r) => path.join(r, IMPLEMENT_CONFIG)).find((f) => fs.existsSync(f));
+  const gate = file ? readJson(file, {})?.implement?.reviewGate : null;
+  return gate ? { table: gate.approvals ?? {}, retro: gate.retro ?? {} } : null;
+}
+
+// Applies the retro's approvals proposals to the table in `root` (the lessons branch), so they reach
+// a person as a reviewed PR. The proposals were computed in code with the guards (minimum sample, never
+// below 1 approval); the agent never edits the table. Returns the proposals applied.
+function applyApprovalProposals(root, proposals) {
+  const file = path.join(root, IMPLEMENT_CONFIG);
+  const wanted = (proposals ?? []).filter((p) => p.kind === 'approvals');
+  if (!wanted.length || !fs.existsSync(file)) return [];
+  const config = readJson(file, null);
+  if (!config?.implement?.reviewGate) return [];
+  config.implement.reviewGate.approvals = applyProposals(config.implement.reviewGate.approvals ?? {}, wanted);
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+  return wanted;
+}
 const inside = (file, dirs) => dirs.some((d) => file === d.replace(/\/$/, '') || file.startsWith(d.endsWith('/') ? d : `${d}/`));
 
 // Files changed in a checkout, including untracked files.
@@ -284,7 +309,7 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
       return lessonCandidates(config, data, agent, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
     });
     const actionable = reports.filter((r) => r.actionable);
-    const retro = config.lessons.retro?.enabled === false ? null : retroDigest(config, data.decisions ?? [], retroSince(config));
+    const retro = config.lessons.retro?.enabled === false ? null : retroDigest(config, data.decisions ?? [], retroSince(config), { outcomes: data.outcomes ?? [], policy: reviewPolicy(config.root) });
     const digest = retro && !digestIsEmpty(retro) ? retro : null;
     const summaryOfRun = { actionable: actionable.map((r) => r.agent), retro: digest ? digest.counts : null };
     last = { ts: nowIso(), ...summaryOfRun };
@@ -324,13 +349,16 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
         run(process.execPath, [fs.existsSync(sync) ? sync : path.join(INSTALL_ROOT, 'scripts/sync-agents.mjs')], { cwd: root });
       }
       const proposals = digest ? proposalsFrom(result.output) : [];
+      // The approvals policy proposals (computed in code, guarded) go into this PR for a person to approve.
+      const policy = digest ? applyApprovalProposals(root, digest.reviews?.proposals) : [];
+      const written = (digest?.reviews?.proposals ?? []).filter((p) => p.kind !== 'approvals');
       for (const agent of LESSON_AGENTS) {
         const file = lessonsPath(config, agent, root);
         if (!fs.existsSync(file)) continue;
         const count = parseRules(fs.readFileSync(file, 'utf8')).length;
         if (count > config.lessons.maxRules) throw new Error(`${agent} lessons file has ${count} rules (max ${config.lessons.maxRules}).`);
       }
-      if (local) return { status: 'applied-locally', reports: actionable, proposals };
+      if (local) return { status: 'applied-locally', reports: actionable, proposals, policy };
       const toCommit = changedFiles(root).map((c) => c.file);
       if (!toCommit.length) return { status: 'no-edits', reports: actionable, proposals };
       git(root, ['add', '--', ...toCommit]);
@@ -345,9 +373,11 @@ export async function lessonsCommand(config, { dryRun = false, local = false, if
         actionable
           .map((r) => `- **${r.agent}**: ${[...r.changes.map((c) => `${c.action} ${c.category}${c.subtype ? `/${c.subtype}` : ''} (${c.stories} stories)`), ...r.rules.filter((x) => x.action !== 'keep').map((x) => `${x.action} ${x.id} ${x.category}`)].join('; ')}`)
           .join('\n') || '- No lessons file changes.';
-      const factory = proposals.length
-        ? `\n\n### Proposed factory changes (needs human review)\n\nFrom the decision log since ${digest.since}:\n\n${proposals.map((p) => `- \`${p.file}\`: ${p.why}`).join('\n')}`
-        : '';
+      const factory =
+        (proposals.length ? `\n\n### Proposed factory changes (needs human review)\n\nFrom the decision log since ${digest.since}:\n\n${proposals.map((p) => `- \`${p.file}\`: ${p.why}`).join('\n')}` : '') +
+        (policy.length || written.length
+          ? `\n\n### Proposed approvals policy changes (needs human review)\n\nFrom the review gate's pr-review records (\`implement.reviewGate.approvals\` in \`${IMPLEMENT_CONFIG}\`; never fewer than 1 approval for a PR that is not auto-merged, and only for a class with at least ${reviewPolicy(root)?.retro?.minSample ?? 5} PRs reviewed by people):\n\n${[...policy.map((p) => `- \`${p.class}\`: ${p.from} → ${p.to} approval(s): ${p.why}`), ...written.map((p) => `- \`${p.class}\`: not applied, for a person to decide: ${p.why}`)].join('\n')}`
+          : '');
       const title = 'Update agent lessons from verifier, architecture review and PR check findings';
       const message = `${title}\n\n${summary}${factory}\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`;
       const body = `Generated by \`node scripts/qe/qe.mjs lessons\` from \`.agent-metrics/\`.\n\n${summary}${factory}\n\nReview each rule: it should be concrete, generalize beyond the examples, and not contradict the agent definition.`;

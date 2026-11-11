@@ -11,6 +11,7 @@ export function loadMetrics(config) {
     reviews: readJsonl(metricsFile(config, 'arch-reviews.jsonl')),
     prChecks: readJsonl(metricsFile(config, 'pr-checks.jsonl')),
     decisions: readJsonl(metricsFile(config, DECISIONS_FILE)),
+    outcomes: readJsonl(metricsFile(config, 'decision-outcomes.jsonl')),
   };
 }
 

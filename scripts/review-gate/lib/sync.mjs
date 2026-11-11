@@ -3,22 +3,23 @@
 //      severity bump, `## Decisions` note for the re-run, `reopened` label, board event, metrics record,
 //      and the PR's gate back to review when it is still open;
 //   2. open gated PRs evaluated again: a PR waiting for its checks auto-merges once they pass;
-//   3. closed gated PRs recorded for the retro (see pr-review.mjs).
+//   3. closed gated PRs recorded for the retro (pr-review.mjs), and reverts of their merges.
 // Everything is informational: a GitHub error is logged and the rest of the sync goes on.
-import { appendJsonl, nowIso } from '../../pipeline/lib/util.mjs';
+import { appendJsonl, nowIso, readJsonl } from '../../pipeline/lib/util.mjs';
 import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { extractDecisions, upsertDecisions } from '../../board/lib/escalation.mjs';
 import { OUTCOMES_FILE } from '../../implement/lib/decisions.mjs';
 import { setTriageFields } from './fields.mjs';
 import { autoMergePr } from './automerge.mjs';
 import { applyReview, decideGate, gateState, readPrState } from './gate.mjs';
-import { addIssueLabel, checksState, disableAutoMerge, ghJson, issueAssignees, issueBody, prReviewComments, prReviews, prView, setIssueBody } from './github.mjs';
+import { addIssueLabel, checksState, disableAutoMerge, ghJson, issueAssignees, issueBody, prCommits, prReviewComments, prReviews, prView, setIssueBody } from './github.mjs';
 import { readCodeowners } from './publish.mjs';
 import { cardReopen, newChangesRequested, reopenDecisionNote, withReopen } from './reopens.mjs';
 import { prClass, prSeverity } from './severity.mjs';
 import { extractTriage, upsertTriage } from './triage-section.mjs';
 import { fieldValues } from './assessment.mjs';
 import { requiredApprovals } from './quorum.mjs';
+import { prReviewRecord, revertsOf } from './pr-review.mjs';
 
 const safe = (fn, fallback, onError) => {
   try {
@@ -109,11 +110,11 @@ export function gatedPrs(config, gh, { state = 'open' } = {}) {
 
 // The board sync step. deps: { gh, items (board cards with severity, column, state, stateReason),
 // markerOf(number) -> the last pipeline marker, commentsOf(number), applyEvent(key, event), metricsConfig,
-// log }. Returns { reopens: [keys], regated: [pr urls] }.
+// log }. Returns { reopens: [keys], regated: [pr urls], reviews: [pr urls], reverts: [pr urls] }.
 export function syncGate(config, deps) {
   const { gh, items = [], log = () => {} } = deps;
   const at = deps.now ?? nowIso();
-  const out = { reopens: [], regated: [] };
+  const out = { reopens: [], regated: [], reviews: [], reverts: [] };
   const regate_ = new Set();
 
   // 1a. Cards and issues reopened by a person.
@@ -183,5 +184,47 @@ export function syncGate(config, deps) {
       (e) => log(`${url}: not evaluated: ${e.message.split('\n')[0]}`),
     );
   }
+  // 3. Closed gated PRs: one pr-review record each, for the retro; reverts of merged ones.
+  safe(() => Object.assign(out, recordClosedPrs(config, gh, deps)), null, (e) => log(`pr-review records: ${e.message.split('\n')[0]}`));
   return out;
 }
+
+// Writes a `pr-review` record for every recently closed gated PR not recorded yet, and a `revert`
+// record when a recorded merge was reverted on the base branch (`deps.baseLog()` -> [{ sha, subject, body }]).
+export function recordClosedPrs(config, gh, { metricsConfig, log = () => {}, baseLog = () => [], now = null }) {
+  const file = metricsFile(metricsConfig, OUTCOMES_FILE);
+  const existing = readJsonl(file);
+  const recorded = new Set(existing.filter((r) => r.type === 'pr-review').map((r) => r.pr));
+  const reverted = new Set(existing.filter((r) => r.type === 'revert').map((r) => r.pr));
+  const repo = config.board.repo;
+  const min = config.implement.reviewGate.substantiveCommentChars ?? 20;
+  const reviews = [];
+  for (const p of gatedPrs(config, gh, { state: 'closed' }).filter((x) => !recorded.has(x.url))) {
+    safe(
+      () => {
+        const state = readPrState(gh, repo, p.url);
+        if (!state) return;
+        const view = prView(gh, repo, p.url);
+        const triages = (state.tickets ?? []).map((t) => (t.issue ? safe(() => extractTriage(issueBody(gh, repo, t.issue)), null) : null)).filter(Boolean);
+        const rec = prReviewRecord({ ts: now ?? nowIso(), view, state, triages, reviews: prReviews(gh, repo, p.url), comments: prReviewComments(gh, repo, p.url), commits: ghLinesSafe(gh, repo, p.url), min });
+        appendJsonl(file, rec);
+        reviews.push(p.url);
+        log(`${p.url}: review recorded (${rec.class}, ${rec.approvals} approval(s), ${rec.reviewers.length} reviewer(s)).`);
+      },
+      null,
+      (e) => log(`${p.url}: review not recorded: ${e.message.split('\n')[0]}`),
+    );
+  }
+  const reverts = [];
+  const log_ = safe(() => baseLog(), []);
+  for (const rec of [...existing.filter((r) => r.type === 'pr-review' && r.merged && !reverted.has(r.pr))]) {
+    const hits = revertsOf(rec, log_, null);
+    if (!hits.length) continue;
+    appendJsonl(file, { ts: now ?? nowIso(), type: 'revert', pr: rec.pr, stories: rec.stories, commits: hits.map((h) => h.sha) });
+    reverts.push(rec.pr);
+    log(`${rec.pr}: reverted on the base branch (${hits.map((h) => h.sha.slice(0, 7)).join(', ')}).`);
+  }
+  return { reviews, reverts };
+}
+
+const ghLinesSafe = (gh, repo, pr) => safe(() => prCommits(gh, repo, pr), []);
