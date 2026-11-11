@@ -139,9 +139,6 @@ test.describe('Webhooks API', () => {
   });
 
   test('event names outside WebhookType are rejected, including numeric ones', async ({ request }) => {
-    // BUG: WebhookSubscriptionRequest.Validate uses Enum.TryParse, which accepts any integer string, so
-    // event "99" is stored as WebhookType 99 (currently 201 Created) and can never fire.
-    test.fixme(true, 'numeric event names are accepted');
     const response = await subscribe(request, alice, hook('99', 'numeric'));
     expect(response.status()).toBe(400);
   });
