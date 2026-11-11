@@ -1,0 +1,5 @@
+description: >
+  BUG-21 (catalog v1 PUT without an id returns 404 instead of 400): catalog-edge already has what the
+  cases need (item 1 "Edge 01 Penny Boot" at 0.01 for the update and unchanged checks, 14 items with
+  ids 1-14 so 99999 is unknown, admin user), so this scenario only extends it.
+extends: catalog-edge

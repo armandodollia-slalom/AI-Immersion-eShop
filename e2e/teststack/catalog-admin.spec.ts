@@ -197,9 +197,7 @@ test.describe('Catalog.API admin writes', () => {
       expect((await (await getItem(request, 7)).json()).name).toBe('Edge 07 Dome Tent');
     });
 
-    // BUG: UpdateItemV1 checks `productToUpdate?.Id == null`, which is never true for an int, so a body
-    // without an id is treated as id 0 and answers 404 "Item with id 0 not found." instead of 400.
-    adminTest.fixme('v1 PUT without an id in the body is 400', async ({ request }) => {
+    adminTest('v1 PUT without an id in the body is 400', async ({ request }) => {
       await expectProblem(
         await request.put(`${API}/items?api-version=1.0`, { data: newItem }),
         400,

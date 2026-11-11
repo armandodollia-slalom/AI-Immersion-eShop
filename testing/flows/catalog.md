@@ -29,7 +29,6 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 | --- | --- | --- |
 | Negative `pageSize` or `pageIndex` reach Postgres | 500, `LIMIT must not be negative` | `catalog-api` "negative pageSize or pageIndex is rejected with 400" |
 | WebApp `?page=0` and `?page=-1` request `pageIndex` -1 | Skeleton stays, "An unhandled error has occurred." | `catalog-browse` "?page=0 shows the first page", "?page=-1 ..." |
-| v1 PUT without an id | 404 "Item with id 0 not found." (the null check on an `int` is dead code) | `catalog-admin` "v1 PUT without an id in the body is 400" |
 
 ## WebApp flows
 
@@ -221,7 +220,8 @@ There is no authentication on these endpoints (bug, see above). A price change o
   - A malformed body returns 400 and a non-integer id returns 404, with no change (`catalog-admin` "a malformed body or a non-integer id ...").
   - An empty or whitespace name, or a negative price, returns 400 `ValidationProblem` before any change or price-changed event.
   - An unknown brand or type id returns 400 `ValidationProblem` naming the id, with no change (`catalog-admin` "v2 PUT with an unknown type id is 400").
-  - v1 without an id, v2 with mismatched ids: bugs, `catalog-admin` fixme tests.
+  - v1 without an id (or an id of 0 or less) returns 400 "Item id must be provided in the request body." (`catalog-admin` "v1 PUT without an id in the body is 400").
+  - v2 with a body id different from the route id returns 400 (`catalog-admin` "v2 PUT with a body id different from the route id is 400").
 
 ### Delete an item
 

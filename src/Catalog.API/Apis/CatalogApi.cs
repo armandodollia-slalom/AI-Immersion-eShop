@@ -366,7 +366,8 @@ public static class CatalogApi
         [AsParameters] CatalogServices services,
         CatalogItem productToUpdate)
     {
-        if (productToUpdate?.Id == null)
+        // Id is an int, so a body without an id binds to 0; ids are database-generated and start at 1.
+        if (productToUpdate is null || productToUpdate.Id <= 0)
         {
             return TypedResults.BadRequest<ProblemDetails>(new()
             {
