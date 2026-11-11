@@ -1,9 +1,11 @@
-import { randomUUID } from 'crypto';
 import { test, expect } from '../fixtures';
 import { loadScenario } from './scenario';
 import {
   ALICE_ID, ORDERING_URL, V1, bearer, changeStatus, getOrder, listOrders, tokenFor,
 } from './ordering-helpers';
+
+// Web Crypto global (Node 19+), so the spec needs no Node type definitions.
+const randomUUID = (): string => globalThis.crypto.randomUUID();
 
 // testing/scenarios/ordering-two-buyers: alice owns orders 1-6, bob owns 7 and 8.
 const aliceOrders = [
