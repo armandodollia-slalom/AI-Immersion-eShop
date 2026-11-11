@@ -106,9 +106,9 @@ test('services-for maps project folders, shared code and linked files to the ser
   assert.deepEqual(pick(['src/WebAppComponents/Catalog/CatalogListItem.razor']), ['webapp']);
   assert.deepEqual(pick(['src/Ordering.Domain/AggregatesModel/OrderAggregate/Order.cs']), ['ordering-api']);
   assert.deepEqual(pick(['src/Basket.API/Proto/basket.proto']), ['basket-api', 'webapp']);
-  assert.deepEqual(pick(['src/IntegrationEventLogEF/IntegrationEventLogEntry.cs']), ['catalog-api', 'ordering-api', 'webhooks-api']);
+  assert.deepEqual(pick(['src/IntegrationEventLogEF/IntegrationEventLogEntry.cs']), ['catalog-api', 'ordering-api', 'webhooks-api', 'promotions-api']);
   // MigrateDbContextExtensions.cs is linked into the services with EF migrations only.
-  assert.deepEqual(pick(['src/Shared/MigrateDbContextExtensions.cs']), ['identity-api', 'catalog-api', 'ordering-api', 'webhooks-api']);
+  assert.deepEqual(pick(['src/Shared/MigrateDbContextExtensions.cs']), ['identity-api', 'catalog-api', 'ordering-api', 'webhooks-api', 'promotions-api']);
   const everyService = Object.keys(config.services);
   assert.deepEqual(pick(['src/eShop.ServiceDefaults/Extensions.cs']), everyService);
   assert.deepEqual(pick(['src/EventBus/Abstractions/IEventBus.cs']), everyService.filter(s => !['identity-api', 'webhooksclient'].includes(s)));

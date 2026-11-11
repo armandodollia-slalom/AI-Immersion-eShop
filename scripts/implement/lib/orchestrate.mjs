@@ -143,8 +143,28 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
   }
 }
 
+// The unit test projects to run for a set of changed files: tests/<Service>.UnitTests for every
+// service with changed files, plus every other unit test project whose .csproj references one of
+// those services (Identity.API's tests live in tests/Application.UnitTests, for example).
+export function unitTestProjects(cwd, files, ut) {
+  const services = [...new Set(files.map((f) => /^src\/([^/]+)\//.exec(f)?.[1]).filter(Boolean))];
+  const projects = new Set(services.map((svc) => ut.project.replace('{service}', svc)).filter((p) => fs.existsSync(path.join(cwd, p))));
+  const testsDir = path.join(cwd, path.dirname(ut.project));
+  const pattern = new RegExp(`^${path.basename(ut.project).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{service\\}', '.+')}$`);
+  if (services.length && fs.existsSync(testsDir)) {
+    for (const dir of fs.readdirSync(testsDir).filter((d) => pattern.test(d)).sort()) {
+      const rel = path.join(path.dirname(ut.project), dir);
+      const csproj = fs.readdirSync(path.join(cwd, rel)).find((f) => f.endsWith('.csproj'));
+      if (!csproj) continue;
+      const text = fs.readFileSync(path.join(cwd, rel, csproj), 'utf8');
+      if (services.some((svc) => new RegExp(`ProjectReference[^>]*[\\\\/]src[\\\\/]${svc.replace(/[.]/g, '\\.')}[\\\\/]`).test(text))) projects.add(rel);
+    }
+  }
+  return [...projects].sort();
+}
+
 // Build and unit tests, as the harness runs them for verifiers: `checks` always, plus the unit test
-// project of every service with changed files.
+// projects of every service with changed files (unitTestProjects).
 export async function runChecks(ctx, cwd, files) {
   const parts = [];
   let ok = true;
@@ -156,11 +176,7 @@ export async function runChecks(ctx, cwd, files) {
   for (const c of ctx.s.checks ?? []) await exec(c.name, c.cmd);
   const ut = ctx.s.unitTests;
   if (ut?.cmd) {
-    const services = [...new Set(files.map((f) => /^src\/([^/]+)\//.exec(f)?.[1]).filter(Boolean))];
-    for (const svc of services) {
-      const project = ut.project.replace('{service}', svc);
-      if (fs.existsSync(path.join(cwd, project))) await exec(`unit tests ${project}`, ut.cmd.replace('{project}', project));
-    }
+    for (const project of unitTestProjects(cwd, files, ut)) await exec(`unit tests ${project}`, ut.cmd.replace('{project}', project));
   }
   return { ok, output: parts.join('\n\n') || '(no checks configured)' };
 }

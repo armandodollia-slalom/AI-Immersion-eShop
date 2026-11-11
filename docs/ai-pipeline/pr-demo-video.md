@@ -28,6 +28,7 @@ Sections that no longer apply (for example after a frontend change is pushed to 
 3. Otherwise it starts the test stack (`testing/teststack up`) and runs those specs with `E2E_KEEP_VIDEOS=1` (`--project scenarios --no-deps`; each spec loads its own scenario).
 4. `pr-video.mjs publish` reads `artifacts/e2e-videos/manifest.json`, makes a GIF preview of each video with `ffmpeg` (skipped if it would exceed 9 MB), pushes the files to `pr-videos/pr-<n>/`, and replaces the section between `<!-- pr-demo-video:start -->` and `<!-- pr-demo-video:end -->` in the PR description. Text outside the markers is left alone.
 5. The videos are also uploaded as the `pr-demo-video-<n>` artifact. If a spec failed, its video is marked failed in the section and the job fails.
+6. `pr-video.mjs api` adds or removes the API changes section, using the `api` and `frontend` values step 1 already worked out (`--api`, `--frontend`). It only edits the PR description, so it runs with `continue-on-error`: a failure there never fails the recording.
 
 API-only specs have no browser, so they record no video. A user-facing change needs a UI spec; see the `feature-demo-video` skill (`.github/skills/feature-demo-video/SKILL.md`).
 

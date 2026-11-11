@@ -55,6 +55,22 @@ function logPrecheck(config, stage, story, round, errors) {
 // the agent's files comes back to it as feedback instead of failing the harness's commit afterwards. A
 // linter that is not installed in the checkout (a local node_modules/.bin path that is missing) is skipped,
 // like the hook does.
+// Auto-fixes the agent's files with the same tools the linters use (precheck.fix), so formatting
+// (a missing UTF-8 BOM, whitespace, eslint --fix rules) never costs an automation round. Exit codes
+// are ignored: whatever the fixers cannot fix, lintFiles reports.
+export function fixFiles(config, files, { runner = run } = {}) {
+  const fixed = [];
+  for (const [ext, template] of Object.entries(config.precheck.fix ?? {})) {
+    const matching = files.filter((f) => f.endsWith(ext));
+    if (!matching.length || !template?.length) continue;
+    if (template[0].includes('/') && !fs.existsSync(path.join(config.root, template[0]))) continue;
+    const argv = expand(template, { files: matching });
+    runner(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: 300 });
+    fixed.push(...matching);
+  }
+  return fixed;
+}
+
 export function lintFiles(config, files, { runner = run } = {}) {
   const errors = [];
   for (const [ext, template] of Object.entries(config.precheck.lint ?? {})) {
@@ -257,7 +273,7 @@ function expand(template, values) {
   });
 }
 
-export async function precheckAutomation(config, story, { skipTests = false } = {}) {
+export async function precheckAutomation(config, story, { skipTests = false, fix = true } = {}) {
   const errors = [];
   const status = planStatus(config, story);
   if (status.state !== 'verified') errors.push(`Plan for ${story.key} is ${status.state}: ${status.reasons.join('; ')}.`);
@@ -278,6 +294,7 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
     }
   }
   if (errors.length) return { errors, tests };
+  if (fix) fixFiles(config, [...tests.keys()]);
   errors.push(...lintFiles(config, [...tests.keys()]));
 
   const validate = config.precheck.validateScenario;
@@ -395,6 +412,7 @@ function automationTask(config, story, { mode, feedback, implFiles }) {
     `Verified plan: ${story.planDir} (${plan.cases.length} cases: ${plan.cases.map((c) => c.data.id).join(', ')})`,
     `Scenario directory: ${config.scenariosDir}/${story.scenario} (name: ${story.scenario})`,
     `Every test name must contain its case id. .NET tests also need the story tag and case id: in xUnit projects (functional tests) [Trait("Story", "${story.key}")] and [Trait("TestCase", "<id>")]; in MSTest projects (unit tests, MSTest.Sdk) [TestCategory("${story.key}")] and [TestProperty("TestCase", "<id>")].`,
+    `Before you finish, run \`node scripts/qe/qe.mjs precheck ${story.key}\` and fix everything it reports until it prints "precheck passed". It runs the harness's deterministic checks (case coverage, story tags, lint, scenario validation) without the tests; run the story's tests yourself.`,
     'Playwright specs under e2e/teststack/ build every URL from e2e/teststack/ports.ts (WEBAPP_URL, IDENTITY_URL, CATALOG_URL, port(name)); never hard-code 18xxx ports, so the specs run on whichever stack slot the run leased.',
     '',
     '### Implementation files changed for this story',
@@ -493,6 +511,9 @@ async function automationPass(config, story, { skipTests, maxRounds, targetHash,
   const implFiles = implChanges(config).files;
   let feedback = resume ? resumeFeedback('automation', saved?.feedback) : null;
   let lastGaps = [];
+  // The last verifier round's gaps stay in the feedback until a verifier round runs again, so a
+  // precheck failure or a crashed run in between does not hide them from the next fresh agent.
+  const withOpenGaps = (text) => (lastGaps.length ? `${text}\n\nThe last verifier round's gaps are still open; fix them too:\n${formatGaps(lastGaps.filter((g) => g.root_stage !== 'plan'))}` : text);
   for (let round = Math.min(saved?.round ?? 1, maxRounds); round <= maxRounds; round++) {
     updateState(config, story.key, (s) => (s.automation.progress = { hash: targetHash, round, feedback }));
     const mode = automationFiles(config, story).tests.size ? 'update' : 'create';
@@ -523,13 +544,13 @@ async function automationPass(config, story, { skipTests, maxRounds, targetHash,
       return { status: 'product-bug', bugs };
     }
     if (!producer.ok) {
-      feedback = `The previous run ${producer.timedOut ? 'timed out' : `failed (exit ${producer.status})`}. Finish the tests.`;
+      feedback = withOpenGaps(`The previous run ${producer.timedOut ? 'timed out' : `failed (exit ${producer.status})`}. Finish the tests.`);
       continue;
     }
     const pre = await precheckAutomation(config, story, { skipTests });
     if (pre.errors.length) {
       logPrecheck(config, 'automation', story, round, pre.errors);
-      feedback = `Deterministic checks failed:\n${pre.errors.map((e) => `- ${e}`).join('\n')}`;
+      feedback = withOpenGaps(`Deterministic checks failed:\n${pre.errors.map((e) => `- ${e}`).join('\n')}`);
       continue;
     }
     let verdict;

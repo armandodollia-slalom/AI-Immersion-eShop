@@ -58,7 +58,7 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
   const stories = orderStories(collectStories(inputs));
   const byKey = new Map(stories.map((s) => [s.key, s]));
   for (const s of stories) {
-    s.skip = s.implemented && !force ? 'already implemented (has "## Implementation Notes"; --force to redo)' : null;
+    s.skip = s.implemented && !force ? 'already implemented (Implementation Notes or a closed issue; --force to redo)' : null;
     // A human answered the escalation questions of its last run (the issue is labeled
     // escalation-resolved): the ticket runs again, fresh, as with --force for its earlier run's outcome
     // (also a standing qe/review escalation, which otherwise waits for a human).
