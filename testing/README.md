@@ -23,6 +23,7 @@ Requires Docker (or a compatible engine via `TESTSTACK_DOCKER`), the .NET SDK, a
 | `deploy/teststack/docker-compose.yaml`, `.env` | **Generated** by `testing/teststack publish` (`TestStack=true aspire publish`). Never edit them by hand. |
 | Compose customizations (ports, HTTP-only, seeder switch, identity URL) | C# in `src/eShop.AppHost/TestStack.cs`, enabled by `TestStack=true` in `AppHost.cs` |
 | Host port table and slot math | `scripts/stack/config.json` (`ports`), used by `testing/teststack` and `scripts/stack/slots.mjs`. A test checks that the generated compose file and `testing/teststack.json` agree with it. |
+| Loader settings (compose project, databases, queues, readiness URLs) | `testing/teststack.json` (plain JSON). Its slot-0 host ports must match `scripts/stack/config.json` and `src/eShop.AppHost/TestStack.cs` (checked by `scripts/stack/test`); for `--slot <n>`, `testing/teststack` generates a shifted copy in `artifacts/teststack/slot-<n>/`. |
 | Service images | `aspire do prepare-teststack`, which uses the same `dotnet publish` container build as production |
 | Resolved image tags, ports, test passwords | `artifacts/teststack/.env.teststack` (generated, git-ignored) |
 
