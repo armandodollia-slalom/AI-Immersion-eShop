@@ -74,7 +74,7 @@ sequenceDiagram
   participant QE as qe stage (background)
   participant PRC as pr-check stage (background)
 
-  Dev->>Run: implement run KEY... | --epic EPIC [--parallel N] [--pr]
+  Dev->>Run: implement run KEY... | --epic EPIC [--parallel N|auto] [--pr]
   Run->>Run: parse stories and "Blocked by", order them
   Run->>Git: worktree + feat/KEY-title (stacked on blocker)
   Run->>Disp: pipeline start KEY
@@ -209,7 +209,7 @@ A handed ticket is a key, wherever it is cached: its folder in the main checkout
 | Tool | Hook file | Covers | Trust step |
 | --- | --- | --- | --- |
 | Claude Code | `.claude/settings.json` | all | accept the project's hooks when prompted |
-| GitHub Copilot CLI and VS Code agent | `.claude/settings.json` (loaded alongside `.github/hooks/`) | all | add the repo to `trustedFolders` in `~/.copilot/config.json` |
+| GitHub Copilot CLI and VS Code agent | `.claude/settings.json` (this repository has no `.github/hooks/` file) | all | add the repo to `trustedFolders` in `~/.copilot/config.json` |
 | Cursor | `.claude/settings.json` (third-party hooks, on by default) | all; Cursor has no `Glob` hook | leave Cursor's third-party (Claude) hooks setting on, the default |
 | Windsurf / Devin | `.claude/settings.json` | pipeline hooks; the graphify guard matchers don't match its lowercase tool names, so the guard is advisory via `AGENTS.md` | none |
 | OpenAI Codex | `.codex/hooks.json` | all; the graphify check and the story guard cover `Bash` only, Codex's only search tool | trust the project, then approve the hooks in `/hooks` |
@@ -259,9 +259,11 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
 node scripts/pipeline/pipeline.mjs resume [KEY] [--force]       # continue every stage's runs that died (crash, kill, reboot)
-node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
-node scripts/pipeline/pipeline.mjs implement resume [--parallel N] [--pr]
+node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N|auto] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement resume [--parallel N|auto] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
+node scripts/pipeline/pipeline.mjs experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential] [--base <ref>]  # see experiments.md
+node scripts/pipeline/pipeline.mjs experiment grade|report <id> [--json]
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
 node scripts/pipeline/pipeline.mjs costs [KEY] [--epic <epic>] [--since <date>] [--json|--markdown]  # tokens, cache hits and cost per stage, ticket and epic

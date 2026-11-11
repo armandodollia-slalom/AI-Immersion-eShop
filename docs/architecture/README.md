@@ -7,7 +7,7 @@ This folder documents the architecture of the AI Immersion eShop reference appli
 | [README.md](README.md) | System context, container view, technology stack, solution layout |
 | [services.md](services.md) | Per-service responsibilities, APIs, data stores, and internal design |
 | [event-flows.md](event-flows.md) | Integration event catalog, the order-fulfilment saga, and the outbox pattern |
-| [infrastructure.md](infrastructure.md) | Orchestration (Aspire), security, observability, deployment, testing |
+| [infrastructure.md](infrastructure.md) | Orchestration (Aspire, TestStack mode), security, observability, deployment, testing and CI |
 | [recommendations.md](recommendations.md) | Gaps, risks, and suggested improvements |
 
 ## 1. System context
@@ -20,7 +20,7 @@ flowchart LR
     mobile([Shopper - MAUI mobile / HybridApp])
     partner([Webhook consumer])
     admin([Operator])
-    ai[(Azure AI Foundry / OpenAI<br/>or Ollama)]
+    ai[(Microsoft Foundry / OpenAI<br/>or Ollama)]
 
     subgraph eShop[AI Immersion eShop system]
         direction TB
@@ -114,7 +114,7 @@ flowchart TB
 | Concern | Technology |
 | --- | --- |
 | Runtime | .NET 10 (SDK pinned in `global.json`) |
-| Orchestration | Aspire 13.6 (`Aspire.AppHost.Sdk`), Azure Container Apps environment `aca` |
+| Orchestration | Aspire 13.6 (`Aspire.AppHost.Sdk`), Azure Container Apps environment `aca`, or a Docker Compose environment for the test stack (`TestStack=true`) |
 | Web UI | Blazor (interactive server), shared components in `WebAppComponents` |
 | Mobile | .NET MAUI (`ClientApp`), MAUI Blazor Hybrid (`HybridApp`) |
 | APIs | ASP.NET Core Minimal APIs, `Asp.Versioning`, OpenAPI + Scalar UI |
@@ -123,16 +123,16 @@ flowchart TB
 | Persistence | PostgreSQL (`ankane/pgvector` image), EF Core / Npgsql, Redis |
 | Messaging | RabbitMQ client with Polly retry |
 | CQRS/Validation | MediatR 13, FluentValidation 12 |
-| AI | `Microsoft.Extensions.AI`; Azure AI Foundry (`gpt-4.1-mini`, `text-embedding-3-small`) or Ollama (`llama3.1`, `all-minilm`); pgvector |
+| AI | `Microsoft.Extensions.AI`; Microsoft Foundry (`gpt-4.1-mini`, `text-embedding-3-small`) or Ollama (`llama3.1`, `all-minilm`); pgvector |
 | Reverse proxy | YARP via `Aspire.Hosting.Yarp` |
 | Observability | OpenTelemetry (logs, metrics, traces) via ServiceDefaults to the Aspire dashboard |
-| Testing | MSTest SDK on Microsoft.Testing.Platform, Playwright E2E |
+| Testing | MSTest SDK on Microsoft.Testing.Platform, Playwright E2E (against the AppHost, and against the Docker Compose test stack with scenario data) |
 
 ## 4. Solution layout
 
 ```text
 src/
-  eShop.AppHost/           Aspire orchestration (resources, references, AI, YARP routes)
+  eShop.AppHost/           Aspire orchestration (resources, references, AI, YARP routes, TestStack compose mode)
   eShop.ServiceDefaults/   OTel, health checks, service discovery, resilience, auth, OpenAPI
   Identity.API/            Duende IdentityServer + ASP.NET Identity (identitydb)
   Catalog.API/             Catalog CRUD, semantic search, stock handling (catalogdb + pgvector)
@@ -151,6 +151,11 @@ src/
   EventBusRabbitMQ/        RabbitMQ implementation
   IntegrationEventLogEF/   Outbox table + service
   Shared/                  Shared source files (e.g. migration helpers)
-tests/                     Unit + functional tests per service, AppHost tests
-e2e/                       Playwright browser tests
+tests/                     Unit + functional tests per service, AppHost tests; tests/plans/ holds QE test plans
+e2e/                       Playwright browser tests; e2e/teststack/ runs against the test stack
+testing/                   Docker Compose test stack (testing/teststack) and scenario data
+architecture-policy/       Architecture Policy Pack (rules, hooks, arch-review agent)
+scripts/                   AI development pipeline, board, QE, PR check, graphify and LSP tooling
 ```
+
+The repository also contains an AI development pipeline (implementation, architecture review, QE and PR check agents) that delivers stories into this codebase. It is documented separately in [docs/ai-pipeline](../ai-pipeline/README.md).
