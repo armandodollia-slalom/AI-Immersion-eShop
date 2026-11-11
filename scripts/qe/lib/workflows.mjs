@@ -264,8 +264,10 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
 
   for (const [file] of tests) {
     if (!file.endsWith('.cs')) continue;
+    const text = readRel(config, file);
+    if (!hasTests(text)) continue; // helpers and fixtures may mention a case id without holding tests
     const framework = testFramework(config, projectOf(file));
-    if (!storyTag(framework, story.key).test(readRel(config, file))) {
+    if (!storyTag(framework, story.key).test(text)) {
       errors.push(`${file}: tag the story's tests with ${storyTagText(framework, story.key)} so they can be filtered (${projectOf(file)} uses ${framework}).`);
     }
   }
@@ -363,6 +365,8 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const storyTag = (framework, key) => framework === 'mstest'
   ? new RegExp(`TestCategory\\(\\s*"${escapeRe(key)}"\\s*\\)`)
   : new RegExp(`Trait\\(\\s*"Story"\\s*,\\s*"${escapeRe(key)}"\\s*\\)`);
+// A C# file holds tests when it has an xUnit or MSTest test attribute.
+export const hasTests = (text) => /\[\s*(Fact|Theory|TestMethod|DataTestMethod)\b/.test(text);
 const storyTagText = (framework, key) => (framework === 'mstest' ? `[TestCategory("${key}")]` : `[Trait("Story", "${key}")]`);
 
 // precheck.dotnet is either one command for every project or one per framework ({ xunit, mstest }).
