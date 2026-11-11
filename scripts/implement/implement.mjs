@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Implement stage of the AI pipeline: implements every story in a folder headlessly, one worktree and
 // branch per story, driving the implementer through the review and QE stages. See docs/ai-pipeline/implement.md.
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,11 +15,12 @@ import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, 
 import { collectStories } from './lib/batch.mjs';
 import { DECISIONS_FILE, OUTCOMES_FILE, PR_CHECKS_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
 import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
-import { boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
-import { epicBranchFor, epicToJoin, formatEpicStatus, listEpicRuns, runEpic } from './lib/epic.mjs';
+import { board, boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
+import { epicBranchFor, epicToJoin, formatEpicStatus, listEpicRuns, loadEpicRun, runEpic } from './lib/epic.mjs';
 import { GROUPINGS, deliveryShape } from './lib/epic-plan.mjs';
-import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
+import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir, startResolvedReruns } from './lib/implement.mjs';
 import { parallelFor } from './lib/resources.mjs';
+import { requeue } from './lib/requeue.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
 
 setLogTag('implement');
@@ -44,6 +46,13 @@ const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
                                  kept, interrupted ones resume in their worktree, the rest run.
                                  --background (used by \`pipeline resume\`) starts it detached, and
                                  only if it was interrupted (and includes KEY, if given)
+  requeue [--requeue-only] [--dry-run] [--parallel N|auto] [--no-pr] [--base <ref>]
+                                 board sync, then run every ticket a human resolved on GitHub
+                                 (escalation-resolved, no needs-human) in one batch (tickets of an epic
+                                 run in progress join their delivery unit). No-op when nothing is
+                                 resolved, an implement run is active or interrupted here, or the agent
+                                 provider is out. --requeue-only moves the cards and starts nothing;
+                                 --dry-run prints the plan. Logs to .agent-state/logs/requeue-<time>.log.
   status [story]                 progress of the latest run, with each story's subtasks and each epic run
   cleanup [story...]             remove the subtask worktrees and branches a failed run left behind
                                  (all stories when none given); stops their language servers
@@ -80,6 +89,7 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
     syncBoard(config.root);
     const claims = claimStories(config.root, stories.filter((s) => !s.skip).map((s) => s.key), { force, takeover });
     for (const key of skipRefused(stories, claims)) log(`${key}: ${stories.find((s) => s.key === key).skip}; skipped.`);
+    startResolvedReruns(config, stories);
   }
   if (epicRun) {
     const { epic, only } = epicRun;
@@ -216,6 +226,9 @@ async function main() {
         return 1;
       }
       const parallel = parallelFor(config, flags.parallel ?? batch.parallel);
+      // Labels may have changed since (a human resolved a ticket on GitHub): refresh the cached tickets
+      // so plan() sees escalation-resolved.
+      for (const s of collectStories(inputs)) if (path.basename(s.file) === 'story.md') loadTicket(config, s.key, { update: true });
       // An epic run resumes from its epic state: the plan, foundation and merged stories are kept.
       let epicRun = null;
       if (batch.epic?.key) {
@@ -224,6 +237,37 @@ async function main() {
         epicRun = { epic: epicInfo(epic, batch.epic.key), tickets, only: batch.epic.only ?? null, grouping: batch.epic.grouping ?? null };
       }
       return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [], epicRun, delivery: batch.delivery ?? 'story' });
+    }
+
+    case 'requeue': {
+      const logFile = path.join(config.root, config.stateDir, 'logs', `requeue-${nowIso().replace(/[:.]/g, '-')}.log`);
+      const dryRun = Boolean(flags['dry-run']);
+      if (!dryRun) fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      const out = (m) => {
+        const line = `${nowIso()} ${m}`;
+        console.log(m);
+        if (!dryRun) fs.appendFileSync(logFile, `${line}\n`);
+      };
+      const r = await requeue(
+        config,
+        { requeueOnly: Boolean(flags['requeue-only']), dryRun, parallel: flags.parallel ?? 'auto', pr: !flags['no-pr'], base: typeof flags.base === 'string' ? flags.base : null },
+        {
+          log: out,
+          board: (args) => board(config.root, args),
+          ticketOf: (key) => loadTicket(config, key, { update: true }),
+          epicRunOf: (epic) => loadEpicRun(config, epic),
+          // Each batch is a normal `implement run`; its output goes to the requeue log.
+          runImplement: (args) =>
+            new Promise((resolve) => {
+              const fd = fs.openSync(logFile, 'a');
+              const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: config.root, stdio: ['ignore', fd, fd], env: process.env });
+              fs.closeSync(fd);
+              child.on('exit', (code) => resolve(code ?? 1));
+            }),
+        },
+      );
+      if (!dryRun && r.status !== 'nothing' && r.status !== 'skipped') console.log(`Log: ${path.relative(config.root, logFile)}`);
+      return r.exit;
     }
 
     case 'hook': {
