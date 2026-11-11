@@ -17,6 +17,7 @@
     "webhooks": { "base": 18085, "env": "WEBHOOKS_API_HOST_PORT" },
     "webhooksclient": { "base": 18086, "env": "WEBHOOKSCLIENT_HOST_PORT" },
     "mobileBff": { "base": 18087, "env": "MOBILE_BFF_HOST_PORT" },
+    "promotions": { "base": 18088, "env": "PROMOTIONS_API_HOST_PORT" },
     "dashboard": { "base": 18888, "env": "DASHBOARD_HOST_PORT" },
     "postgres": { "base": 18432, "env": "POSTGRES_HOST_PORT" },
     "redis": { "base": 18379, "env": "REDIS_HOST_PORT" },
@@ -30,6 +31,7 @@
     "order-processor": "src/OrderProcessor/OrderProcessor.csproj",
     "payment-processor": "src/PaymentProcessor/PaymentProcessor.csproj",
     "webhooks-api": "src/Webhooks.API/Webhooks.API.csproj",
+    "promotions-api": "src/Promotions.API/Promotions.API.csproj",
     "webhooksclient": "src/WebhookClient/WebhookClient.csproj",
     "webapp": "src/WebApp/WebApp.csproj"
   },
