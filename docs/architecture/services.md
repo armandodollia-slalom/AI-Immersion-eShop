@@ -87,7 +87,7 @@ Each section lists responsibilities, interfaces, data ownership, and notable des
 
 ## mobile-bff (YARP)
 
-- Declared in AppHost (`ConfigureMobileBffRoutes`). Routes `/catalog-api/...` (with exact `api-version` matching), `/api/orders/{*any}`, and `/identity/{*any}` to the respective services.
+- Declared in AppHost (`ConfigureMobileBffRoutes`). Routes `/catalog-api/...` (with exact `api-version` matching, prefix removed), a catch-all `/api/catalog/{*any}`, `/api/orders/{*any}`, and `/identity/{*any}` to the respective services.
 
 ## ClientApp / HybridApp
 

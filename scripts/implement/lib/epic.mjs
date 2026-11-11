@@ -15,6 +15,7 @@ import path from 'node:path';
 import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
+import { openPullRequest, prPublisher } from '../../pipeline/lib/bot.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
@@ -31,6 +32,8 @@ import { lspAdapter } from './lsp.mjs';
 import { waitForMemory } from './resources.mjs';
 import { agentSettings, createContext, runSelf } from './orchestrate.mjs';
 import { parsePlanOutput } from './plan.mjs';
+import { reviewGatePublish } from './post-publish.mjs';
+import { syncFromRemote } from './reopen.mjs';
 
 const QE_CLI = path.join(INSTALL_ROOT, 'scripts/qe/qe.mjs');
 const PR_CHECK_CLI = path.join(INSTALL_ROOT, 'scripts/pr-check/pr-check.mjs');
@@ -65,13 +68,16 @@ const SETTLED = new Set(['delivered', 'complete']);
 // The in-progress epic run a single ticket joins: its epic has a run state that is not delivered, the
 // ticket's unit (the epic branch, or its PR group's branch) still exists. Null with --standalone, for
 // tickets without an epic, or when no epic run is in progress. Returns { state, unit }.
-export function epicToJoin(config, tickets, { standalone = false } = {}) {
+// A reopened bug fix (`reopen`, review gate) also joins a delivered epic's PR group while the group's PR
+// is open (`prOpen(url)`), so the fix lands on the PR a person reviews.
+export function epicToJoin(config, tickets, { standalone = false, reopen = false, prOpen = () => false } = {}) {
   if (standalone || !tickets.length) return null;
   const epics = new Set(tickets.map((t) => t?.epic ?? null));
   if (epics.size !== 1 || epics.has(null)) return null;
   const state = loadEpicRun(config, [...epics][0]);
-  if (!state || SETTLED.has(state.status)) return null;
+  if (!state) return null;
   const unit = Object.values(state.units ?? {}).find((u) => tickets.every((t) => u.keys?.includes(t.key)));
+  if (SETTLED.has(state.status) && !(reopen && unit?.kind === 'group' && unit.pr && prOpen(unit.pr))) return null;
   if (!unit || !revExists(config.root, `refs/heads/${unit.branch}`)) return null;
   return { state, unit };
 }
@@ -268,12 +274,13 @@ export async function prCheckUnit(env, keys, { fix = false } = {}) {
   }
 }
 
-function openPr(env, { title, body }) {
+// A unit's PR (a bug-epic group or the feature epic), pushed and opened as the pipeline's PR bot
+// (dev-bot-<login>, lib/bot.mjs), or as the developer's gh login when the bot is not set up.
+export async function openPr(env, { title, body }, deps = {}) {
   const { worktree, branch, prBase } = env;
-  const push = git(worktree, ['push', '-u', 'origin', branch]);
-  if (push.status !== 0) return { url: null, reason: `push failed: ${tail(push.stderr, 300)}` };
-  const created = run('gh', ['pr', 'create', '--base', prBase.replace(/^origin\//, ''), '--head', branch, '--title', title, '--body', body], { cwd: worktree });
-  return created.status === 0 ? { url: created.stdout.trim() } : { url: null, reason: `gh pr create failed: ${tail(created.stderr, 300)}` };
+  const publisher = deps.publisher ?? (await prPublisher(env.wtConfig ?? env.config));
+  const opened = openPullRequest(publisher, { cwd: worktree, branch, base: prBase.replace(/^origin\//, ''), title, body }, { run: deps.run });
+  return opened.url ? { url: opened.url } : { url: null, reason: opened.reason };
 }
 
 export const defaultDeps = (config, log) => ({
@@ -286,6 +293,8 @@ export const defaultDeps = (config, log) => ({
   epicQe,
   prCheck: prCheckUnit,
   openPr,
+  // A published group PR goes through the review gate (assessment, then auto-merge or review).
+  reviewGate: (env, { pr, keys }) => reviewGatePublish(env.worktree, { pr, keys, base: env.prBase }),
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -455,9 +464,27 @@ async function deliverUnit(env, unit, units, epicWt) {
     return { outcome: 'blocked', results, reason: error.message };
   }
   const uenv = { ...env, unit, wtConfig, worktree: unit.worktree, branch: unit.branch, base: unitBase, prBase: unitBase, log, stories: env.stories.filter((s) => unit.keys.includes(s.key)) };
+  // A group whose PR is already open (a reopened bug fix joins it): take a person's commits on the PR first.
+  const openPr = only && !feature ? loadEpicRun(config, epic.key).units?.[unit.id]?.pr ?? null : null;
+  if (openPr && !syncFromRemote(unit.worktree, unit.branch, commitEnv)) log(`${unit.branch} could not be fast-forwarded to origin; continuing from the local branch`);
   saveUnit(config, epic.key, unit.id, { status: 'running', base: unitBase });
 
   const results = await runUnitStories(uenv, { parallel: feature ? env.parallel : 1, deferReview: !feature });
+  if (only && openPr && env.pr && !prsDisabled()) {
+    // The re-run fix goes onto the open group PR, its tickets back to Pending Review with it, and the
+    // PR through the review gate again.
+    const merged = results.filter((x) => DONE.has(x.outcome) && loadEpicRun(config, epic.key).stories?.[x.key]?.merged);
+    if (merged.length) {
+      // As the PR's author (the PR bot when it is set up).
+      const push = (await prPublisher(wtConfig)).push(unit.worktree, unit.branch, { upstream: false });
+      if (push.status !== 0) log(`push of ${unit.branch} failed: ${tail(push.stderr, 300)}`);
+      else {
+        for (const r of merged) reportStory(uenv, r, openPr);
+        await deps.reviewGate(uenv, { pr: openPr, keys: unit.keys });
+      }
+    }
+    saveUnit(config, epic.key, unit.id, { status: 'done' });
+  }
   if (only) return { outcome: 'joined', results };
   const state = loadEpicRun(config, epic.key);
   const open = results.filter((r) => !(DONE.has(r.outcome) && state.stories?.[r.key]?.merged) && !(r.outcome === 'skipped' && !/^blocker /.test(r.reason ?? '')));
@@ -511,7 +538,7 @@ async function deliverUnit(env, unit, units, epicWt) {
     return finish('done', { prBody: body });
   }
   const title = feature ? `Epic: ${(epic.title ?? epic.key).replace(/^Epic:\s*/i, '')}` : `Fix ${unit.keys.join(', ')}: ${unit.group.title}`;
-  const opened = deps.openPr(uenv, { title, body });
+  const opened = await deps.openPr(uenv, { title, body });
   if (!opened.url) {
     if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
     return finish('done', { reason: opened.reason });
@@ -521,6 +548,7 @@ async function deliverUnit(env, unit, units, epicWt) {
   } else {
     for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r, opened.url);
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch, '--group', unit.id, '--title', unit.group.title, '--tickets', unit.keys.join(',')]);
+    await deps.reviewGate(uenv, { pr: opened.url, keys: results.filter((x) => DONE.has(x.outcome)).map((x) => x.key) });
   }
   log(`PR: ${opened.url}`);
   return finish('done', { pr: opened.url });
@@ -543,7 +571,7 @@ function recordGroupOutcome(env, unit, results, pr, outcome) {
 async function runUnitStories(env, { parallel, deferReview }) {
   const { config, epic, branch, note, deps, log, inputs, force, script, noteFile, unit } = env;
   const mine = inputs.filter((p) => unit.keys.some((k) => p.split(path.sep).includes(k) || path.basename(p).startsWith(`${k}-`)));
-  const planned = planStories(config, mine, { base: branch, force }).filter((s) => !env.only || env.only.includes(s.key));
+  const planned = planStories(config, mine, { base: branch, force, placeReopenedRuns: false }).filter((s) => !env.only || env.only.includes(s.key));
   const state = loadEpicRun(config, epic.key);
   const byKey = new Map(planned.map((s) => [s.key, s]));
   for (const s of planned) {
@@ -552,6 +580,10 @@ async function runUnitStories(env, { parallel, deferReview }) {
     else if (s.doneBefore) Object.assign(s, { skip: null, mergeOnly: true });
   }
   const sdeps = epicDeps(planned, note);
+  // A blocker that is already implemented (and so skipped) is on the base branch, like in story
+  // delivery: its dependents don't wait for it to be merged into the epic branch.
+  const delivered = new Set(planned.filter((s) => s.implemented && !force).map((s) => s.key));
+  for (const [k, ds] of sdeps) sdeps.set(k, ds.filter((d) => !delivered.has(d)));
   const owns = new Map((note?.stories ?? []).map((s) => [s.key, s.owns]));
   const outcome = new Map();
   const pending = new Set();

@@ -25,7 +25,7 @@ export function memoryInfo({ exec = (cmd, args) => run(cmd, args, { timeoutSec: 
     if (vm.status === 0) free = Math.min(totalmem, free + reclaimableBytes(vm.stdout));
   }
   let dockerGb = null;
-  const d = exec('docker', ['info', '--format', '{{.MemTotal}}']);
+  const d = exec(process.env.TESTSTACK_DOCKER || 'docker', ['info', '--format', '{{.MemTotal}}']);
   if (d.status === 0 && /^\d+$/.test(d.stdout.trim())) dockerGb = Math.round((Number(d.stdout.trim()) / GB) * 10) / 10;
   return { totalGb: Math.round((totalmem / GB) * 10) / 10, freeGb: Math.round((free / GB) * 10) / 10, dockerGb };
 }

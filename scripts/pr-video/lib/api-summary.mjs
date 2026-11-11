@@ -91,7 +91,14 @@ function changedLines(root, mergeBase, file) {
 }
 
 function mergeBaseOf(root, base) {
-  return git(root, ['merge-base', base, 'HEAD'], { allowFail: false }).stdout.trim();
+  const result = git(root, ['merge-base', base, 'HEAD']);
+  if (result.status === 0) return result.stdout.trim();
+  // Say why, so a CI failure can be diagnosed from the log.
+  const info = (args) => git(root, args).stdout.trim() || '?';
+  throw new Error([
+    `git merge-base ${base} HEAD failed (${result.status}): ${result.stderr.trim() || 'no output'}`,
+    `HEAD=${info(['rev-parse', 'HEAD'])} ${base}=${info(['rev-parse', '--verify', '--quiet', base])} shallow=${info(['rev-parse', '--is-shallow-repository'])} ${info(['--version'])}`,
+  ].join('\n'));
 }
 
 function changedFiles(root, mergeBase) {

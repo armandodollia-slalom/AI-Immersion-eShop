@@ -1,7 +1,7 @@
 // lspd: one daemon per checkout. It runs lsp-mcp-server as a child (which starts the language servers lazily and
 // stops idle ones), serves any number of MCP sessions and control requests over a unix socket, and holds the
 // machine-wide lease for the checkout's C# server.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -10,8 +10,10 @@ import {
   connect,
   daemonPaths,
   loadConfig,
+  protectSocket,
   readJson,
   releaseLease,
+  removeSocket,
   resolveNodeModule,
   serverForFile,
   stateDir,
@@ -31,6 +33,24 @@ const INSTRUCTIONS = [
   'When a C# call answers "C# language server unavailable", do not retry in a loop: use graphify and grep instead.',
 ].join(' ');
 
+// Windows cannot exec server.sh directly, so it runs through Git for Windows' bash. That bash is located from
+// git itself: a bare `bash` on PATH may be WSL's (System32/WindowsApps), which runs in Linux and cannot start
+// the Windows dotnet and node.
+let cachedGitBash;
+export function gitBash() {
+  if (cachedGitBash !== undefined) return cachedGitBash;
+  cachedGitBash = 'bash';
+  try {
+    const exec = spawnSync('git', ['--exec-path'], { encoding: 'utf8', windowsHide: true }).stdout?.trim();
+    // <Git>/mingw64/libexec/git-core (or <Git>/mingw32/...) -> <Git>/bin/bash.exe
+    const candidate = exec && path.resolve(exec, '..', '..', '..', 'bin', 'bash.exe');
+    if (candidate && fs.existsSync(candidate)) cachedGitBash = candidate;
+  } catch {
+    // git missing: fall back to bash on PATH
+  }
+  return cachedGitBash;
+}
+
 export function lspMcpConfig(config, worktree) {
   return {
     requestTimeout: (config.callTimeoutSec ?? 60) * 1000,
@@ -41,8 +61,9 @@ export function lspMcpConfig(config, worktree) {
       id: s.id,
       extensions: s.extensions,
       languageIds: s.languageIds,
-      command: s.command ?? path.join(worktree, 'scripts/lsp/server.sh'),
-      args: s.args ?? [s.id],
+      ...(s.command || process.platform !== 'win32'
+        ? { command: s.command ?? path.join(worktree, 'scripts/lsp/server.sh'), args: s.args ?? [s.id] }
+        : { command: gitBash(), args: [path.join(worktree, 'scripts/lsp/server.sh').replace(/\\/g, '/'), ...(s.args ?? [s.id])] }),
       rootPatterns: ['.git'],
     })),
   };
@@ -58,14 +79,12 @@ export async function serve({ worktree, slnf }) {
   fs.mkdirSync(paths.dir, { recursive: true });
 
   // Another daemon already serving this checkout: nothing to do.
-  if (fs.existsSync(paths.socket)) {
-    try {
-      (await connect(paths.socket, 1000)).destroy();
-      log(`another daemon already serves ${worktree}`);
-      return 0;
-    } catch {
-      fs.rmSync(paths.socket, { force: true });
-    }
+  try {
+    (await connect(paths.socket, 1000)).destroy();
+    log(`another daemon already serves ${worktree}`);
+    return 0;
+  } catch {
+    removeSocket(paths.socket);
   }
 
   const entry = resolveNodeModule(worktree, 'lsp-mcp-server/dist/index.js');
@@ -84,6 +103,7 @@ export async function serve({ worktree, slnf }) {
       LSP_LOG_LEVEL: process.env.LSP_LOG_LEVEL ?? 'warn',
     },
     stdio: ['pipe', 'pipe', 'inherit'],
+    windowsHide: true,
   });
   let nextId = 1;
   const pending = new Map();
@@ -183,7 +203,7 @@ export async function serve({ worktree, slnf }) {
     csharp = { status: 'running', reason: null, startedAt: Date.now(), restoring: true };
     log(`restoring NuGet packages for ${missing.length} project(s) before starting C#`);
     const out = fs.openSync(path.join(sdir, 'restore.log'), 'w');
-    const restore = spawn('dotnet', ['restore', restoreTarget], { cwd: worktree, stdio: ['ignore', out, out], env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' } });
+    const restore = spawn('dotnet', ['restore', restoreTarget], { cwd: worktree, stdio: ['ignore', out, out], env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' }, windowsHide: true });
     fs.closeSync(out);
     restore.on('error', (error) => {
       log(`dotnet restore failed to start: ${error.message}`);
@@ -481,7 +501,7 @@ export async function serve({ worktree, slnf }) {
       resolve();
     });
   });
-  fs.chmodSync(paths.socket, 0o600);
+  protectSocket(paths.socket);
   writeJsonAtomic(paths.pidFile, { pid: process.pid, worktree, socket: paths.socket, stateDir: sdir, solution, startedAt });
   log(`serving ${worktree} on ${paths.socket} (pid ${process.pid})`);
 
@@ -499,7 +519,7 @@ export async function serve({ worktree, slnf }) {
   function cleanupFiles() {
     if (readJson(paths.pidFile)?.pid === process.pid) {
       fs.rmSync(paths.pidFile, { force: true });
-      fs.rmSync(paths.socket, { force: true });
+      removeSocket(paths.socket);
     }
     releaseLease(lease);
     lease = null;
