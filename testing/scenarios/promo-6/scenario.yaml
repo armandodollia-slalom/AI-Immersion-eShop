@@ -1,0 +1,8 @@
+description: >
+  PROMO-6 storefront promotion display. Same data as promo-2: default catalog plus seven promotions in promotionsdb
+  (1 Fall Hiking Sale 20% off type 3, priority 10; 2 Buy 2 Get 1 Free on product 40, priority 6; 3 AmountOffOrder
+  $10 off over $150 on All, priority 8; 4 coupon-only 10% off All, priority 5; 5 Draft 5% off All, priority 3 (published
+  by TC-PROMO-6-14); 6 ended yesterday; 7 starts tomorrow). The start events of promotions 1-4 are recorded as sent, so the
+  lifecycle worker emits no events for the seed rows and the WebApp's cache is cleared only by the events a case causes.
+  Users alice (admin) and bob come from default.
+extends: promo-2
