@@ -4,7 +4,7 @@ Give the pipeline story keys (or an epic) from the [board](board.md) and it impl
 
 ```bash
 node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --dry-run
-node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4                   # one story at a time
+node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4                   # as many at once as resources allow (--parallel auto)
 node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4 --parallel 3 --pr
 node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, fetched from its issue
 node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --pr   # every story of the epic (its sub-issues)

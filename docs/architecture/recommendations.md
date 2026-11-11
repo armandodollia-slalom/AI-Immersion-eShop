@@ -48,7 +48,7 @@ Suggestions for what to change or add, grounded in the current code. Each item c
 
 ### 5. Stock reservation and validation
 
-- **Evidence:** `OrderStatusChangedToAwaitingValidationIntegrationEventHandler` only *checks* `AvailableStock >= Units`; stock is decremented much later on `Paid`. Concurrent orders can all pass validation and oversell. Products not found (`Find` returns null) are skipped, so an order with a deleted product is confirmed.
+- **Evidence:** Catalog's `OrderStatusChangedToAwaitingValidationIntegrationEventHandler` only *checks* `AvailableStock >= Units`; stock is decremented much later on `Paid`. Concurrent orders can all pass validation and oversell. Products not found (`Find` returns null) are skipped, so an order with a deleted product is confirmed.
 - **Do:** reserve stock at validation (decrement or a `ReservedStock` column) with optimistic concurrency (`xmin` row version), release on `Cancelled`/payment failure, and treat missing products as rejected.
 
 ## P1 - Production readiness
@@ -80,8 +80,8 @@ Suggestions for what to change or add, grounded in the current code. Each item c
 
 ### 11. Testing gaps
 
-- **Evidence:** no tests for PaymentProcessor, OrderProcessor, Identity.API, `EventBusRabbitMQ`, or `IntegrationEventLogEF`; Webhooks and Basket functional suites have 2 tests each.
-- **Do:** add an Aspire-based integration test (`DistributedApplicationTestingBuilder`) that drives a full checkout and asserts the order reaches `Paid`; add compensating-path tests (stock rejected, payment failed); add event contract tests; add load tests (k6/Azure Load Testing) for catalog and checkout.
+- **Evidence:** no unit or functional tests for PaymentProcessor, OrderProcessor, Identity.API, `EventBusRabbitMQ`, or `IntegrationEventLogEF`; Webhooks and Basket functional suites have 2 tests each. The teststack specs (`e2e/teststack/`) now drive the full checkout saga end to end (`order-lifecycle`, `ordering-pipeline`: orders reach `Paid`, stock rejection cancels), but compensating paths for payment failure, contract tests and load tests are still missing.
+- **Do:** add compensating-path tests for payment failure; add event contract tests; add load tests (k6/Azure Load Testing) for catalog and checkout. Consider an in-process Aspire integration test (`DistributedApplicationTestingBuilder`) for faster saga feedback than the Docker test stack.
 
 ### 12. Business observability
 
