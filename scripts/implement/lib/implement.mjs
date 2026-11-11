@@ -114,6 +114,16 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
   return stories;
 }
 
+// A story the batch never ran (skipped because a blocker failed, in epic delivery) has no run record of
+// its own, so `board fail` would describe it as "no result" and, with no finish time, post a new failure
+// comment on every run. Its outcome is recorded, keeping the first time it ended that way.
+export function recordUnrun(config, r) {
+  const prev = loadRun(config, r.key);
+  if (prev && prev.outcome && prev.outcome !== 'skipped') return;
+  if (prev?.outcome === r.outcome && prev?.reason === (r.reason ?? null) && prev?.finishedAt) return;
+  saveRun(config, r.key, { outcome: r.outcome, reason: r.reason ?? null, status: 'finished', finishedAt: nowIso() });
+}
+
 export function describePlan(stories) {
   return stories
     .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}${s.resume ? '  (resume)' : ''}${s.resolved ? '  (re-run with human decisions)' : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)

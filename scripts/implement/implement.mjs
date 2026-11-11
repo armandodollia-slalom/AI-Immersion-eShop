@@ -19,7 +19,7 @@ import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
 import { board, boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
 import { epicBranchFor, epicToJoin, formatEpicStatus, listEpicRuns, loadEpicRun, runEpic } from './lib/epic.mjs';
 import { GROUPINGS, deliveryShape } from './lib/epic-plan.mjs';
-import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir, startResolvedReruns } from './lib/implement.mjs';
+import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, recordUnrun, runBatch, runsDir, startResolvedReruns } from './lib/implement.mjs';
 import { parallelFor } from './lib/resources.mjs';
 import { requeue } from './lib/requeue.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
@@ -127,7 +127,10 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
   // Every story that did not finish goes to Failed with its outcome, reason and findings.
   // (Epic delivery has no PR per story, so a done story is never failed for a missing PR.)
-  for (const r of failedResults(results, { pr: pr && !epicRun })) boardEvent(config.root, r.key, ['fail', r.key]);
+  for (const r of failedResults(results, { pr: pr && !epicRun })) {
+    recordUnrun(config, r);
+    boardEvent(config.root, r.key, ['fail', r.key]);
+  }
   console.log(`\n${formatSummary(results)}`);
   if (epicSummary) console.log(`\n${epicSummary.key}: ${epicSummary.outcome}${epicSummary.prs?.length ? `  ${epicSummary.prs.join(' ')}` : ''}${epicSummary.reason ? `\n           ${epicSummary.reason}` : ''}`);
   const storiesOk = results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done');

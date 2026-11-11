@@ -203,7 +203,10 @@ export const RESOLVED_LINE = "- [ ] **Resolved**: I've answered the questions; r
 export function renderEscalationComment(config, { key, result = {}, questions = [], notes = [], round = 1, host, mechanical = false, questionsError = null, maxNoteChars = DEFAULTS.noteChars }) {
   const blocked = config.board.blockedLabel;
   const lines = [`The pipeline stopped: **${result.outcome ?? 'no result'}**${result.reason ? ` (${result.reason})` : ''}.${round > 1 ? ` (Round ${round}; earlier answers are under **Decisions** in the issue body.)` : ''}`, ''];
-  if (questions.length) lines.push(`I need ${questions.length} decision${questions.length > 1 ? 's' : ''} from you. Tick one answer per question; for **Other**, reply in a new comment that starts with \`Qn:\` (for example \`Q1: ...\`).`, '');
+  // A ticket skipped because a blocker failed did not run at all: its blocker holds the decision.
+  const blocker = result.outcome === 'skipped' ? /^blocker (\S+)/.exec(result.reason ?? '')?.[1] ?? null : null;
+  if (blocker) lines.push(`This ticket did not run: its blocker **${blocker}** did not finish. There is nothing to decide here. Resolve ${blocker} first, then tick **Resolved** to re-queue this ticket with it.`, '');
+  else if (questions.length) lines.push(`I need ${questions.length} decision${questions.length > 1 ? 's' : ''} from you. Tick one answer per question; for **Other**, reply in a new comment that starts with \`Qn:\` (for example \`Q1: ...\`).`, '');
   else if (mechanical) lines.push('This looks like a mechanical failure (crash, timeout or agent outage): there is nothing to decide. Fix the cause if there is one, then tick **Resolved** to re-queue the ticket.', '');
   else if (questionsError) lines.push(`I could not prepare questions (${questionsError}). Read the details, fix or decide what is needed (write it in a comment), then tick **Resolved** to re-queue the ticket.`, '');
   else lines.push('No decision is needed from you. Read the details, fix what is needed, then tick **Resolved** to re-queue the ticket.', '');

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { blockersOf, collectStories, orderStories, worktreeFor } from '../lib/batch.mjs';
 import { implChanges } from '../../pipeline/lib/git.mjs';
-import { approvedOnDisk, plan, skippedOutcome } from '../lib/implement.mjs';
+import { approvedOnDisk, loadRun, plan, recordUnrun, skippedOutcome } from '../lib/implement.mjs';
 
 function storiesDir(stories) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-unit-'));
@@ -169,5 +169,22 @@ test('a ticket labeled escalation-resolved runs again despite its standing qe es
   assert.equal(by['B-1'].skip, null, 'the resolved label bypasses the standing escalation');
   assert.equal(by['B-1'].resume, false, 'it starts fresh, as with --force');
   assert.match(by['B-2'].skip, /qe-escalated in a previous run: its escalation waits for a human/, 'without the label it still waits');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('recordUnrun: a ticket the batch never ran gets its outcome recorded once, so its failure is not posted again', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-unrun-'));
+  const config = { root: dir, stateDir: '.agent-state' };
+  fs.mkdirSync(path.join(dir, '.agent-state', 'implement'), { recursive: true });
+  const skipped = { key: 'B-2', outcome: 'skipped', reason: 'blocker B-1 ended qe-escalated' };
+  recordUnrun(config, skipped);
+  const first = loadRun(config, 'B-2');
+  assert.deepEqual([first.outcome, first.reason, first.status], ['skipped', 'blocker B-1 ended qe-escalated', 'finished']);
+  recordUnrun(config, skipped);
+  assert.equal(loadRun(config, 'B-2').finishedAt, first.finishedAt, 'the same outcome keeps its finish time (a replay, not a new failure)');
+  // A story that ran keeps its own record (a done worker whose merge failed stays merge-only).
+  fs.writeFileSync(path.join(dir, '.agent-state', 'implement', 'B-3.json'), JSON.stringify({ key: 'B-3', outcome: 'done', status: 'finished' }));
+  recordUnrun(config, { key: 'B-3', outcome: 'merge-conflict', reason: 'x' });
+  assert.equal(loadRun(config, 'B-3').outcome, 'done');
   fs.rmSync(dir, { recursive: true, force: true });
 });

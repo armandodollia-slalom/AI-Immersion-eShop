@@ -148,6 +148,10 @@ test('the failure comment: summary, questions as task lists, details collapsed, 
   assert.match(mech, /mechanical failure/);
   assert.match(mech, /- \[ \] \*\*Resolved\*\*/);
   assert.deepEqual(parseEscalationMarker(mech).questions, []);
+  // A ticket skipped for a failed blocker names the blocker instead of claiming a crash.
+  const blocked = renderEscalationComment(baseConfig, { key: 'BUG-2', result: { outcome: 'skipped', reason: 'blocker BUG-1 ended qe-escalated' }, mechanical: true });
+  assert.match(blocked, /its blocker \*\*BUG-1\*\* did not finish/);
+  assert.doesNotMatch(blocked, /mechanical failure/);
   assert.match(renderEscalationComment(baseConfig, { key: 'BUG-1', result, questionsError: 'the agent timed out' }), /I could not prepare questions \(the agent timed out\)/);
   assert.equal(nextRound([{ body: 'x' }, { body: body }]), 2);
   assert.match(renderEscalationComment(baseConfig, { key: 'BUG-1', result, round: 2 }), /Round 2; earlier answers are under \*\*Decisions\*\*/);
