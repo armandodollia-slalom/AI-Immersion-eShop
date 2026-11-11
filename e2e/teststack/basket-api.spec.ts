@@ -46,7 +46,8 @@ test.describe('basket-edge scenario: Basket gRPC API', () => {
 
   test('a token with a tampered signature cannot update a basket', async () => {
     const [header, payload] = aliceToken.split('.');
-    const forged = `${header}.${payload}.${Buffer.from('forged-signature').toString('base64url')}`;
+    // base64url of 'forged-signature'
+    const forged = `${header}.${payload}.Zm9yZ2VkLXNpZ25hdHVyZQ`;
     const res = await basketCall('UpdateBasket', encodeItems([{ productId: 7, quantity: 1 }]), forged);
     expect(res.grpcStatus).toBe(UNAUTHENTICATED);
     expect(redisBasket(USER_IDS.alice)).toBeNull();
