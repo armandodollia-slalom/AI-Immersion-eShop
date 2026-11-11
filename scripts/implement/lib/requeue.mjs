@@ -1,5 +1,7 @@
 // `pipeline implement requeue`: picks up the Failed tickets a human resolved on GitHub (labeled
-// escalation-resolved, no needs-human; see docs/ai-pipeline/escalations.md) and runs them in one batch.
+// escalation-resolved, no needs-human; see docs/ai-pipeline/escalations.md) and runs them in one batch,
+// and the bug fixes a person reopened after the review gate assessed them (`reopened`, listed by
+// `board sync`; see docs/ai-pipeline/review-gate.md), each with --force so its earlier run is redone.
 // Safe on a timer (scripts/implement/requeue-schedule.mjs): it does nothing when nothing is resolved,
 // when another implement batch is active or was interrupted on this machine, or during an agent provider
 // outage. Re-queueing goes through `board sync` (Failed -> Ready), so GitHub Actions never need a project token.
@@ -88,15 +90,18 @@ export async function requeue(config, { requeueOnly = false, dryRun = false, par
     const r = deps.board(dryRun ? ['resolved', '--json'] : ['sync', '--json']);
     const listed = r.status === 0 ? jsonLine(r.stdout) : null;
     if (r.status !== 0) log(`board ${dryRun ? 'resolved' : 'sync'} failed: ${String(r.stderr ?? r.stdout).trim().split('\n').at(-1)}`);
-    const keys = [...new Set(listed?.resolved ?? [])];
+    const resolvedKeys = [...new Set(listed?.resolved ?? [])];
+    const reopenedKeys = [...new Set(listed?.reopened ?? [])].filter((k) => !resolvedKeys.includes(k));
+    const keys = [...resolvedKeys, ...reopenedKeys];
     if (listed?.requeued?.length) log(`Moved to Ready: ${listed.requeued.join(', ')}.`);
     if (!keys.length) {
-      log('Nothing to requeue: no ticket is labeled escalation-resolved without needs-human.');
+      log('Nothing to requeue: no ticket is labeled escalation-resolved without needs-human, and no bug fix was reopened.');
       return finish({ status: 'nothing', keys: [], batches: [], exit: 0 });
     }
-    const batches = batchesFor(keys, deps);
-    const args = (b) => ['run', ...b.keys, '--parallel', String(parallel), ...(pr ? ['--pr'] : []), ...(base ? ['--base', base] : [])];
-    log(`Resolved by a human: ${keys.join(', ')}.`);
+    const batches = [...batchesFor(resolvedKeys, deps), ...batchesFor(reopenedKeys, deps).map((b) => ({ ...b, reopened: true }))];
+    const args = (b) => ['run', ...b.keys, '--parallel', String(parallel), ...(pr ? ['--pr'] : []), ...(base ? ['--base', base] : []), ...(b.reopened ? ['--force'] : [])];
+    if (resolvedKeys.length) log(`Resolved by a human: ${resolvedKeys.join(', ')}.`);
+    if (reopenedKeys.length) log(`Reopened by a human after the review gate: ${reopenedKeys.join(', ')}.`);
     for (const b of batches) log(`${dryRun || requeueOnly ? 'Would run' : 'Running'}: implement ${args(b).join(' ')}${b.epic ? `  (joins ${b.epic}${b.unit ? `, group ${b.unit}` : ''})` : ''}`);
     if (dryRun) return { status: 'dry-run', keys, batches, exit: 0 };
     if (requeueOnly) return finish({ status: 'requeued', keys, batches, exit: 0 });

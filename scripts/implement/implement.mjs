@@ -23,6 +23,7 @@ import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadR
 import { parallelFor } from './lib/resources.mjs';
 import { requeue } from './lib/requeue.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
+import { isReopened, prIsOpen } from './lib/reopen.mjs';
 
 setLogTag('implement');
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -213,7 +214,9 @@ async function main() {
       // A single ticket (or a few) of an epic whose epic run is in progress joins that epic's branch
       // (or its PR group's branch) instead of getting a branch and PR of its own, unless --standalone.
       if (!epicRun && delivery === 'epic' && given.length === positional.length) {
-        const join = epicToJoin(config, given, { standalone: Boolean(flags.standalone) });
+        // A reopened bug fix of a delivered bug epic joins its PR group again while that PR is open.
+        const reopen = given.some((t) => isReopened(config, t));
+        const join = epicToJoin(config, given, { standalone: Boolean(flags.standalone), reopen, prOpen: (url) => prIsOpen(config, url) });
         if (join) {
           const epic = loadTicket(config, join.state.epic, { fetch: false });
           if (epic) epicDir = config.abs(epic.dir);
@@ -305,6 +308,7 @@ async function main() {
         epicBranch: typeof flags['epic-branch'] === 'string' ? flags['epic-branch'] : null,
         pr: Boolean(flags.pr),
         resume: Boolean(flags.resume),
+        fromRemote: Boolean(flags['from-remote']),
       }).catch((error) => ({ key, outcome: 'error', reason: error.message }));
       writeJson(flags.result, result);
       return 0;

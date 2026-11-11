@@ -183,15 +183,17 @@ export function removeLabel(config, number, label) {
   gh(['issue', 'edit', String(number), '-R', config.board.repo, '--remove-label', label]);
 }
 
-// Every issue card on the board, with its column and assignees.
+// Every issue card on the board, with its column, assignees and the review gate's Severity field (set
+// on triaged bug tickets).
 export function listItems(config) {
   const { owner, ownerType, projectNumber, statusField } = config.board;
+  const severityField = config.board.fields?.severity ?? 'Severity';
   const items = [];
   let after = null;
   for (;;) {
     const data = graphql(
-      `query($owner:String!,$number:Int!,$field:String!,$after:String){${ownerType}(login:$owner){projectV2(number:$number){items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValueByName(name:$field){... on ProjectV2ItemFieldSingleSelectValue{name}}content{... on Issue{number title url state repository{nameWithOwner}assignees(first:20){nodes{login}}labels(first:30){nodes{name}}parent{number}}}}}}}}`,
-      { owner, number: projectNumber, field: statusField, after },
+      `query($owner:String!,$number:Int!,$field:String!,$severity:String!,$after:String){${ownerType}(login:$owner){projectV2(number:$number){items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValueByName(name:$field){... on ProjectV2ItemFieldSingleSelectValue{name}}severity:fieldValueByName(name:$severity){... on ProjectV2ItemFieldSingleSelectValue{name}}content{... on Issue{number title url state stateReason repository{nameWithOwner}assignees(first:20){nodes{login}}labels(first:30){nodes{name}}parent{number}}}}}}}}`,
+      { owner, number: projectNumber, field: statusField, severity: severityField, after },
     );
     const page = data[ownerType].projectV2.items;
     for (const n of page.nodes) {
@@ -209,6 +211,8 @@ export function listItems(config) {
         assignees: n.content.assignees.nodes.map((a) => a.login),
         labels: n.content.labels.nodes.map((l) => l.name),
         parent: n.content.parent?.number ?? null,
+        stateReason: n.content.stateReason ?? null,
+        severity: n.severity?.name ?? null,
       });
     }
     if (!page.pageInfo.hasNextPage) return items;

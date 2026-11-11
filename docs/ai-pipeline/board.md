@@ -14,6 +14,8 @@ flowchart LR
   Q -->|QE finds a product bug| P
   Q -->|tests verified, PR opened| R[Pending Review<br/>PR + evidence]
   R -->|PR merged: Closes #issue<br/>board sync| D[Done]
+  R -.->|bug fix sent back by a person:<br/>review gate, board sync| P
+  D -.->|bug fix reopened:<br/>review gate, board sync| P
   P -.->|pipeline stops| F[Failed<br/>needs-human, reason in a comment]
   Q -.->|pipeline stops| F
   F -.->|you answer the questions and tick Resolved:<br/>escalation-resolved, board sync| T
@@ -27,9 +29,9 @@ flowchart LR
 | Ready | you, when a story is ready for implementation |
 | In Progress | the **claim** when `pipeline implement run` (or an interactive `pipeline start <KEY>`) begins the story, with a comment naming the user and machine; and the **product-bug** event when QE finds bugs in the implementation and the story goes back to the implementer, with a comment listing the bugs |
 | Testing | the **testing** event: the architecture review approved the code and QE started writing and verifying the automated tests (again after every bug fix) |
-| Pending Review | the **verified** event: the tests are verified and the PR is open (headless), or the line of work is done and verified (interactive, no PR). The issue gets the review notes and evidence; the epic gets the same links |
+| Pending Review | the **verified** event: the tests are verified and the PR is open (headless), or the line of work is done and verified (interactive, no PR). The issue gets the review notes and evidence; the epic gets the same links. A bug-fix PR is then [gated](review-gate.md): it auto-merges (Low risk, high confidence) or waits for a person's approval while the card stays here |
 | Failed | the **failed** event: any outcome of `pipeline implement run` other than done (`blocked`, `unresolved`, `plan-rejected`, `pair-exhausted`, `limit-*`, `qe-*`, a blocker that failed, a PR that could not be opened, ...). The card gets the `needs-human` label and a comment with the outcome, up to three questions for a human, the details (escalation notes, findings, branch, log) collapsed, and a **Resolved** checkbox ([escalations](escalations.md#questions-and-the-resolve-checkbox)) |
-| Done | `board sync`: closed story issues move to Done. The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
+| Done | `board sync`: closed story issues move to Done (also when the review gate auto-merged the PR). The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
 
 The board is informational: GitHub errors are logged and never block an agent or change a pipeline outcome.
 
@@ -45,6 +47,7 @@ Pipeline events move a card only along these transitions; any other event is ign
 | `verified` | the runner after it opens the PR (`board review`); the Stop hook | In Progress, Testing, Failed (a story that failed in an earlier run and is verified, or only merged, by a later one) | Pending Review |
 | `failed` | `implement run` for every story that did not finish (`board fail`) | no lane, Backlog, Ready, In Progress, Testing | Failed |
 | `closed` | `board sync` | any lane but Done | Done |
+| `reopened` | `board sync` (the [review gate](review-gate.md#human-reopens)), when a person reopened a triaged bug fix | Pending Review, Done, In Progress | In Progress |
 
 Testing goes back to In Progress only on a product bug. A claim of a card in Testing by the machine that holds it (a resumed run) leaves it in Testing.
 
@@ -80,6 +83,7 @@ node scripts/board/board.mjs mine                                               
 - Closed story issues move to Done, and their section on the epic's evidence comment shows Done.
 - Their late outcome is recorded for the [implement decision log](implement.md#decision-log): whether the PR merged, how many commits and lines humans added on the branch before merge, and which BUG-* stories name the story (`type: "late"` in `.agent-metrics/decision-outcomes.jsonl` of the checkout, left uncommitted). Only stories this machine implemented have a run record to compare with.
 - Failed story cards labeled `escalation-resolved` and not `needs-human` (a human answered the escalation questions) move to Ready. `--json` prints the keys moved (`requeued`) and every resolved ticket in Ready (`resolved`), which `implement requeue` runs.
+- The [review gate](review-gate.md)'s bookkeeping for bug-fix PRs: **human reopens** of triaged tickets (a card moved back to In Progress with no pipeline event behind it, a reopened issue, a "changes requested" review on a gated PR) are recorded (severity +1, `reopened` label, a `reopened` event, the reason under `## Decisions`), every open gated PR is evaluated again (a waiting PR auto-merges once its checks pass), and every closed gated PR gets a `pr-review` record for the [retro](review-gate.md#review-data-for-the-retro) (plus a `revert` record when its merge was reverted). `--json` lists the reopened tickets (`reopened`), which `implement requeue` re-runs ([human reopens](review-gate.md#human-reopens)).
 - Every epic card moves to the lane its stories call for.
 
 ## Pending Review evidence
@@ -244,7 +248,7 @@ gh auth refresh -s project                       # Projects need the project sco
 node scripts/board/board.mjs setup
 ```
 
-`setup` enables issues on the repo, creates the labels (`story`, `epic`, `spike`, `needs-human`, `escalation-resolved`, `frontend`, `backend`), creates and links the project (saving its number in `scripts/board/config.json`), sets the Status columns, sets up the views, and puts every card without a lane in Backlog. It never writes issue bodies: tickets are created by `board new` and `board migrate --apply`. It renames columns in place (Todo became Ready) and adds new ones without losing their cards. **Run `board setup` once after pulling the change that adds the Testing lane**: until then, moving a card to Testing is logged and skipped. Any repo collaborator can be assigned.
+`setup` enables issues on the repo, creates the labels (`story`, `epic`, `spike`, `needs-human`, `escalation-resolved`, `frontend`, `backend`), creates and links the project (saving its number in `scripts/board/config.json`), sets the Status columns, sets up the views, creates the [review gate](review-gate.md)'s triage fields (Impact, Complexity, Fix risk, Severity, Confidence, Human reopens; names in `board.fields`), and puts every card without a lane in Backlog. It never writes issue bodies: tickets are created by `board new` and `board migrate --apply`. It renames columns in place (Todo became Ready) and adds new ones without losing their cards. **Run `board setup` once after pulling the change that adds the Testing lane**: until then, moving a card to Testing is logged and skipped. Any repo collaborator can be assigned.
 
 The board is active only when `scripts/board/config.json` has a `projectNumber`, the checkout's `origin` is the configured repo (so test fixtures and forks never touch it), and `PIPELINE_BOARD` is not `0`. Everyone who runs the pipeline needs `gh` logged in with the `project` scope.
 
@@ -252,7 +256,9 @@ The board is active only when `scripts/board/config.json` has a `projectNumber`,
 
 | Label | Set by | Meaning |
 | --- | --- | --- |
-| `needs-human` | `board fail` | The pipeline could not finish the ticket; the latest comment has the questions and the Resolved box |
+| `needs-human` | `board fail`; the [review gate](review-gate.md) on a bug-fix PR | On an issue: the pipeline could not finish the ticket; the latest comment has the questions and the Resolved box. On a PR: the gate requires a person's approval |
+| `reopened` | `board sync` (the [review gate](review-gate.md#human-reopens)) | A person reopened a triaged bug fix; `implement requeue` re-runs it and removes the label when it starts (`board clear-reopened`). The reopen stays in the issue's `## Triage` |
+| `approvals:N`, `auto-merged` (PRs) | the [review gate](review-gate.md) | How many approvals a bug-fix PR needs (`review-quorum` enforces it); a PR the gate merged |
 | `escalation-resolved` | `board-escalation-resolve` workflow (or a human) | A human answered the questions; `board sync` moves the card from Failed to Ready, the next run re-runs it and removes the label when it claims the card |
 
 | Workflow | Trigger | What it does |
@@ -270,7 +276,7 @@ node scripts/board/board.mjs fetch <KEY>... | --epic <EPIC> | --all [--refresh] 
 node scripts/board/board.mjs new <file.md|-> [--type story|bug|epic|spike] [--key KEY] [--epic <epic-key>] [--mockups <dir>] [--dry-run]
 node scripts/board/board.mjs publish <KEY> [--force]       # the cached story back to its issue
 node scripts/board/board.mjs migrate [--apply|--verify [--allow-unplaced]|--delete-local [--dry-run]]
-node scripts/board/board.mjs sync [--json]                 # closed stories to Done, resolved Failed to Ready, late outcomes, epic lanes
+node scripts/board/board.mjs sync [--json]                 # closed stories to Done, resolved Failed to Ready, late outcomes, review gate (reopens, gated PRs), epic lanes
 node scripts/board/board.mjs resolved [--json]             # resolved tickets (escalation-resolved, no needs-human); moves nothing
 node scripts/board/board.mjs mine
 node scripts/board/board.mjs claim <KEY>... [--force] [--takeover]  # claim for this machine (implement run does this)
@@ -278,6 +284,7 @@ node scripts/board/board.mjs event <KEY> claim|testing|product-bug|verified|fail
 node scripts/board/board.mjs fail <KEY>                    # Failed + needs-human, questions and Resolved box from the run record
 node scripts/board/board.mjs resolve-check <issue> [--actor <login>] [--comment <id>] [--label]   # run by board-escalation-resolve
 node scripts/board/board.mjs clear-resolved <KEY>          # drop escalation-resolved (a re-run started; implement run does this)
+node scripts/board/board.mjs clear-reopened <KEY>          # drop reopened (a re-run of a reopened bug fix started; implement run does this)
 node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|testing|review|failed|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>] [--epic-branch <branch>]   # Pending Review + evidence
 node scripts/board/board.mjs epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]

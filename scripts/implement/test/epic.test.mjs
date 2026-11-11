@@ -101,6 +101,7 @@ function fakeDeps(note, extra = {}) {
   const prs = [];
   const agentCalls = [];
   const checks = [];
+  const gates = [];
   const deps = {
     runAgent: async (config, opts) => {
       agentCalls.push(opts);
@@ -116,9 +117,10 @@ function fakeDeps(note, extra = {}) {
       prs.push({ title, body, branch: env.branch, base: env.prBase, existing });
       return { url: existing ?? `https://github.com/example/repo/pull/${100 + prs.length}` };
     },
+    reviewGate: (env, { pr, keys }) => gates.push({ pr, keys, worktree: env.worktree, base: env.prBase }),
     ...extra,
   };
-  return { deps, board, prs, agentCalls, checks };
+  return { deps, board, prs, agentCalls, checks, gates };
 }
 
 const featureNote = {
@@ -253,6 +255,7 @@ test('feature epic: plan note reaches every story, stories merge into the epic b
   for (const k of ['DEMO-1', 'DEMO-2', 'DEMO-3']) assert.ok(f.board.some((b) => b[0] === k && b[1] === 'review' && b.includes('--epic-branch') && b.includes('epic/shop')), `${k} review`);
   assert.ok(f.board.some((b) => b[1] === 'epic-pr' && b[2] === '10' && b.includes('https://github.com/example/repo/pull/101')));
   assert.equal(loadEpicRun(env.config, 'epic-shop').status, 'delivered');
+  assert.deepEqual(f.gates, [], 'feature epic PRs are not gated');
 });
 
 test('feature epic: stories whose owns overlap never run at the same time', async () => {
@@ -317,12 +320,40 @@ test('bug epic: the orchestrator groups the bugs; each group gets its branch, it
   const cartUrl = `https://github.com/example/repo/pull/${101 + f.prs.indexOf(cart)}`;
   for (const k of ['BUG-1', 'BUG-2']) assert.ok(f.board.some((b) => b[0] === k && b[1] === 'review' && b.includes('--pr') && b.includes(cartUrl)), `${k} review with the group PR`);
   assert.equal(f.board.filter((b) => b[1] === 'epic-pr' && b.includes('--group')).length, 2);
+  // Every published group PR goes through the review gate, from its group worktree.
+  assert.deepEqual(f.gates.map((g) => [g.keys.join(','), g.pr === cartUrl, g.base]).sort(), [['BUG-1,BUG-2', true, 'main'], ['BUG-3', false, 'main']]);
   // Decision log and per-group outcomes in this checkout's metrics.
   const decisions = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl'));
   const grouping = decisions.find((d) => d.decision === 'pr-groups');
   assert.deepEqual(grouping.items.map((i) => i.id), ['cart', 'auth']);
   const outcomes = readJsonl(path.join(env.repo, '.agent-metrics/decision-outcomes.jsonl')).filter((o) => o.type === 'pr-group');
   assert.deepEqual(outcomes.map((o) => [o.groupId, o.verified, Boolean(o.pr), o.cost_usd]).sort(), [['auth', 1, true, 1.5], ['cart', 2, true, 3]]);
+});
+
+test('bug epic: a reopened ticket of a delivered group joins it again while its PR is open, pushes it and re-gates it', async () => {
+  const env = makeRepo({ bugs: true });
+  const origin = path.join(env.tmp, 'origin.git');
+  git(env.tmp, 'init', '-q', '--bare', origin);
+  git(env.repo, 'remote', 'add', 'origin', origin);
+  const note = { summary: 'one area', stories: [], prGroups: [{ id: 'cart', title: 'Cart', tickets: ['BUG-1', 'BUG-2', 'BUG-3'], reason: 'same area', risk: 'low' }] };
+  const f = fakeDeps(note, { startWorker: fakeWorker().startWorker, openPr: (e) => (git(e.worktree, 'push', '-q', 'origin', e.branch), { url: 'https://github.com/example/repo/pull/101' }) });
+  await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+  assert.equal(loadEpicRun(env.config, 'epic-shop').status, 'delivered');
+  const bug1 = env.tickets.find((t) => t.key === 'BUG-1');
+  assert.equal(epicToJoin(env.config, [bug1]), null, 'a delivered epic is not joined');
+  assert.equal(epicToJoin(env.config, [bug1], { reopen: true, prOpen: () => false }), null, 'its PR merged: a follow-up instead');
+  assert.equal(epicToJoin(env.config, [bug1], { reopen: true, prOpen: () => true }).unit.branch, 'bugfix/shop/cart');
+  git(env.repo, 'worktree', 'remove', '--force', path.join(env.tmp, 'shop-worktrees', 'bug-1'));
+  git(env.repo, 'branch', '-D', 'feat/bug-1');
+  const again = fakeWorker({ files: { 'BUG-1': 'src/BUG-1-reopen-fix.cs' } });
+  const f2 = fakeDeps(note, { startWorker: again.startWorker });
+  const j = await runEpic(env.config, { epic: env.epic, tickets: [bug1], inputs: [env.inputs[env.tickets.indexOf(bug1)]], base: 'main', only: ['BUG-1'], force: true, pr: true, deps: f2.deps, log: () => {} });
+  assert.equal(j.epic.outcome, 'joined');
+  assert.deepEqual(again.calls.map((c) => [c.key, c.base]), [['BUG-1', 'bugfix/shop/cart']]);
+  assert.equal(f2.prs.length, 0, 'the open group PR is reused');
+  assert.equal(git(env.repo, 'rev-parse', 'bugfix/shop/cart'), git(origin, 'rev-parse', 'bugfix/shop/cart'), 'the group branch was pushed');
+  assert.deepEqual(f2.gates, [{ pr: 'https://github.com/example/repo/pull/101', keys: ['BUG-1', 'BUG-2', 'BUG-3'], worktree: f2.gates[0].worktree, base: 'main' }]);
+  assert.ok(f2.board.some((b) => b[0] === 'BUG-1' && b[1] === 'review' && b.includes('https://github.com/example/repo/pull/101')));
 });
 
 test('bug epic: a grouping that stays invalid falls back to one PR per bug; a failed group skips the groups that depend on it', async () => {

@@ -28,6 +28,9 @@ export const TRANSITIONS = {
   verified: { from: ['inProgress', 'testing', 'failed'], to: 'review' },
   failed: { from: [null, 'backlog', 'ready', 'inProgress', 'testing'], to: 'failed' },
   closed: { from: [null, 'backlog', 'ready', 'inProgress', 'testing', 'review', 'failed'], to: 'done' },
+  // A person reopened a triaged bug fix (card moved back, issue reopened, changes requested on its PR):
+  // recorded by `board sync` (the review gate), so the next sync does not count it again.
+  reopened: { from: ['review', 'done', 'inProgress'], to: 'inProgress' },
 };
 export const EVENTS = Object.keys(TRANSITIONS);
 // Lanes in which a card belongs to the machine that claimed it.
@@ -135,7 +138,7 @@ export function applyEvent(config, key, event, { log = () => {} } = {}) {
   const from = item.column;
   const holder = ACTIVE.has(from) && remote.owner && remote.owner !== me ? remote.owner : null;
   if (event.type === 'claim' && holder && !event.takeover) return { status: 'refused', owner: holder, from, seq, issue };
-  if (event.type !== 'claim' && event.type !== 'closed' && holder) return { status: 'not-owner', owner: holder, from, seq, issue };
+  if (!['claim', 'closed', 'reopened'].includes(event.type) && holder) return { status: 'not-owner', owner: holder, from, seq, issue };
   // A machine re-running its own story keeps the card where it is (Testing is left only on a bug).
   const to = event.type === 'claim' && from === 'testing' && !event.force && !holder ? 'testing' : nextLane(from, event.type, { force: event.force || Boolean(event.takeover && holder) });
   if (!to) return { status: 'not-allowed', from, seq, issue };

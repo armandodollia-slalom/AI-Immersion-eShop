@@ -97,6 +97,7 @@ Each service applies its own EF Core migrations and seed data on startup (`Migra
 | `pr-check.yml` | Adversarial AI PR check against the story (see [pr-check](../ai-pipeline/pr-check.md)) |
 | `pr-demo-video.yml` | Starts the test stack, records the PR's teststack specs and publishes the videos and API summary to the PR |
 | `board-epic-assign.yml` | When an epic issue is (un)assigned, gives its open stories the same assignees |
+| `review-quorum.yml` | On PRs and reviews: the `review-quorum` check passes once distinct non-author approvals on the latest push reach the PR's `approvals:N` label, set by the [review gate](../ai-pipeline/review-gate.md) on bug-fix PRs (a PR without it passes) |
 | `graphify-cache-prune.yml` | Weekly: opens a PR that prunes unused graphify semantic-cache entries |
 
 The AI workflows are described in [docs/ai-pipeline](../ai-pipeline/README.md).

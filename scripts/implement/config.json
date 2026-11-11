@@ -1,7 +1,8 @@
 {
   "agent": {
     "models": {
-      "implementer": null
+      "implementer": null,
+      "bugTriage": "opus"
     }
   },
   "modelClasses": {
@@ -117,6 +118,187 @@
       "tinySubtaskFiles": 3,
       "selfMaxTotalLoc": 150,
       "selfOverheadRunsPerSubtask": 2
+    },
+    "reviewGate": {
+      "enabled": true,
+      "timeoutSec": 900,
+      "maxDiffChars": 120000,
+      "systems": [
+        {
+          "name": "Catalog.API",
+          "paths": [
+            "src/Catalog.API/**"
+          ]
+        },
+        {
+          "name": "Basket.API",
+          "paths": [
+            "src/Basket.API/**"
+          ]
+        },
+        {
+          "name": "Ordering.API",
+          "paths": [
+            "src/Ordering.API/**",
+            "src/Ordering.Domain/**",
+            "src/Ordering.Infrastructure/**"
+          ]
+        },
+        {
+          "name": "Identity.API",
+          "paths": [
+            "src/Identity.API/**"
+          ]
+        },
+        {
+          "name": "Webhooks.API",
+          "paths": [
+            "src/Webhooks.API/**"
+          ]
+        },
+        {
+          "name": "Promotions.API",
+          "paths": [
+            "src/Promotions.API/**"
+          ]
+        },
+        {
+          "name": "WebApp",
+          "paths": [
+            "src/WebApp/**",
+            "src/WebAppComponents/**"
+          ]
+        },
+        {
+          "name": "WebhookClient",
+          "paths": [
+            "src/WebhookClient/**"
+          ]
+        },
+        {
+          "name": "OrderProcessor",
+          "paths": [
+            "src/OrderProcessor/**"
+          ]
+        },
+        {
+          "name": "PaymentProcessor",
+          "paths": [
+            "src/PaymentProcessor/**"
+          ]
+        },
+        {
+          "name": "Mobile clients",
+          "paths": [
+            "src/ClientApp/**",
+            "src/HybridApp/**"
+          ]
+        },
+        {
+          "name": "Integration events",
+          "paths": [
+            "src/**/IntegrationEvents/Events/**"
+          ],
+          "shared": true,
+          "contract": true
+        },
+        {
+          "name": "EventBus",
+          "paths": [
+            "src/EventBus/**",
+            "src/EventBusRabbitMQ/**",
+            "src/IntegrationEventLogEF/**"
+          ],
+          "shared": true
+        },
+        {
+          "name": "ServiceDefaults",
+          "paths": [
+            "src/eShop.ServiceDefaults/**",
+            "src/Shared/**"
+          ],
+          "shared": true
+        },
+        {
+          "name": "AppHost",
+          "paths": [
+            "src/eShop.AppHost/**"
+          ],
+          "shared": true
+        },
+        {
+          "name": "Build",
+          "paths": [
+            "Directory.Build.props",
+            "Directory.Build.targets",
+            "Directory.Packages.props",
+            "global.json",
+            "nuget.config"
+          ],
+          "shared": true
+        }
+      ],
+      "ignore": [
+        "tests/**",
+        "e2e/**",
+        "testing/**",
+        "docs/**",
+        ".agent-metrics/**",
+        ".github/agents/lessons/**",
+        "graphify-out/**",
+        "**/*.md"
+      ],
+      "floor": {
+        "level": "High",
+        "paths": [
+          "src/Identity.API/**",
+          "src/PaymentProcessor/**",
+          "**/Migrations/**",
+          ".github/workflows/**",
+          ".github/CODEOWNERS",
+          "scripts/review-gate/**"
+        ],
+        "categories": [
+          "auth",
+          "payments",
+          "migration",
+          "security"
+        ]
+      },
+      "manySystems": 3,
+      "sharedFloor": "High",
+      "confidence": {
+        "highMin": 85,
+        "maxPairRounds": 2,
+        "maxPrCheckRounds": 2,
+        "agentWeight": 0.2
+      },
+      "approvals": {
+        "default": 1,
+        "Low": 1,
+        "Medium": 1,
+        "High": 1,
+        "Severe": 1
+      },
+      "labels": {
+        "approvals": "approvals:{n}",
+        "needsHuman": "needs-human",
+        "autoMerged": "auto-merged",
+        "reopened": "reopened"
+      },
+      "substantiveCommentChars": 20,
+      "retro": {
+        "minSample": 5,
+        "raiseFindRate": 0.3,
+        "raiseEscapeRate": 0.2,
+        "lowerFindRate": 0.05
+      }
+    },
+    "autoMerge": {
+      "enabled": true,
+      "identity": "gh-user",
+      "method": "squash",
+      "appTokenEnv": "REVIEW_GATE_APP_TOKEN"
     }
   },
   "resources": {
