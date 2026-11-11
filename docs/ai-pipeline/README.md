@@ -269,7 +269,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
 node scripts/pipeline/pipeline.mjs resume [KEY] [--force]       # continue every stage's runs that died (crash, kill, reboot)
-node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N|auto] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--delivery epic|story] [--grouping auto|epic|ticket] [--standalone] [--parallel N|auto] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
 node scripts/pipeline/pipeline.mjs implement resume [--parallel N|auto] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential] [--base <ref>]  # see experiments.md
