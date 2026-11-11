@@ -27,7 +27,6 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 
 | Bug | Observed | Test |
 | --- | --- | --- |
-| WebApp `?page=0` and `?page=-1` request `pageIndex` -1 | Skeleton stays, "An unhandled error has occurred." | `catalog-browse` "?page=0 shows the first page", "?page=-1 ..." |
 | Create without `name` | 500 (NOT NULL violation) | `catalog-admin` "a body without a name is rejected with 400" |
 | Create with an empty name or a negative price | 201, stored | `catalog-admin` "an empty name or a negative price is rejected with 400" |
 | Create with an existing id | 500 (primary key violation) | `catalog-admin` "creating an item with an existing id is rejected with 409" |
@@ -56,7 +55,7 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 - **Negative and edge cases:**
   - Page beyond the last: the count still shows, with no cards and no empty state (`catalog-browse` "a page beyond the last one lists no products"; `catalog-edge` uses `?page=3`).
   - `?page=abc`: 404 not-found page (`catalog-browse` "non-numeric query ?page=abc ...").
-  - `?page=0` and `?page=-1`: unhandled error (bug, `catalog-browse` fixme tests).
+  - `?page=0` and `?page=-1`: treated as page 1, the first page shows with no Previous link (`catalog-browse` "?page=0 shows the first page", "?page=-1 shows the first page").
 
 ### Filter by brand and type
 
