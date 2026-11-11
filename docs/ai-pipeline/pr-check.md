@@ -36,7 +36,7 @@ Or ask the `pr-check` agent (Copilot or Claude Code) to check a PR; it runs the 
 | `--base <ref>` | the PR base, else `PIPELINE_BASE_REF` | what the diff is taken against |
 | `--videos a,b` | links in the PR description, else `test-results/` | video files, folders or URLs |
 | `--no-fix` | fix | report only, one round |
-| `--max-rounds <n>`, `--debate-turns <n>` | 6, 2 | loop limits |
+| `--max-rounds <n>`, `--debate-turns <n>` | 6, 2 | loop limits (`--no-fix` always runs one round) |
 | `--comment`, `--push` | off | post the report on the PR; push the fix commits |
 | `--json` | off | print `result.json` instead of the report |
 | `--resume` | off | continue the interrupted run of the same check from its last saved round |

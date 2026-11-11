@@ -103,7 +103,7 @@ This repository uses a [graphify](https://github.com/safishamsi/graphify) knowle
 ### Windows
 
 ```powershell
-pip install --user "graphifyy==0.9.58"
+pip install --user "graphifyy==0.9.105"
 
 # Add the Python user Scripts folder to your user PATH (adjust Python314 to your Python version)
 $scripts = "$env:APPDATA\Python\Python314\Scripts"
@@ -127,7 +127,7 @@ If you're unsure of the Scripts folder, run `pip show -f graphifyy`: the `graphi
 [`scripts/setup.sh`](../scripts/setup.sh) installs graphify, builds the graph and enables the git hooks. To do it manually:
 
 ```bash
-pipx install "graphifyy==0.9.58"   # or: python3 -m pip install --user "graphifyy==0.9.58"
+pipx install "graphifyy==0.9.105"   # or: python3 -m pip install --user "graphifyy==0.9.105"
 git config core.hooksPath .githooks
 ```
 
