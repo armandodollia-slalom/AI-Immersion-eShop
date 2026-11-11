@@ -20,7 +20,7 @@ tests/plans/<story-file-name>/
   TC-<KEY>-02-<short-slug>.md
 ```
 
-- Do not edit the front matter of `_index.md`; the pipeline owns it. Write the body: a `# Test plan: <KEY> <story title>` heading, a short scope paragraph, a table with columns `ID | Title | Type | Layer | Covers`, and a list of anything explicitly out of scope.
+- Do not edit the front matter of `_index.md`; the pipeline owns it. Write the body: a `# Test plan: <KEY> <story title>` heading, a short scope paragraph, a table with columns `ID | Title | Type | Layer | Covers` (spaces around every pipe, delimiter row `| --- | --- | --- | --- | --- |`; the commit hook's markdownlint rejects `|----|`), and a list of anything explicitly out of scope.
 - Every case file looks like this:
 
 ```markdown

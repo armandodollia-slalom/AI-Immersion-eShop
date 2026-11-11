@@ -10,6 +10,7 @@ import { clip, decisionRecord, formatBugs, normalizeBugs } from '../../pipeline/
 import { computeMetrics } from '../lib/metrics.mjs';
 import { acquireLock, bootId, extractResult, isProcessAlive, lockHolder, parseFrontMatter, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 import { attributedAgent, normalizeVerdict } from '../lib/verify.mjs';
+import { lintFiles } from '../lib/workflows.mjs';
 
 const config = {
   loops: { requiredScore: 10 },
@@ -257,4 +258,21 @@ test('a pid recorded before a reboot is never alive, and locks from older versio
   fs.writeFileSync(file, `${process.pid} another-boot`);
   if (bootId()) assert.equal(acquireLock(file), true, 'a lock left by an earlier boot is taken over');
   fs.rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test("lintFiles runs the commit hook's linters on the agent's files and skips linters that are not installed", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qe-lint-'));
+  fs.mkdirSync(path.join(root, 'bin'));
+  fs.writeFileSync(path.join(root, 'bin/mdlint'), '');
+  const config = { root, precheck: { lint: { '.md': ['bin/mdlint', '{files}'], '.ts': ['node_modules/.bin/eslint', '{files}'], '.cs': ['dotnet', 'format', '{files}'] } } };
+  const calls = [];
+  const runner = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    return cmd === 'dotnet' ? { status: 127, stdout: '', stderr: 'not found' } : { status: 1, stdout: 'a.md:19 error MD060/table-column-style', stderr: '' };
+  };
+  const errors = lintFiles(config, ['plans/a.md', 'plans/b.md', 'e2e/a.spec.ts', 'tests/A.cs'], { runner });
+  assert.deepEqual(calls, [['bin/mdlint', 'plans/a.md', 'plans/b.md'], ['dotnet', 'format', 'tests/A.cs']], 'a missing local linter binary is skipped');
+  assert.equal(errors.length, 1, 'a linter that is not on PATH (127) is skipped');
+  assert.match(errors[0], /bin\/mdlint.*failed on plans\/a\.md, plans\/b\.md:\n.*MD060/);
+  fs.rmSync(root, { recursive: true, force: true });
 });
