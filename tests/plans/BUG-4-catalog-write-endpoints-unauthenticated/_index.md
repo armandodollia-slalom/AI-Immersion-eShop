@@ -6,10 +6,10 @@ plan-sha: b6018a5e0a08
 verified-score: 9
 verified-at: "2026-11-11T10:47:24.600Z"
 verified-by: qe-plan@09234f3a/456099fb
-automation-sha: 94778749ada5
+automation-sha: aac6adf17865
 automation-plan-sha: b6018a5e0a08
 automation-score: 10
-automation-verified-at: "2026-11-11T10:56:42.079Z"
+automation-verified-at: "2026-11-11T17:03:13.741Z"
 ---
 # Test plan: BUG-4 Catalog create, update and delete endpoints need no authentication
 
