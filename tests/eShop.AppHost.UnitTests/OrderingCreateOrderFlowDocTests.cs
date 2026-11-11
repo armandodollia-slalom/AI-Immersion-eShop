@@ -20,11 +20,10 @@ public class OrderingCreateOrderFlowDocTests
         var flowRow = doc.Split('\n').Single(l => l.Contains("`userId` in the body cannot place an order for another buyer"));
         Assert.DoesNotContain("**fixme**", flowRow, flowRow);
 
-        // The spec table counts the file's test.fixme markers; this fix removes one, leaving 4 (15 pass).
+        // The spec table counts the file's test.fixme markers (later fixes remove more of them).
         var specRow = doc.Split('\n').Single(l => l.Contains("| `ordering-api.spec.ts` |"));
         var remainingFixmes = Regex.Matches(spec, @"test\.fixme\(").Count;
-        Assert.AreEqual(4, remainingFixmes);
-        StringAssert.Contains(specRow, "15 pass, 4 fixme");
+        StringAssert.Contains(specRow, $"{remainingFixmes} fixme");
     }
 
     private static string FindRepositoryRoot()

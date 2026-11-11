@@ -13,6 +13,7 @@ const expected = [
 ];
 
 let bob: string;
+let admin: string; // only role Admin may ship
 
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(240_000);
@@ -20,6 +21,7 @@ test.setTimeout(240_000);
 test.beforeAll(async ({ browser }) => {
   loadScenario('ordering-stock');
   bob = await tokenFor(browser, 'bob', 'ordering');
+  admin = await tokenFor(browser, 'admin', 'ordering');
 });
 
 async function stock(request: APIRequestContext, id: number): Promise<number> {
@@ -67,10 +69,10 @@ test('bob\'s order list shows the final statuses', async ({ page }) => {
 });
 
 test('a stock-rejected order cannot be shipped, a pipeline-paid order can', async ({ request }) => {
-  expect((await changeStatus(request, bob, 'ship', 2)).ok()).toBe(false);
+  expect((await changeStatus(request, admin, 'ship', 2)).ok()).toBe(false);
   expect((await getOrder(request, bob, 2)).status).toBe('Cancelled');
 
-  expect((await changeStatus(request, bob, 'ship', 1)).status()).toBe(200);
+  expect((await changeStatus(request, admin, 'ship', 1)).status()).toBe(200);
   expect((await getOrder(request, bob, 1)).status).toBe('Shipped');
 });
 

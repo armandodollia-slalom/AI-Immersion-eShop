@@ -17,6 +17,7 @@ const paidToken = `paid-${run}`;
 let alice: string;
 let bob: string;
 let aliceOrdering: string;
+let adminOrdering: string; // only role Admin may ship
 
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(150_000);
@@ -74,6 +75,7 @@ test.beforeAll(async ({ browser }) => {
   await context.close();
   bob = await tokenFor(browser, 'bob', 'webhooks');
   aliceOrdering = await tokenFor(browser, 'alice', 'ordering');
+  adminOrdering = await tokenFor(browser, 'admin', 'ordering');
 });
 
 test.describe('Webhooks API', () => {
@@ -227,7 +229,7 @@ test.describe('delivery', () => {
     const token = `shipped-${run}`;
     expect((await subscribe(request, alice, hook('OrderShipped', token))).status()).toBe(201);
 
-    expect((await changeStatus(request, aliceOrdering, 'ship', 1)).status()).toBe(200);
+    expect((await changeStatus(request, adminOrdering, 'ship', 1)).status()).toBe(200);
     expect((await getOrder(request, aliceOrdering, 1)).status).toBe('Shipped');
 
     await expect(async () => {

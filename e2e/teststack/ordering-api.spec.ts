@@ -40,6 +40,7 @@ const harness = {
 
 let alice: string;
 let bob: string;
+let admin: string; // role Admin: the only role that may ship
 
 test.describe.configure({ mode: 'serial' });
 
@@ -47,6 +48,7 @@ test.beforeAll(async ({ browser }) => {
   loadScenario('ordering-two-buyers');
   alice = await tokenFor(browser, 'alice', 'ordering');
   bob = await tokenFor(browser, 'bob', 'ordering');
+  admin = await tokenFor(browser, 'admin', 'ordering');
 });
 
 test.describe('authentication and versioning', () => {
@@ -159,10 +161,11 @@ test.describe('cancel and ship', () => {
     for (const action of ['cancel', 'ship'] as const) {
       const url = `${ORDERING_URL}/${action}?${V1}`;
       const orderNumber = action === 'cancel' ? 1 : 4;
-      expect((await request.put(url, { headers: bearer(alice), data: { orderNumber } })).status()).toBe(400);
-      expect((await request.put(url, { headers: bearer(alice, { 'x-requestid': 'not-a-guid' }), data: { orderNumber } })).status()).toBe(400);
+      const token = action === 'ship' ? admin : alice;
+      expect((await request.put(url, { headers: bearer(token), data: { orderNumber } })).status()).toBe(400);
+      expect((await request.put(url, { headers: bearer(token, { 'x-requestid': 'not-a-guid' }), data: { orderNumber } })).status()).toBe(400);
       const empty = await request.put(url, {
-        headers: bearer(alice, { 'x-requestid': '00000000-0000-0000-0000-000000000000' }),
+        headers: bearer(token, { 'x-requestid': '00000000-0000-0000-0000-000000000000' }),
         data: { orderNumber },
       });
       expect(empty.status()).toBe(400);
@@ -187,7 +190,7 @@ test.describe('cancel and ship', () => {
   });
 
   test('shipping a Paid order moves it to Shipped, after which it cannot be cancelled', async ({ request }) => {
-    expect((await changeStatus(request, alice, 'ship', 4)).status()).toBe(200);
+    expect((await changeStatus(request, admin, 'ship', 4)).status()).toBe(200);
     expect(await getOrder(request, alice, 4)).toMatchObject({ status: 'Shipped', description: 'The order was shipped.' });
 
     const cancel = await changeStatus(request, alice, 'cancel', 4);
@@ -205,7 +208,7 @@ test.describe('cancel and ship', () => {
       ['ship', 999, null],
     ];
     for (const [action, orderNumber, expected] of attempts) {
-      const response = await changeStatus(request, alice, action, orderNumber);
+      const response = await changeStatus(request, action === 'ship' ? admin : alice, action, orderNumber);
       expect(response.ok(), `${action} ${orderNumber}`).toBe(false);
       if (expected) {
         expect((await getOrder(request, alice, orderNumber)).status).toBe(expected);
@@ -219,16 +222,16 @@ test.describe('cancel and ship', () => {
     test.fixme(true, 'rejected status changes are reported as 500 Internal Server Error');
     expect((await changeStatus(request, alice, 'cancel', 5)).status()).toBeGreaterThanOrEqual(400);
     expect((await changeStatus(request, alice, 'cancel', 5)).status()).toBeLessThan(500);
-    expect((await changeStatus(request, alice, 'ship', 2)).status()).toBeLessThan(500);
+    expect((await changeStatus(request, admin, 'ship', 2)).status()).toBeLessThan(500);
     expect((await changeStatus(request, alice, 'cancel', 999)).status()).toBe(404);
   });
 
   test('a buyer cannot cancel or ship another buyer\'s order', async ({ request }) => {
-    // BUG: CancelOrderCommandHandler / ShipOrderCommandHandler load the order by id only; any signed-in user can
-    // cancel or ship anyone's order. (Ship is an admin action with no role check at all.)
-    test.fixme(true, 'cancel/ship do not check order ownership');
+    // Cancel is limited to the order's owner (404 otherwise); ship needs role Admin (403 for buyers).
+    const cancel = await changeStatus(request, alice, 'cancel', 7);
+    expect(cancel.status()).toBe(404);
     const ship = await changeStatus(request, alice, 'ship', 7);
-    expect([403, 404]).toContain(ship.status());
+    expect(ship.status()).toBe(403);
     expect((await getOrder(request, bob, 7)).status).toBe('Paid');
   });
 });
