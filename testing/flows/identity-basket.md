@@ -21,7 +21,6 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 | --- | --- | --- |
 | Open redirect after sign-in: `/user/login?returnUrl=//evil.example` returns `302 Location: http://evil.example/` | `LogIn.razor` only rejects URIs that parse as absolute; protocol-relative URLs pass | `auth-login.spec.ts` › a protocol-relative returnUrl on /user/login must not redirect off-site |
 | Basket.API accepts tokens without the `basket` scope | Identity's `ApiResource`s declare no scopes, so tokens have no `aud`; `AddDefaultAuthentication` sets `ValidateAudience = false` | `basket-api.spec.ts` › a token issued without the basket scope cannot update the basket |
-| Typing a cart quantity, pressing Enter, then clicking − can leave Redis on the typed value while the UI shows the decrement | `cart-quantity.js` commits on Enter but leaves the input focused; the click blurs it, fires `change` and re-submits the typed value in parallel with the decrement POST (reproduced: UI 4, Redis 5) | `basket-cart.spec.ts` › typing a quantity, pressing Enter, then clicking Decrease reliably stores the decremented quantity |
 
 ## Sign in with valid credentials
 
@@ -136,8 +135,8 @@ for the `webapp` client, a raw h2c gRPC client for Basket.API, and Redis and ide
 - **Steps:** increase, decrease, type a value, type 0 or a negative number, remove lines.
 - **Expected outcome:** line totals, the bag total, the header count and Redis follow each change; removing the last line shows the empty view and leaves an empty basket.
 - **Positive cases:** + goes from 1 to 2; typing 5 sets 5; − goes from 5 to 4; removing one of two lines keeps the other.
-- **Negative/edge cases:** − is disabled at quantity 1; typing 0 or −4 is clamped to 1 by `cart-quantity.js` (it does not remove the line); removing the last line; type + Enter followed by − races two POSTs (bug, fixme).
-- **Covered by:** `basket-cart.spec.ts` › quantity can be increased, decreased and typed…, typing 0 or a negative quantity is clamped to 1…, removing lines updates the bag…, typing a quantity, pressing Enter, then clicking Decrease… (fixme).
+- **Negative/edge cases:** − is disabled at quantity 1; typing 0 or −4 is clamped to 1 by `cart-quantity.js` (it does not remove the line); removing the last line; type + Enter followed by − posts only the decrement (the blur after Enter does not re-submit the typed value).
+- **Covered by:** `basket-cart.spec.ts` › quantity can be increased, decreased and typed…, typing 0 or a negative quantity is clamped to 1…, removing lines updates the bag…, typing a quantity, pressing Enter, then clicking Decrease….
 
 ## Seeded baskets and the header badge
 
