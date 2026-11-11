@@ -60,7 +60,7 @@ Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs pl
 ## Verifier loops
 
 - Each round starts a new verifier process whose prompt holds only what it needs: the story and plan for plans; the case files, the tests and the scenario for automation. It cannot see the producer's reasoning or earlier verdicts.
-- Cheap deterministic checks run before any verifier call (front matter, sections, happy and sad cases, index lists every id; every case has a test, no orphan ids, `[Trait("Story", ...)]`, scenario validates, tests pass).
+- Cheap deterministic checks run before any verifier call (front matter, sections, happy and sad cases, index lists every id; every case has a test, no orphan ids, `[Trait("Story", ...)]`, scenario validates, tests pass). They also run the commit hook's linters on the agent's files (`precheck.lint`: markdownlint, eslint, `dotnet format whitespace`), so a lint error goes back to the agent instead of failing the pipeline's commit.
 - A verdict passes at the required score (`loops.requiredScore`, 9) or above. Gaps listed with a passing score are minor; they are logged in the metrics but don't block. A lower score without gaps counts as an unexplained gap. Gaps on a failing verdict go back to the producer as its next task.
 - Automation gaps the verifier traces to the case itself (`root_stage: plan`) are sent to the plan loop and attributed to the plan agent in the metrics.
 - After 5 rounds below the required score, the loop stops and writes `.agent-state/escalations/<KEY>-<stage>.md`, which the next agent session is told about.
