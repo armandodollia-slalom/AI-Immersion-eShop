@@ -140,7 +140,11 @@ export function startWorker(config, story, { pr, script }) {
   if (story.epicBranch) args.push('--epic-branch', story.epicBranch);
   if (pr) args.push('--pr');
   if (story.resume) args.push('--resume');
-  saveRun(config, story.key, { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) });
+  const running = { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) };
+  // A fresh start drops the previous attempt's metrics and findings, which `implement status` and the
+  // board's failure comment would otherwise report as this run's; a resume keeps them.
+  if (story.resume) saveRun(config, story.key, running);
+  else writeJson(runFile(config, story.key), { key: story.key, branch: story.branch, worktree: story.worktree, base: story.base, ...running, updatedAt: nowIso() });
   log(`${story.key}: started on ${story.branch} (log: ${path.relative(config.root, logPath)})`);
   const fd = fs.openSync(logPath, 'a');
   const env = { ...process.env };

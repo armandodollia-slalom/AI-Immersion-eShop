@@ -137,6 +137,7 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   const edit = (file, patch) => fs.writeFileSync(path.join(runs, file), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(runs, file), 'utf8')), ...patch }));
   edit('batch.json', { pid: 2 ** 22 + 7, finishedAt: null });
   edit('DEMO-3.json', { status: 'running', outcome: null });
+  edit('DEMO-4.json', { findings: [{ issue: 'from an earlier attempt' }], agentRuns: 9 }); // DEMO-4 starts fresh, not resumed
   assert.match(pipeline(['implement', 'status']).stdout, /last implement run was interrupted.*implement resume/);
   assert.match(JSON.parse(pipeline(['hook', 'session-start']).stdout).additionalContext, /last implement run was interrupted[\s\S]*pipeline.mjs resume/, 'the next session is told');
   assert.match(pipeline(['implement', 'resume', 'DEMO-9', '--background']).stdout, /does not include DEMO-9/, 'a story-scoped resume leaves other batches alone');
@@ -157,6 +158,8 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   assert.match(resumed.stdout, /DEMO-1 +skip: done in a previous run[\s\S]*DEMO-3 +feat\/demo-3-loyalty <- main {2}\(resume\)[\s\S]*DEMO-4 +feat\/demo-4-loyalty-tiers <- feat\/demo-3-loyalty/);
   assert.match(resumed.stdout, /DEMO-3 +done[\s\S]*DEMO-4 +done/);
   assert.equal(calls().implementer, 2, 'only the unfinished stories run again');
+  const demo4 = JSON.parse(fs.readFileSync(path.join(runs, 'DEMO-4.json'), 'utf8'));
+  assert.ok(!demo4.findings && demo4.agentRuns === undefined, "a fresh start drops the earlier attempt's findings and metrics");
   assert.match(prompts(), /=== implementer #1[\s\S]*previous run of this story was interrupted/);
   assert.match(pipeline(['implement', 'resume']).stdout, /DEMO-4 +skip: done in a previous run/, 'a finished run resumes to nothing');
   assert.match(pipeline(['resume']).stdout, /\[implement\]\nNo interrupted implement run\./);
