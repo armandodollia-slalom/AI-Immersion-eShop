@@ -16,7 +16,7 @@
 
 @code {
     private ActivePromotion? promotion;
-    private string shopHref = "";
+    private string shopHref = "/";
 
     protected override async Task OnInitializedAsync()
     {
@@ -32,9 +32,9 @@
             var target = promotion.Targets.First(IsBannerTarget);
             shopHref = target.Scope switch
             {
-                PromotionScope.Type => $"?type={target.TargetId}",
-                PromotionScope.Brand => $"?brand={target.TargetId}",
-                _ => "",
+                PromotionScope.Type => $"/?type={target.TargetId}",
+                PromotionScope.Brand => $"/?brand={target.TargetId}",
+                _ => "/",
             };
         }
     }
