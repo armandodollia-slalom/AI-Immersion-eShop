@@ -9,7 +9,7 @@ import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
-import { resolveStory } from '../pipeline/lib/stories.mjs';
+import { epicTickets, loadTicket } from '../pipeline/lib/tickets.mjs';
 import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { collectStories } from './lib/batch.mjs';
 import { DECISIONS_FILE, OUTCOMES_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
@@ -22,10 +22,11 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
-  run <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
-        implement every <KEY>-<title>.md story given: each gets a worktree and branch, the implementer
-        agent, the review loop and verified tests. Stories "Blocked by" another story in the batch run
-        after it, stacked on its branch.
+  run <KEY...> | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+        implement the given board tickets (fetched into .agent-state/board/; a cached story.md or a
+        <KEY>-<title>.md file works too): each gets a worktree and branch, the implementer agent, the
+        review loop and verified tests. Stories "Blocked by" another story in the batch run after it,
+        stacked on its branch. --epic takes every story of the epic, in Blocked-by order.
   resume [KEY] [--parallel N] [--pr] [--background]
                                  continue the last run that did not finish: stories it finished are
                                  kept, interrupted ones resume in their worktree, the rest run.
@@ -56,8 +57,9 @@ async function runStories(config, inputs, { base, force = false, parallel, pr = 
   const stories = plan(config, inputs, { base, force });
   console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
-  // Agents may read only the stories handed to this run (scripts/pipeline/lib/story-guard.mjs).
-  process.env.PIPELINE_STORY_SOURCES = inputs.map((p) => path.resolve(p)).join(path.delimiter);
+  // Agents may read only the tickets handed to this run (scripts/pipeline/lib/story-guard.mjs): a cached
+  // ticket's whole folder (story and its own mockups), or the files and folders given.
+  process.env.PIPELINE_STORY_SOURCES = inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))).join(path.delimiter);
   const batch = { inputs: inputs.map((p) => path.resolve(p)), base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
   writeJson(batchFile(config), batch);
   const results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
@@ -87,7 +89,7 @@ function resumeInBackground(config, key) {
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'base', 'since', 'file', 'branch', 'worktree', 'result', 'merge', 'story']));
+  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'base', 'since', 'file', 'branch', 'worktree', 'result', 'merge', 'story', 'epic']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -96,16 +98,25 @@ async function main() {
 
   switch (command) {
     case 'run': {
+      if (flags.epic) {
+        const stories = epicTickets(config, flags.epic);
+        if (!stories.length) {
+          console.error(`Epic ${flags.epic} has no stories on the board (or in the ticket cache).`);
+          return 2;
+        }
+        positional.push(...stories.map((s) => s.key));
+      }
       if (!positional.length) {
-        console.error(`Give a stories directory or story files.\n\n${USAGE}`);
+        console.error(`Give story keys, --epic <EPIC>, or story files.\n\n${USAGE}`);
         return 2;
       }
-      // A story key (PROMO-3) stands for its file in the stories folder.
+      // A story key (PROMO-3) stands for its ticket, fetched from the board into the cache (re-checked
+      // when already cached, so the run works from the issue's current text).
       for (const [i, arg] of positional.entries()) {
-        if (/^[A-Z][A-Z0-9]*-\d+$/.test(arg) && !fs.existsSync(arg)) {
-          const story = resolveStory(config, arg);
-          if (!story) {
-            console.error(`No story file for ${arg} in ${config.storiesDir}.`);
+        if (/^[A-Z][A-Z0-9]*-\d+$/i.test(arg) && !fs.existsSync(arg)) {
+          const story = loadTicket(config, arg.toUpperCase(), { update: true });
+          if (!story || !['story', 'bug'].includes(story.type)) {
+            console.error(`${arg} is not a story on the board (\`node scripts/board/board.mjs fetch ${arg}\` shows why).`);
             return 2;
           }
           positional[i] = config.abs(story.file);

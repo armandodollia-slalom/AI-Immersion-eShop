@@ -17,8 +17,7 @@
     "storyLabel": "story",
     "blockedLabel": "needs-human",
     "epicLabel": "epic",
-    "epicsDir": "product-research",
-    "mockupsDir": "product-research/mockups",
+    "spikeLabel": "spike",
     "pollSec": 120,
     "parallel": 1,
     "evidence": {

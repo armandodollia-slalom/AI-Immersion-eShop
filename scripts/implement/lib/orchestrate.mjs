@@ -392,6 +392,11 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
 
 async function openWorktree(ctx, st) {
   const wt = createSubtaskWorktree(ctx.worktree, { prefix: ctx.s.branchPrefix, key: ctx.key, id: st.id });
+  // The story is not on the branch (it lives in the ticket cache), so the subtask gets its own copy of
+  // the story's cache folder at the same relative path.
+  const ticket = path.dirname(ctx.storyFile);
+  const rel = path.relative(ctx.worktree, ticket);
+  if (fs.existsSync(ticket) && !rel.startsWith('..') && !fs.existsSync(path.join(wt.path, rel))) fs.cpSync(ticket, path.join(wt.path, rel), { recursive: true });
   if (ctx.s.prepareCmd) {
     const r = await runAsync('sh', ['-c', ctx.s.prepareCmd], { cwd: wt.path, timeoutSec: ctx.s.timeouts.checkSec, signal: ctx.abort.signal });
     if (r.status !== 0) ctx.log(`prepareCmd failed in ${path.basename(wt.path)} (exit ${r.status}); continuing`);

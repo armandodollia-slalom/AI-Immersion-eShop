@@ -13,6 +13,7 @@ import { log, nowIso, readJson, setLogTag, sleep } from '../pipeline/lib/util.mj
 import { COLUMNS, addLabel, columnForState, comment, failureComment, findIssue, isActive, issueItem, listItems, moveStory, pickable, project, setColumn, setup, storyKind, syncEpicAssignees, syncEpicColumns } from './lib/board.mjs';
 import { captureApiEvidence, featureVideo } from './lib/evidence.mjs';
 import { recordLateOutcome } from './lib/outcomes.mjs';
+import { fetchCommand, migrateCommand, newCommand, publishCommand } from './lib/ticket-commands.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
 
 setLogTag('board');
@@ -21,8 +22,19 @@ const CONFIG_FILE = path.join(SCRIPTS_DIR, 'board', 'config.json');
 
 const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
 
-  setup                         enable issues, create the labels, the project and its columns, and an
-                                issue on the board for every story (idempotent; run again for new stories)
+  setup                         enable issues, create the labels, the project, its columns and views
+                                (idempotent). Tickets are created by \`new\` and \`migrate --apply\`
+
+Tickets (the issue body is the source of truth; see docs/ai-pipeline/board.md)
+  fetch <KEY...> | --epic <EPIC> | --all [--refresh]
+                                download tickets into the local cache (story.md, meta.json,
+                                mockups/); unchanged issues (same updatedAt) are skipped
+  publish <KEY> [--force]       write the cached story (e.g. with Implementation Notes) back to its issue
+  new <file.md|-> [--type story|bug|epic|spike] [--key KEY] [--epic <epic-key>] [--mockups <dir>] [--dry-run]
+                                create a ticket issue from Markdown
+  migrate [--summary] | --apply | --verify [--allow-unplaced] | --delete-local [--dry-run]
+                                move the legacy story folder to the board (dry run by default)
+
   pick [--once] [--parallel N] [--interval <sec>] [--dry-run]
                                 implement the stories in Ready assigned to you (gh's logged-in user),
                                 then keep polling (--once: a single pass)
@@ -40,7 +52,7 @@ Hooks (called by the dispatcher)
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'interval', 'pr']));
+  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'interval', 'pr', 'epic', 'type', 'key', 'mockups']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -51,9 +63,20 @@ async function main() {
     case 'hook':
       return hook(config, positional);
 
+    case 'fetch':
+      return fetchCommand(config, { keys: positional, epic: typeof flags.epic === 'string' ? flags.epic : null, all: Boolean(flags.all), refresh: Boolean(flags.refresh) });
+
+    case 'publish':
+      return positional[0] ? publishCommand(config, { key: positional[0].toUpperCase(), force: Boolean(flags.force) }) : (console.error('Usage: board publish <KEY>'), 2);
+
+    case 'new':
+      return newCommand(config, { file: positional[0], type: flags.type, key: flags.key, epic: flags.epic, mockups: flags.mockups, dryRun: Boolean(flags['dry-run']) });
+
+    case 'migrate':
+      return migrateCommand(config, flags);
+
     case 'setup': {
       const url = setup(config, {
-        listStories,
         log: (m) => console.log(m),
         writeProjectNumber: (n) => {
           const file = readJson(CONFIG_FILE, {});
@@ -239,9 +262,9 @@ async function pick(config, { once, dryRun, parallel, intervalSec }) {
     const ready = pickable(config, items, me);
     const batch = [];
     for (const item of ready) {
-      const story = resolveStory(config, item.key);
+      const story = resolveStory(config, item.key, { update: true });
       if (!story) {
-        if (!dryRun) fail(config, item, `No story file for ${item.key} in \`${config.storiesDir}\` on this checkout. Pull the latest main, then move the card back to ${config.board.columns.ready}.`);
+        if (!dryRun) fail(config, item, `Could not fetch the story for ${item.key} from its issue (\`node scripts/board/board.mjs fetch ${item.key}\` shows why). Fix the issue body, then move the card back to ${config.board.columns.ready}.`);
         continue;
       }
       batch.push({ item, story });
@@ -255,7 +278,7 @@ async function pick(config, { once, dryRun, parallel, intervalSec }) {
         moveStory(config, story.key, 'inProgress', { force: true });
         comment(config, item.number, `Picked up by @${me}'s pipeline on \`${os.hostname()}\` (\`pipeline implement\`). This card moves to ${config.board.columns.review} with the PR.`);
       }
-      spawnSync(process.execPath, [PIPELINE_CLI, 'implement', 'run', ...batch.map((b) => b.story.file), '--pr', '--parallel', String(parallel)], { cwd: config.root, stdio: 'inherit' });
+      spawnSync(process.execPath, [PIPELINE_CLI, 'implement', 'run', ...batch.map((b) => b.story.key), '--pr', '--parallel', String(parallel)], { cwd: config.root, stdio: 'inherit' });
       for (const { item, story } of batch) {
         const result = readJson(path.join(config.root, config.stateDir, 'implement', `${story.key}.json`), {});
         if (result.outcome === 'done') continue;

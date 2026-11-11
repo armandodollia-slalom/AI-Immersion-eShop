@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { currentBranch, git, revExists } from '../../pipeline/lib/git.mjs';
 import { activeStory, resolveStory } from '../../pipeline/lib/stories.mjs';
+import { mockupFiles } from '../../pipeline/lib/tickets.mjs';
 import { log } from '../../pipeline/lib/util.mjs';
 import { fetchPullRequest } from './github.mjs';
 
@@ -70,14 +71,12 @@ export async function resolveTarget(config, { pr: prNumber, story: storyArg, bas
   if (!baseCandidates.length) throw new Error(`base ${baseRef} not found`);
   const baseRev = git(workRoot, ['merge-base', 'HEAD', baseCandidates[0]], { allowFail: false }).stdout.trim();
 
-  const storyText = fs.readFileSync(path.join(workRoot, story.file), 'utf8');
-  const mockupsRoot = path.join(workRoot, 'product-research', 'mockups');
-  const mockups = fs.existsSync(mockupsRoot)
-    ? fs
-        .readdirSync(mockupsRoot)
-        .filter((d) => d.toUpperCase().startsWith(`${story.key}-`))
-        .flatMap((d) => fs.readdirSync(path.join(mockupsRoot, d)).map((f) => `product-research/mockups/${d}/${f}`))
-    : [];
+  // The story and its mockups come from the ticket cache of this checkout (fetched from the board), not
+  // from the PR's tree: the board is the source of truth. Mockup paths are absolute so agents working in
+  // a PR checkout can open them, and the story guard lets the check's agents read exactly this ticket.
+  const storyText = fs.readFileSync(config.abs(story.file), 'utf8');
+  const mockups = mockupFiles(config, story.key).map((f) => config.abs(f));
+  process.env.PIPELINE_STORY_SOURCES = [process.env.PIPELINE_STORY_SOURCES, config.abs(story.dir)].filter(Boolean).join(path.delimiter);
   const conventions = config.prCheck.conventions.filter((f) => fs.existsSync(path.join(workRoot, f)));
 
   const ctx = { id, pr, story, storyTitle: storyText.split('\n')[0].replace(/^#\s*/, '').trim(), branch: pr?.headRef ?? branch, workRoot, baseRef: baseCandidates[0], baseRev, mockups, conventions };
