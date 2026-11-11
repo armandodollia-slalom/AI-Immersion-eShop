@@ -10,7 +10,7 @@ export function spawnBackground(config, { script, key, stage, args, file = logFi
   const fd = fs.openSync(file, 'a');
   const env = { ...process.env, PIPELINE_BACKGROUND: '1' };
   delete env.PIPELINE_CHILD;
-  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, detached: true, stdio: ['ignore', fd, fd], env });
+  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, detached: true, stdio: ['ignore', fd, fd], env, windowsHide: true });
   child.unref();
   fs.closeSync(fd);
   return { pid: child.pid, log: path.relative(config.root, file) };

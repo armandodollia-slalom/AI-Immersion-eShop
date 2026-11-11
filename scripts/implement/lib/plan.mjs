@@ -144,7 +144,10 @@ export function globsOverlap(g1, g2) {
 }
 
 // Changed files outside the subtask's `owns`.
-export const scopeViolations = (files, owns) => files.filter((f) => !matchesAny(f, owns));
+// Files the harness itself writes and commits (metrics, run state, the local graph) are never an
+// agent's out-of-scope edit.
+export const HARNESS_PATHS = ['.agent-metrics/**', '.agent-state/**', 'graphify-out/**'];
+export const scopeViolations = (files, owns) => files.filter((f) => !matchesAny(f, owns) && !matchesAny(f, HARNESS_PATHS));
 
 // ---------------------------------------------------------------------------------------------
 // Stories and plans

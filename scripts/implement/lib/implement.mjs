@@ -5,10 +5,13 @@ import { runAgent } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { formatBugs, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
+import { HUMAN_DECISIONS_FILE, decisionsBlock, readDecisions } from '../../pipeline/lib/human-decisions.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
+import { openPullRequest, prPublisher } from '../../pipeline/lib/bot.mjs';
+import { RESOLVED_LABEL, clearEscalationNotes } from '../../board/lib/escalation.mjs';
 import { ticketFile, writeTicket } from '../../board/lib/source.mjs';
 import { metaFor } from '../../board/lib/ticket-format.mjs';
 import { appendJsonl, extractResult, isProcessAlive, log, nowIso, readJson, readJsonl, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
@@ -21,6 +24,9 @@ import { LimitError, agentSettings, checkBudget, createContext, orchestrate } fr
 import { applyResources, resourcesFromEnv, waitForMemory } from './resources.mjs';
 import { newFeedbackLog } from './feedback.mjs';
 import { epicNoteBlock, integrationTask } from './tasks.mjs';
+import { isBugTicket } from './epic-plan.mjs';
+import { reviewGatePublish } from './post-publish.mjs';
+import { isReopened, openPrFor, placeReopened, syncFromRemote } from './reopen.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
 const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
@@ -35,18 +41,43 @@ export const loadRun = (config, key) => readJson(runFile(config, key), null);
 export const batchFile = (config) => path.join(runsDir(config), 'batch.json');
 const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(loadRun(config, key) ?? {}), key, ...patch, updatedAt: nowIso() });
 
+// A re-run of a ticket a human resolved starts clean: the escalation-resolved label comes off (a later
+// failure asks again) and the old escalation notes go, so the next failure comment only shows new ones.
+export function startResolvedReruns(config, stories, { event = boardEvent } = {}) {
+  const started = [];
+  // A reopened bug fix (review gate) re-runs once: the label comes off; the reopen stays in its Triage.
+  for (const s of stories.filter((x) => x.reopened && !x.skip)) {
+    event(config.root, s.key, ['clear-reopened', s.key]);
+    log(`${s.key}: re-run of a reopened bug fix${s.reopenedPr ? ` on ${s.branch} (${s.reopenedPr})` : s.followUp ? ` as a follow-up on ${s.branch}` : ''}.`);
+  }
+  for (const s of stories.filter((x) => x.resolved && !x.skip)) {
+    const removed = clearEscalationNotes(config, s.key, [s.worktree]);
+    event(config.root, s.key, ['clear-resolved', s.key]);
+    log(`${s.key}: re-run with the human decisions${removed.length ? `; ${removed.length} old escalation note(s) cleared` : ''}.`);
+    started.push(s.key);
+  }
+  return started;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Batch: order the stories, then run one worker process per story, at most `parallel` at a time
 // ---------------------------------------------------------------------------------------------
 
-export function plan(config, inputs, { base = config.baseRef, force = false } = {}) {
+export function plan(config, inputs, { base = config.baseRef, force = false, placeReopenedRuns = true, reopenDeps = {} } = {}) {
   const stories = orderStories(collectStories(inputs));
   const byKey = new Map(stories.map((s) => [s.key, s]));
   for (const s of stories) {
-    s.skip = s.implemented && !force ? 'already implemented (has "## Implementation Notes"; --force to redo)' : null;
+    // A bug fix a person reopened after the review gate assessed it runs again (reopen.mjs).
+    s.reopened = isReopened(config, s);
+    s.skip = s.implemented && !force && !s.reopened ? 'already implemented (Implementation Notes or a closed issue; --force to redo)' : null;
+    // A human answered the escalation questions of its last run (the issue is labeled
+    // escalation-resolved): the ticket runs again, fresh, as with --force for its earlier run's outcome
+    // (also a standing qe/review escalation, which otherwise waits for a human).
+    s.resolved = Boolean(s.labels?.includes(config.board?.resolvedLabel ?? RESOLVED_LABEL));
+    const retry = force || s.resolved || s.reopened;
     // A later run continues where an interrupted one stopped: finished stories are kept, stories that
     // died part-way resume in their worktree.
-    const prev = force || s.skip ? null : loadRun(config, s.key);
+    const prev = retry || s.skip ? null : loadRun(config, s.key);
     if (prev?.outcome === 'done' && prev.branch && revExists(config.root, `refs/heads/${prev.branch}`)) {
       s.skip = `done in a previous run (--force to redo)`;
       s.doneBefore = true;
@@ -69,13 +100,14 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
     deps.sort((a, b) => ancestors.get(b).size - ancestors.get(a).size);
     s.base = deps.length ? byKey.get(deps[0]).branch : base;
     s.merge = deps.slice(1).map((k) => byKey.get(k).branch);
+    if (s.reopened && !s.skip && placeReopenedRuns) placeReopened(config, s, reopenDeps);
   }
   return stories;
 }
 
 export function describePlan(stories) {
   return stories
-    .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}${s.resume ? '  (resume)' : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)
+    .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}${s.resume ? '  (resume)' : ''}${s.resolved ? '  (re-run with human decisions)' : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)
     .join('\n');
 }
 
@@ -140,12 +172,13 @@ export function startWorker(config, story, { pr, script }) {
   if (story.epicBranch) args.push('--epic-branch', story.epicBranch);
   if (pr) args.push('--pr');
   if (story.resume) args.push('--resume');
+  if (story.fromRemote) args.push('--from-remote');
   saveRun(config, story.key, { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) });
   log(`${story.key}: started on ${story.branch} (log: ${path.relative(config.root, logPath)})`);
   const fd = fs.openSync(logPath, 'a');
   const env = { ...process.env };
   delete env.PIPELINE_ROOT;
-  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, stdio: ['ignore', fd, fd], env });
+  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, stdio: ['ignore', fd, fd], env, windowsHide: true });
   fs.closeSync(fd);
   return new Promise((resolve) => {
     child.on('exit', (code) => {
@@ -160,7 +193,10 @@ export function startWorker(config, story, { pr, script }) {
 // Worker: one story, start to finish, in its own worktree
 // ---------------------------------------------------------------------------------------------
 
-export function prepareWorktree(config, { key, file, base, branch, worktree, merge = [] }) {
+export function prepareWorktree(config, { key, file, base, branch, worktree, merge = [], fromRemote = false }) {
+  // A reopened bug fix re-runs on its open PR's branch: start from the remote branch when this machine
+  // has none, and take a person's commits on the PR (fast-forward) when it has.
+  if (fromRemote && !revExists(config.root, `refs/heads/${branch}`) && git(config.root, ['fetch', '-q', 'origin', `${branch}:${branch}`], { env: commitEnv }).status === 0) log(`${key}: ${branch} fetched from origin (reopened bug fix)`);
   if (!fs.existsSync(worktree)) {
     if (!revExists(config.root, base)) throw new Error(`base ${base} does not exist`);
     fs.mkdirSync(path.dirname(worktree), { recursive: true });
@@ -170,6 +206,7 @@ export function prepareWorktree(config, { key, file, base, branch, worktree, mer
   } else {
     log(`${key}: reusing worktree ${worktree}`);
   }
+  if (fromRemote && !syncFromRemote(worktree, branch, commitEnv)) log(`${key}: ${branch} could not be fast-forwarded to origin/${branch}; continuing from the local branch`);
   for (const other of merge) {
     const r = git(worktree, ['merge', '--no-edit', '-q', other], { env: commitEnv });
     if (r.status !== 0) {
@@ -193,6 +230,16 @@ export function prepareWorktree(config, { key, file, base, branch, worktree, mer
       writeTicket(wtConfig, key, { content: text, meta: metaFor({ key, type: 'story', title: /^#\s+(.+)$/m.exec(text)?.[1] ?? key, slug, source: null }, text), origin: 'file' });
     }
   }
+  // A human's decisions (decisions.md, written by `board fetch`) always follow the issue: a re-run reuses
+  // the worktree, so they are refreshed even when its ticket copy is kept.
+  if (path.basename(file) === 'story.md') {
+    const from = path.join(path.dirname(file), HUMAN_DECISIONS_FILE);
+    const to = path.join(path.dirname(target), HUMAN_DECISIONS_FILE);
+    if (path.resolve(from) !== path.resolve(to)) {
+      if (fs.existsSync(from)) fs.copyFileSync(from, to);
+      else fs.rmSync(to, { force: true });
+    }
+  }
   // The epic's ticket (body and mockups) goes along when the run handed it over (`--epic`, or epic
   // delivery), so the story's mockups-from-the-epic are found in the worktree too.
   const parent = readJson(path.join(path.dirname(file), 'meta.json'), {})?.parent;
@@ -213,7 +260,7 @@ function pipeline(worktree, base, args, input = '') {
   return run(process.execPath, [PIPELINE_CLI, ...args], { cwd: worktree, input, env });
 }
 
-function implementerTask({ key, storyFile, branch, worktree, base, feedback, epicNote = null }) {
+function implementerTask({ key, storyFile, branch, worktree, base, feedback, epicNote = null, decisions = null }) {
   const lines = [
     `Implement story ${key}: ${path.relative(worktree, storyFile)}`,
     '',
@@ -221,11 +268,12 @@ function implementerTask({ key, storyFile, branch, worktree, base, feedback, epi
     `- The worktree (${worktree}) and branch (${branch}, based on ${base}) already exist and are your working directory. Do not create worktrees, switch branches, push, or open a PR.`,
     '- The pipeline has already been started for this story. Do not run `pipeline start` or `pipeline done`; the runner does that.',
     '- Commit your work with clear messages when you finish. Anything left uncommitted is committed for you.',
-    '- Nobody can answer questions. If an Open Question or missing blocker makes the story unimplementable, stop and report `blocked`. Otherwise make a reasonable, documented choice and continue.',
+    '- Nobody can answer questions during the run. If an Open Question or missing blocker makes the story unimplementable, stop and report `blocked` (the board then asks a human, and the ticket runs again with the answers under "Human decisions"). Otherwise make a reasonable, documented choice and continue.',
     '',
     'End your reply with exactly one line:',
     'AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>", "disputes": [{"finding": "<finding id>", "kind": "nit" | "out-of-scope", "reason": "<the acceptance criterion, owns or mockup that shows why>"}], "followUps": [{"title": "<real problem outside this ticket>", "reason": "<why it matters>"}]}',
   ];
+  lines.push(...decisionsBlock(decisions, 'implement'));
   if (epicNote) lines.push('', epicNoteBlock(epicNote));
   if (feedback) lines.push('', 'Address this feedback, then finish again:', '', feedback);
   return lines.join('\n');
@@ -379,7 +427,7 @@ async function implementStoryInner(config, opts, holder) {
     if (!o.ok) return stop(o.outcome, o.reason, { findings: o.findings });
     // Self mode: the verifier already approved the orchestrator's own work, so the review comes next.
     skipNextRun = o.mode === 'self';
-    if (o.mode === 'delegate') integration = integrationTask({ key, storyFile: prep.story, branch, worktree, base, plan: o.plan, notes: o.integrationNotes });
+    if (o.mode === 'delegate') integration = integrationTask({ key, storyFile: prep.story, branch, worktree, base, plan: o.plan, notes: o.integrationNotes, decisions: ctx.decisions });
   }
 
   let qe = null;
@@ -409,7 +457,7 @@ async function implementStoryInner(config, opts, holder) {
         }
         metrics.implementerRuns++;
         const before = headSha(worktree);
-        const task = integration ?? implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback, epicNote: ctx ? null : epicNote });
+        const task = integration ?? implementerTask({ key, storyFile: prep.story, branch, worktree, base, feedback, epicNote: ctx ? null : epicNote, decisions: readDecisions(prep.story) });
         integration = null;
         const { cli, model } = agentSettings(wt, 'orchestrator');
         let res;
@@ -490,24 +538,38 @@ async function implementStoryInner(config, opts, holder) {
   // the ticket and moves the card to Pending Review (board review --epic-branch) once it has merged.
   if (opts.epicBranch) return result;
   if (pr && outcome === 'done' && !prsDisabled()) {
-    const push = git(worktree, ['push', '-u', 'origin', branch]);
-    if (push.status !== 0) return { ...result, reason: `push failed: ${tail(push.stderr, 300)}` };
     const baseBranch = base.replace(/^origin\//, '');
     const title = `${key}: ${fs.readFileSync(prep.story, 'utf8').match(/^#\s+(.+)$/m)?.[1]?.replace(new RegExp(`^${key}[:\\s-]*`), '') ?? key}`;
     const orch = ctx ? `\n- Orchestration: ${ctx.metrics.mode}${ctx.plan?.mode === 'delegate' ? ` (${ctx.plan.subtasks.length} subtasks, ${ctx.metrics.pairRounds} pair rounds, ${ctx.metrics.takeovers} takeover(s))` : ''}, ${ctx.metrics.agentRuns} agent runs` : '';
-    const issueUrl = readJson(path.join(path.dirname(prep.story), 'meta.json'), {})?.issue?.url;
+    const ticketMeta = readJson(path.join(path.dirname(prep.story), 'meta.json'), {}) ?? {};
+    const issueUrl = ticketMeta.issue?.url;
     const body = `Implements ${key}${issueUrl ? ` (${issueUrl})` : ''} (generated by \`pipeline implement\`).\n\n- Architecture review: approved\n- Test plan and automated tests: verified\n- Implementer runs: ${metrics.implementerRuns}, review rounds blocked: ${metrics.reviewBlocks}, QE bug-fix cycles: ${metrics.bugFixCycles}${orch}\n\nThe demo video of the changed e2e specs (and, for backend changes, an API summary of the endpoints) is added below by the PR demo video workflow once it has recorded them.`;
-    const created = run('gh', ['pr', 'create', '--base', baseBranch, '--head', branch, '--title', title, '--body', body], { cwd: worktree });
-    const prUrl = created.status === 0 ? created.stdout.trim() : null;
+    const opened = await openStoryPr(wt, { worktree, branch, base: baseBranch, title, body });
+    if (!opened.pushed) return { ...result, reason: opened.reason };
+    const prUrl = opened.url;
     publishTicket(worktree, key);
     reportToBoard(worktree, key, prUrl);
-    return { ...result, pr: prUrl, ...(created.status !== 0 ? { reason: `gh pr create failed: ${tail(created.stderr, 300)}` } : {}) };
+    // A published bug fix goes through the review gate (assessment, then auto-merge or review).
+    if (prUrl && isBugTicket({ key, type: ticketMeta.type })) reviewGatePublish(worktree, { pr: prUrl, keys: [key], base });
+    return { ...result, pr: prUrl, ...(!prUrl ? { reason: opened.reason } : {}) };
   }
   if (outcome === 'done') {
     publishTicket(worktree, key);
     reportToBoard(worktree, key, null);
   }
   return result;
+}
+
+// Pushes a story's branch and opens its PR as the pipeline's PR bot (dev-bot-<login>, lib/bot.mjs), or
+// as the developer's gh login when the bot is not set up. The branch's PR may already be open (a
+// reopened bug fix re-runs on it): the push updated it, and its URL is looked up as the same identity.
+// { url, pushed, reason }.
+export async function openStoryPr(config, { worktree, branch, base, title, body }, deps = {}) {
+  const publisher = deps.publisher ?? (await prPublisher(config));
+  const opened = openPullRequest(publisher, { cwd: worktree, branch, base, title, body }, { run: deps.run });
+  if (!opened.pushed || opened.url) return opened;
+  const url = (deps.openPrFor ?? openPrFor)(config, branch, publisher.env);
+  return url ? { ...opened, url, reason: undefined } : opened;
 }
 
 // The implementer appends its Implementation Notes to the ticket's cached story; the issue is the source

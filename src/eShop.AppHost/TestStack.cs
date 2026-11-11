@@ -31,6 +31,7 @@ internal static class TestStack
     public static readonly HostPort WebhooksApiPort = new("WEBHOOKS_API_HOST_PORT", 18085);
     public static readonly HostPort WebhooksClientPort = new("WEBHOOKSCLIENT_HOST_PORT", 18086);
     public static readonly HostPort MobileBffPort = new("MOBILE_BFF_HOST_PORT", 18087);
+    public static readonly HostPort PromotionsApiPort = new("PROMOTIONS_API_HOST_PORT", 18088);
     public static readonly HostPort DashboardPort = new("DASHBOARD_HOST_PORT", 18888);
     public static readonly HostPort PostgresPort = new("POSTGRES_HOST_PORT", 18432);
     public static readonly HostPort RedisPort = new("REDIS_HOST_PORT", 18379);

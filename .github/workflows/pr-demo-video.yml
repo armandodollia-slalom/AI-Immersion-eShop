@@ -92,11 +92,15 @@ jobs:
       env:
         SPECS: ${{ steps.specs.outputs.list }}
       run: node scripts/pr-video/pr-video.mjs publish --pr "$PR_NUMBER" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
+    # Only edits the PR description, so a failure here does not fail the recording.
     - name: Add the API summary to the PR
       if: always() && steps.specs.outcome == 'success'
+      continue-on-error: true
       env:
         SPECS: ${{ steps.specs.outputs.list }}
-      run: node scripts/pr-video/pr-video.mjs api --pr "$PR_NUMBER" --base "$BASE_REF" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
+        API: ${{ steps.specs.outputs.api }}
+        FRONTEND: ${{ steps.specs.outputs.frontend }}
+      run: node scripts/pr-video/pr-video.mjs api --pr "$PR_NUMBER" --base "$BASE_REF" --api "$API" --frontend "$FRONTEND" --specs "$SPECS" --head-sha "$HEAD_SHA" --run-url "$RUN_URL"
     - name: Upload the videos
       if: always() && steps.specs.outputs.record == 'true' && steps.specs.outputs.video == 'true'
       uses: actions/upload-artifact@v4
