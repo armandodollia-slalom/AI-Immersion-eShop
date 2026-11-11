@@ -7,9 +7,9 @@
         {
             return new List<ApiResource>
             {
-                new ApiResource("orders", "Orders Service"),
-                new ApiResource("basket", "Basket Service"),
-                new ApiResource("webhooks", "Webhooks registration Service"),
+                new ApiResource("orders", "Orders Service") { Scopes = { "orders" } },
+                new ApiResource("basket", "Basket Service") { Scopes = { "basket" } },
+                new ApiResource("webhooks", "Webhooks registration Service") { Scopes = { "webhooks" } },
             };
         }
 
