@@ -84,6 +84,7 @@ public static class Extensions
             options.Scope.Add("profile");
             options.Scope.Add("orders");
             options.Scope.Add("basket");
+            options.Scope.Add("promotions");
         });
 
         // Blazor auth services
