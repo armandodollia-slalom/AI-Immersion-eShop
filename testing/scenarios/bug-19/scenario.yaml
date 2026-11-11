@@ -1,0 +1,5 @@
+description: >
+  BUG-19 (unknown brand or type ids on catalog create or update return 500): catalog-edge already has
+  what the cases need (14 items, brands and types 1-4 where brand 4 and type 4 have no items, item 1
+  "Edge 01 Penny Boot" at 0.01, item 2, no item 999999, admin user), so this scenario only extends it.
+extends: catalog-edge
