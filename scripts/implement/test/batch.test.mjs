@@ -188,3 +188,24 @@ test('recordUnrun: a ticket the batch never ran gets its outcome recorded once, 
   assert.equal(loadRun(config, 'B-3').outcome, 'done');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('resetEscalatedQe: a resolved re-run makes escalated QE stages start over, so QE sees the decision', async () => {
+  const { resetEscalatedQe } = await import('../lib/implement.mjs');
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-reset-qe-'));
+  const stories = path.join(wt, '.agent-state', 'stories');
+  fs.mkdirSync(stories, { recursive: true });
+  const write = (state) => fs.writeFileSync(path.join(stories, 'B-1.json'), JSON.stringify({ story: 'B-1', ...state }));
+  const read = () => JSON.parse(fs.readFileSync(path.join(stories, 'B-1.json'), 'utf8'));
+  const config = { stateDir: '.agent-state' };
+  // The escalated automation ran on the same implementation the re-run keeps (the decision is about tests).
+  write({ automation: { status: 'escalated', workingHash: 'h1', verifiedHash: null }, plan: { status: 'verified' }, review: { lastVerdict: 'APPROVED', approvedHash: 'h1' } });
+  assert.deepEqual(resetEscalatedQe(config, 'B-1', wt), ['automation']);
+  assert.deepEqual([read().automation.status, read().automation.workingHash, read().plan.status], ['idle', null, 'verified']);
+  write({ automation: { status: 'blocked-on-plan', workingHash: 'h1' }, plan: { status: 'escalated' } });
+  assert.deepEqual(resetEscalatedQe(config, 'B-1', wt), ['automation', 'plan']);
+  // A verified QE is left alone, and a missing worktree changes nothing.
+  write({ automation: { status: 'verified', workingHash: 'h1', verifiedHash: 'h1' }, plan: { status: 'verified' } });
+  assert.deepEqual(resetEscalatedQe(config, 'B-1', wt), []);
+  assert.deepEqual(resetEscalatedQe(config, 'B-1', path.join(wt, 'missing')), []);
+  fs.rmSync(wt, { recursive: true, force: true });
+});

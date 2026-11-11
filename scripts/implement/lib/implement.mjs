@@ -6,7 +6,7 @@ import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { formatBugs, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { HUMAN_DECISIONS_FILE, decisionsBlock, readDecisions } from '../../pipeline/lib/human-decisions.mjs';
-import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
@@ -54,6 +54,25 @@ export const loadRun = (config, key) => readJson(runFile(config, key), null);
 export const batchFile = (config) => path.join(runsDir(config), 'batch.json');
 const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(loadRun(config, key) ?? {}), key, ...patch, updatedAt: nowIso() });
 
+// The QE stages whose escalation a human resolved start over as well. A decision about the tests needs no
+// code change, so with the implementation hash unchanged the QE stop hook would take its escalated run as
+// current and the worker would read the old escalation back without QE ever seeing the decision.
+export function resetEscalatedQe(config, key, worktree) {
+  if (!worktree || !fs.existsSync(worktree)) return [];
+  const reset = [];
+  updateState({ root: worktree, stateDir: config.stateDir }, key, (st) => {
+    if (['escalated', 'blocked-on-plan'].includes(st.automation.status)) {
+      st.automation = { ...st.automation, status: 'idle', workingHash: null, requestedHash: null, verifiedHash: null, bugs: [], recoveries: 0, retryAt: null };
+      reset.push('automation');
+    }
+    if (st.plan.status === 'escalated') {
+      st.plan = { ...st.plan, status: 'idle', recoveries: 0, retryAt: null };
+      reset.push('plan');
+    }
+  });
+  return reset;
+}
+
 // A re-run of a ticket a human resolved starts clean: the escalation-resolved label comes off (a later
 // failure asks again) and the old escalation notes go, so the next failure comment only shows new ones.
 export function startResolvedReruns(config, stories, { event = boardEvent } = {}) {
@@ -65,8 +84,9 @@ export function startResolvedReruns(config, stories, { event = boardEvent } = {}
   }
   for (const s of stories.filter((x) => x.resolved && !x.skip)) {
     const removed = clearEscalationNotes(config, s.key, [s.worktree]);
+    const reset = resetEscalatedQe(config, s.key, s.worktree);
     event(config.root, s.key, ['clear-resolved', s.key]);
-    log(`${s.key}: re-run with the human decisions${removed.length ? `; ${removed.length} old escalation note(s) cleared` : ''}.`);
+    log(`${s.key}: re-run with the human decisions${removed.length ? `; ${removed.length} old escalation note(s) cleared` : ''}${reset.length ? `; QE ${reset.join(' and ')} start over` : ''}.`);
     started.push(s.key);
   }
   return started;
