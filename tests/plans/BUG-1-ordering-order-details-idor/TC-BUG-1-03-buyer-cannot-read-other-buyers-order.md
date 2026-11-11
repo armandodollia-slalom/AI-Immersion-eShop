@@ -4,7 +4,7 @@ title: Alice cannot read bob's order; response is 404 with no order data
 type: sad
 sad-path: ownership
 layer: functional
-covers: ["Expected: 404 NotFound", "Actual: 200 with bob's order", "Acceptance: repro steps match Expected", "Decision: 404 not 403"]
+covers: ["Expected: 404 NotFound", "Actual: 200 with bob's order", "Acceptance: repro steps match Expected", "Decision: 404 not 403", "Acceptance Criteria: fixme test 'a buyer cannot read another buyer's order details' passes (Round 1 Q1 = C)"]
 priority: P1
 ---
 

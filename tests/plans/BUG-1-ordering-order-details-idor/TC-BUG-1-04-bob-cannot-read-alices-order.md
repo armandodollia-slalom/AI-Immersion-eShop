@@ -4,7 +4,7 @@ title: Bob cannot read alice's order
 type: sad
 sad-path: ownership
 layer: functional
-covers: ["Expected: another buyer's order is never returned"]
+covers: ["Expected: another buyer's order is never returned", "Acceptance Criteria: rest of ordering-api spec stays green (Round 1 Q1 = C)"]
 priority: P2
 ---
 

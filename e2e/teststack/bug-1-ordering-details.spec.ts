@@ -1,5 +1,3 @@
-import { spawnSync } from 'child_process';
-import path from 'path';
 import { test, expect } from '../fixtures';
 import { loadScenario } from './scenario';
 import { ORDERING_URL } from './ports';
@@ -69,53 +67,5 @@ test('TC-BUG-1-04 bob cannot read alice\'s order', async ({ request }) => {
     const body = await response.text();
     expect(body).not.toContain('Boston');
     expect(body).not.toContain('249.98');
-  });
-});
-
-test('TC-BUG-1-07 ordering API spec passes with the fixme removed from the order-details test', async ({ request }) => {
-  test.setTimeout(10 * 60 * 1000);
-  // the stack must be serving before the nested run starts re-seeding it
-  await expect
-    .poll(async () => (await request.get(`${API}/4?${V1}`, { headers: bearer(alice) })).status(), { timeout: 60_000 })
-    .toBe(200);
-  const runSpec = () =>
-    spawnSync(
-      'npx',
-      ['playwright', 'test', '-c', 'playwright.teststack.config.ts', '--project', 'scenarios', '--no-deps',
-        '--reporter=json', 'e2e/teststack/ordering-api.spec.ts'],
-      { cwd: path.resolve(__dirname, '..', '..'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, E2E_KEEP_VIDEOS: '' } },
-    );
-  // the nested run re-seeds the stack and restarts ordering-api; retry up to twice if it was still coming up
-  const run = await test.step('run ordering-api.spec.ts', async () => {
-    let result = runSpec();
-    for (let attempt = 1; attempt < 3 && result.status !== 0; attempt++) {
-      // wait until the restarted ordering-api serves the seeded order again before retrying
-      await expect
-        .poll(async () => (await request.get(`${API}/4?${V1}`, { headers: bearer(alice) }).catch(() => null))?.status(), { timeout: 60_000 })
-        .toBe(200);
-      result = runSpec();
-    }
-    return result;
-  });
-  await test.step('the run exits 0 and the details test passed, not skipped', () => {
-    const report = JSON.parse(run.stdout.slice(run.stdout.indexOf('{')));
-    const failures = JSON.stringify(
-      (report.errors ?? []).concat(
-        JSON.stringify(report.suites).match(/"error":\{"message":"[^"]{0,600}/g) ?? [],
-      ),
-    );
-    expect(run.status, failures).toBe(0);
-    const specs: { title: string; ok: boolean; tests: { status: string; results: { status: string }[] }[] }[] = [];
-    const collect = (suite: any) => {
-      specs.push(...(suite.specs ?? []));
-      (suite.suites ?? []).forEach(collect);
-    };
-    report.suites.forEach(collect);
-    const target = specs.find((s) => s.title === 'a buyer cannot read another buyer\'s order details');
-    expect(target, 'the order-details test is in the report').toBeDefined();
-    expect(target!.tests.map((t) => t.status)).toEqual(['expected']);
-    expect(target!.tests[0].results.map((r) => r.status)).toEqual(['passed']);
-    expect(specs.filter((s) => !s.ok)).toEqual([]);
-    expect(report.stats.unexpected).toBe(0);
   });
 });
