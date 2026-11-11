@@ -18,6 +18,7 @@ app.MapDefaultEndpoints();
 var promotions = app.NewVersionedApi("Promotions");
 
 promotions.MapPromotionsApiV1();
+promotions.MapEvaluateApiV1();
 
 app.UseDefaultOpenApi();
 app.Run();

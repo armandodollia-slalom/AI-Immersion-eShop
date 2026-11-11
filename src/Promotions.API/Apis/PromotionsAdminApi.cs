@@ -131,6 +131,7 @@ public static class PromotionsAdminApi
         PromotionRequest request,
         PromotionsContext context,
         IPromotionsIntegrationEventService eventService,
+        PromotionCache promotionCache,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -155,7 +156,7 @@ public static class PromotionsAdminApi
         PromotionValidator.Apply(request, promotion);
 
         // A published promotion moved to a start in the past is active now: send its start event at once.
-        return await SaveWithEventsAsync(promotion, context, eventService, now, cancellationToken)
+        return await SaveWithEventsAsync(promotion, context, eventService, promotionCache, now, cancellationToken)
             ? TypedResults.Ok(PromotionDetails.From(promotion, now))
             : ConcurrentChange(id);
     }
@@ -164,6 +165,7 @@ public static class PromotionsAdminApi
         int id,
         PromotionsContext context,
         IPromotionsIntegrationEventService eventService,
+        PromotionCache promotionCache,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -181,7 +183,7 @@ public static class PromotionsAdminApi
         var now = timeProvider.GetUtcNow();
 
         // Already started: the start event goes out now (once); otherwise PromotionLifecycleWorker sends it after StartsAt.
-        return await SaveWithEventsAsync(promotion, context, eventService, now, cancellationToken)
+        return await SaveWithEventsAsync(promotion, context, eventService, promotionCache, now, cancellationToken)
             ? TypedResults.Ok(PromotionDetails.From(promotion, now))
             : ConcurrentChange(id);
     }
@@ -190,6 +192,7 @@ public static class PromotionsAdminApi
         int id,
         PromotionsContext context,
         IPromotionsIntegrationEventService eventService,
+        PromotionCache promotionCache,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -202,7 +205,7 @@ public static class PromotionsAdminApi
         promotion.End();
 
         // A promotion that had started gets its end event at once; one that never started has nothing to end for subscribers.
-        return await SaveWithEventsAsync(promotion, context, eventService, timeProvider.GetUtcNow(), cancellationToken)
+        return await SaveWithEventsAsync(promotion, context, eventService, promotionCache, timeProvider.GetUtcNow(), cancellationToken)
             ? TypedResults.NoContent()
             : ConcurrentChange(id);
     }
@@ -211,6 +214,7 @@ public static class PromotionsAdminApi
         Promotion promotion,
         PromotionsContext context,
         IPromotionsIntegrationEventService eventService,
+        PromotionCache promotionCache,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -223,6 +227,9 @@ public static class PromotionsAdminApi
         {
             return false;
         }
+
+        // Pricing must see a published, changed or ended promotion at once, not after the 30s cache window.
+        promotionCache.Invalidate();
 
         foreach (var evt in events)
         {

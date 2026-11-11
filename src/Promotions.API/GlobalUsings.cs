@@ -11,4 +11,5 @@ global using Microsoft.Extensions.DependencyInjection.Extensions;
 global using Promotions.API;
 global using Promotions.API.Infrastructure;
 global using Promotions.API.Model;
+global using Promotions.API.Pricing;
 global using Promotions.API.Services;
