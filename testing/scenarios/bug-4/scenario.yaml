@@ -1,0 +1,5 @@
+description: >
+  BUG-4 (catalog write endpoints need authentication): catalog-edge already has what the cases
+  need (14 items with ids 1-14, brands and types 1-4, users alice (no role), bob and admin
+  (role Admin), all with password Pass123$), so this scenario only extends it.
+extends: catalog-edge
