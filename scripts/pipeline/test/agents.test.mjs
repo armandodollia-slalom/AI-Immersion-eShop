@@ -8,10 +8,12 @@ const config = (cli = 'claude', cmd = null) => ({ agent: { cli, cmd, models: { d
 const config0 = config;
 const flag = (args, name) => args[args.indexOf(name) + 1];
 
-test('the checked-in policy: opus and sonnet only, pinned ids, codex refused, default sonnet', () => {
+test('the checked-in policy: opus, sonnet and sol (Copilot only), pinned ids, codex refused, default sonnet', () => {
   const config = loadConfig();
   const forCli = (cli) => ({ agent: { ...config.agent, cli, cmd: null } });
-  assert.deepEqual(config.agent.allowedModels, ['opus', 'sonnet']);
+  assert.deepEqual(config.agent.allowedModels, ['opus', 'sonnet', 'sol']);
+  assert.equal(resolveModel(forCli('copilot'), 'sol'), 'gpt-6.1-sol');
+  assert.throws(() => resolveModel(forCli('claude'), 'sol'), /sol/, 'Claude Code has no id for sol');
   assert.equal(resolveModel(forCli('claude'), 'opus'), 'claude-opus-5-5');
   assert.equal(resolveModel(forCli('claude'), null), 'claude-sonnet-5-5', 'no model: agent.models.default under strictModels');
   assert.equal(resolveModel(forCli('copilot'), 'sonnet'), 'claude-sonnet-5.5');
