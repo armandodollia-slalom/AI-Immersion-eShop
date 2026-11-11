@@ -94,7 +94,8 @@ export function planDecisionLog(rec, { blocked = false } = {}) {
 
 // A pair round's verdict as a shared decision-log entry. Findings from the harness's own checks (scope,
 // build, diagnostics) are included with their category, so the retro sees every reason a round failed.
-export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifier = null, ui = false }) {
+export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifier = null, ui = false, disputes = [], followUps = [] }) {
+  const ruling = new Map(disputes.map((d) => [d.id, d]));
   return {
     stage: VERIFY_STAGE,
     story: key,
@@ -107,7 +108,10 @@ export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifi
     decision_id: decisionId,
     subtask: st.id,
     design_findings: designCount(verdict.findings),
-    items: (verdict.findings ?? []).map((f) => ({ severity: f.severity ?? null, category: f.category ?? null, file: f.file ?? null, line: f.line ?? null, screenshot: f.screenshot ?? null, ...(f.category === 'design' ? { mockup: f.mockup ?? null, actual: f.actual ?? f.screenshot ?? null } : {}), reason: f.issue ?? f.detail ?? null, fix: f.fix ?? null })),
+    // The implementer's disputes of the last round's findings and how this verifier ruled on them.
+    disputes: disputes.map((d) => ({ finding: d.id, kind: d.kind, reason: d.reason ?? null, ruling: d.ruling, evidence: d.evidence ?? null })),
+    follow_ups: followUps.map((u) => ({ title: u.title, reason: u.reason ?? null })),
+    items: (verdict.findings ?? []).map((f) => ({ id: f.id ?? null, severity: f.severity ?? null, category: f.category ?? null, file: f.file ?? null, line: f.line ?? null, screenshot: f.screenshot ?? null, ...(f.category === 'design' ? { mockup: f.mockup ?? null, actual: f.actual ?? f.screenshot ?? null } : {}), ...(ruling.has(f.id) ? { dispute: { kind: ruling.get(f.id).kind, ruling: ruling.get(f.id).ruling } } : {}), reason: f.issue ?? f.detail ?? null, fix: f.fix ?? null })),
   };
 }
 
@@ -131,7 +135,8 @@ const bySeverityCategory = (findings) => {
 };
 
 // A round as recorded: its verdict and counts, never the findings' text.
-export const roundRecord = ({ round, verdict, findings = [], diagnostics = null, outOfOwns = [], crossFindings = 0 }) => ({
+const NO_DISPUTES = { nit: 0, outOfScope: 0, accepted: 0, reasserted: 0, overruled: 0, followUps: 0 };
+export const roundRecord = ({ round, verdict, findings = [], diagnostics = null, outOfOwns = [], crossFindings = 0, disputes = NO_DISPUTES }) => ({
   round,
   verdict,
   findings: bySeverityCategory(findings),
@@ -139,6 +144,7 @@ export const roundRecord = ({ round, verdict, findings = [], diagnostics = null,
   diagnostics: diagnostics?.available ? { errors: diagnostics.errors.length, warnings: diagnostics.warnings.length } : null,
   outOfOwnsEdits: outOfOwns.length,
   crossSubtaskFindings: crossFindings,
+  disputes,
 });
 
 // Findings in a subtask's rounds that point at files another subtask owns: a sign of a bad split.
@@ -157,6 +163,7 @@ export function subtaskRunRecord(r) {
     maxRounds: r.maxRounds,
     rounds: r.rounds ?? [],
     designFindings: (r.rounds ?? []).reduce((n, x) => n + (x.designFindings ?? 0), 0),
+    followUps: r.followUps ?? [],
     approved: Boolean(r.approved),
     escalation: r.escalation ?? 'none',
     filesNeededOutsideOwns: r.filesNeededOutsideOwns ?? [],
@@ -203,6 +210,8 @@ export const storyOutcomeRecord = (r) => ({
   branch: r.branch ?? null,
   lspCalls: r.lspCalls ?? 0,
   signatureChangesWithoutReferences: Boolean(r.signatureChangesWithoutReferences),
+  // Real problems outside the ticket the pair implementers found: new tickets to file.
+  followUps: r.followUps ?? [],
 });
 
 // ---------------------------------------------------------------------------------------------

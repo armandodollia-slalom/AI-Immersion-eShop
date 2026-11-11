@@ -92,6 +92,9 @@ export function planTask({ key, storyFile, worktree, uiStory, limits, errors = n
   return lines.join('\n');
 }
 
+// What implementers and verifiers hold findings to: the ticket, not taste. See implement.md#nits-and-scope.
+const disputeFields = '"disputes": [{"finding": "<finding id or quoted issue>", "kind": "nit" | "out-of-scope", "reason": "<the acceptance criterion, owns glob or mockup that shows why>"}], "followUps": [{"title": "<real problem outside this ticket>", "reason": "<why it matters>"}]';
+
 export function pairImplementerTask({ key, storyFile, st, worktree, branch, base, round, maxRounds, findings, screenshots, diagnostics, self = false, mockups = null, mockupRenders = [] }) {
   const ui = st.verify === 'ui' && Boolean(mockups);
   const lines = [
@@ -115,7 +118,14 @@ export function pairImplementerTask({ key, storyFile, st, worktree, branch, base
   ];
   if (ui && mockupRenders?.length) lines.push('', 'Renders of the mockup screens the UI verifier compared with last round:', ...mockupRenders.map((s) => `- ${s}`));
   if (findings?.length) {
-    lines.push('', `### Findings from round ${round - 1} (address every blocking one)`, '', formatFindings(findings));
+    lines.push(
+      '',
+      `### Findings from round ${round - 1} (address every blocking one)`,
+      '',
+      formatFindings(findings),
+      '',
+      'Fix what the ticket needs: its acceptance criteria, correctness, security and the mockup. Do not act on nits (style, naming or preference that touches none of those) or on requests that widen the scope (features, refactors or fixes outside the acceptance criteria and owns), and do not ignore them silently: dispute each in `disputes` with the acceptance criterion, owns glob or mockup that shows why. The next verifier accepts the dispute or re-asserts the finding with evidence; a finding re-asserted twice can no longer be disputed. A real problem outside this ticket goes to `followUps` (filed as a new ticket later), not into this change.',
+    );
   }
   if (screenshots?.length) lines.push('', 'Screenshots the UI verifier took (open them to see what it saw):', ...screenshots.map((s) => `- ${s}`));
   if (diagnostics) lines.push('', '### Language server diagnostics on your changed files (last round)', '', diagnostics);
@@ -123,16 +133,37 @@ export function pairImplementerTask({ key, storyFile, st, worktree, branch, base
     '',
     'End your reply with exactly one line:',
     ui
-      ? 'AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>", "mockupScreens": ["<each mockup screen and state you built, for example Editor.dc.html (validation state)>"]}'
-      : 'AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>"}',
+      ? `AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>", "mockupScreens": ["<each mockup screen and state you built, for example Editor.dc.html (validation state)>"], ${disputeFields}}`
+      : `AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>", ${disputeFields}}`,
   );
   return lines.join('\n');
 }
 
 const verdictLine = (ui) =>
-  `AGENT_RESULT: {"verdict": "APPROVED" | "CHANGES_REQUESTED", "summary": "<one or two sentences>", "findings": [{"severity": "blocking" | "minor", ${ui ? '"category": "acceptance" | "correctness" | "layout" | "contract" | "stack" | "design", ' : ''}"file": "<path>", "line": <number or null>, ${ui ? '"screenshot": "<absolute path of the screenshot that shows it>", "mockup": "<design findings: absolute path of the mockup render>", "actual": "<design findings: absolute path of your app screenshot>", "diff": "<optional: pixel diff image>", ' : ''}"issue": "<what is wrong>", "fix": "<what to change>"}]}`;
+  `AGENT_RESULT: {"verdict": "APPROVED" | "CHANGES_REQUESTED", "summary": "<one or two sentences>", "disputes": [{"finding": "<disputed finding id>", "decision": "accepted" | "reasserted", "evidence": "<for reasserted: the acceptance criterion, mockup screen or correctness/security failure that requires it>"}], "findings": [{"id": "<the earlier id when re-raising a finding>", "severity": "blocking" | "minor", ${ui ? '"category": "acceptance" | "correctness" | "layout" | "contract" | "stack" | "design", ' : ''}"file": "<path>", "line": <number or null>, ${ui ? '"screenshot": "<absolute path of the screenshot that shows it>", "mockup": "<design findings: absolute path of the mockup render>", "actual": "<design findings: absolute path of your app screenshot>", "diff": "<optional: pixel diff image>", ' : ''}"issue": "<what is wrong>", "fix": "<what to change>"}]}`;
 
-export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics }) {
+// The judging rules and the implementer's disputes, for both verifiers.
+function judgingBlock(disputes) {
+  const lines = [
+    '',
+    "Judge against the subtask's acceptance criteria and owns, the story's mockup (UI) and correctness and security. Style, naming or preference findings that touch none of those are `minor` (they never block). Never ask for work beyond the ticket: features, refactors or fixes outside the acceptance criteria and owns are not findings (mention a real problem there as `minor`).",
+  ];
+  if (disputes) {
+    lines.push(
+      '',
+      '### Disputes from the implementer',
+      '',
+      'The implementer disputed these findings of the last round instead of acting on them:',
+      '',
+      disputes,
+      '',
+      'Rule on each in `disputes`: `accepted` when the dispute is right (drop the finding), or `reasserted` when the acceptance criteria, the mockup or correctness/security really require it: raise the finding again with the same `id` and that evidence in `evidence`. A disputed finding raised again without evidence does not block.',
+    );
+  }
+  return lines;
+}
+
+export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, disputes = null }) {
   return [
     `Verify subtask "${st.id}" of story ${key}, round ${round} of ${maxRounds}. You have a fresh context: judge only the subtask spec, the diff and the outputs below. You may read files and query graphify; you do not edit anything.`,
     '',
@@ -151,6 +182,7 @@ export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diag
     '### Diff against the story branch',
     '',
     fence(diff, 'diff'),
+    ...judgingBlock(disputes),
     '',
     'Every blocking finding must name the file and line (from the diff) and say exactly what to change. Errors in the diagnostics block approval anyway; do not repeat them unless you add something.',
     '',
@@ -173,7 +205,7 @@ function designBlock({ mockups, renders, screenshotsDir, implementerScreens }) {
   return lines;
 }
 
-export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, webappUrl, screenshotsDir, worktree, mockups = null, renders = null, implementerScreens = null }) {
+export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, webappUrl, screenshotsDir, worktree, mockups = null, renders = null, implementerScreens = null, disputes = null }) {
   return [
     `Verify subtask "${st.id}" of story ${key} in the running app, round ${round} of ${maxRounds}. You have a fresh context.`,
     '',
@@ -196,6 +228,7 @@ export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagno
     fence(diff, 'diff'),
     '',
     ...designBlock({ mockups, renders, screenshotsDir, implementerScreens }),
+    ...judgingBlock(disputes),
     '',
     'Check every acceptance criterion in the browser (see your agent file for how to drive Playwright). Each blocking finding must reference the screenshot that shows it, and the source file and line you believe is responsible when you can tell.',
     '',

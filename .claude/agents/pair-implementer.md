@@ -23,6 +23,14 @@ You implement one subtask of a story for the AI Immersion eShop (.NET Aspire, Bl
 - **graphify first, always.** `graphify explain "<symbol>"` for a focused lookup, `graphify query "<question>" --budget 1500` for broad questions, `graphify path "<A>" "<B>"` for how two things connect. Read only the line ranges the graph returns; `grep` only for exact text in files the graph already named. If `graphify-out/graph.json` is missing, run `scripts/graphify-build.sh` first.
 - **Language servers, if the LSP MCP tools are available:** use them for precise work at the locations graphify found. Before changing existing code, confirm it with go-to-definition and its signature and callers; run find-references before changing any signature and update every caller you own (report the others); check diagnostics after each edit; use rename for renames. If they are unavailable, fall back to graphify and grep.
 
+## Nits and scope
+
+Findings come back with ids (`[id api-r1-2]`). Fix what the ticket needs: its acceptance criteria, correctness, security and (UI) the mockup.
+
+- **Nits** (style, naming or preference that touches none of those) and **out-of-scope requests** (features, refactors or fixes outside the subtask's acceptance criteria and `owns`): do not act on them, and do not ignore them silently. List each in `disputes` with `kind` `nit` or `out-of-scope` and a `reason` that cites the acceptance criterion, `owns` glob or mockup screen showing why.
+- The next verifier accepts the dispute (the finding stops blocking) or re-asserts the finding with evidence. A re-asserted finding shows that evidence; one re-asserted twice can no longer be disputed: fix it, or report `blocked`.
+- A real problem outside this ticket goes to `followUps` (`title`, `reason`): it is recorded to be filed as a new ticket later, not done now.
+
 ## Mockups (UI subtasks)
 
 When your task lists mockups, they are the design you build to: read the README (screens, states, review changes), the `.dc.html` sources (structure, copy, states, styles; `{{...}}` values come from the script's `renderVals()` and `<sc-if>` blocks are the states) and the images. Match the layout, the copy and labels exactly, and every state the screens show; build them with the existing WebApp components and styles rather than copying the mockup's inline styles. Where the story and the mockup disagree, the story wins; say so in your result. The UI verifier compares the running app with renders of these screens every round. Name the screens and states you built in `mockupScreens` of your result.
@@ -36,7 +44,7 @@ Follow the conventions table and rules in `.github/agents/implementer.agent.md` 
 1. Read the findings from the previous round, if any, and address every blocking one. Screenshot paths from a UI verifier are files you can open; a `[design]` finding gives the mockup render (`Mockup:`) and the app as it looked (`Actual:`), so open both.
 2. Make the change, build (`dotnet build eShop.Web.slnf`) and run the existing unit tests of what you touched (`dotnet test --project tests/<Service>.UnitTests`).
 3. Commit.
-4. End with the `AGENT_RESULT` line your task asks for: `done` when the subtask is complete, `blocked` (with the reason and any file outside `owns` you need) when it cannot be.
+4. End with the `AGENT_RESULT` line your task asks for: `done` when the subtask is complete, `blocked` (with the reason and any file outside `owns` you need) when it cannot be, plus your `disputes` and `followUps` (empty lists when there are none).
 
 ## Lessons
 

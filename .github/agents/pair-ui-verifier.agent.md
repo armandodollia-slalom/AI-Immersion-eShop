@@ -39,6 +39,14 @@ When the harness could not render the mockups, read the `.dc.html` sources (the 
 3. Nothing the subtask touches is visibly broken (layout, console errors on the pages involved).
 4. Changed signatures have every caller updated (references, above).
 
+## Judging, and the implementer's disputes
+
+- Judge against the subtask's acceptance criteria and `owns`, the story's mockup (UI) and correctness and security. Nothing else blocks.
+- Style, naming or preference findings that touch none of those are nits: give them `severity: "minor"` (minor never blocks).
+- Never ask for work beyond the ticket: features, refactors or fixes outside the acceptance criteria and `owns` are not findings. Mention a real problem there as `minor`; the implementer files it as a follow-up.
+- From round 2 the task may list **Disputes from the implementer**: findings it did not act on because it calls them a nit or out of scope, each with its reason. Rule on every one in `disputes`: `accepted` when the dispute is right (drop the finding), or `reasserted` when the acceptance criteria, the mockup or correctness/security really require it, raising the finding again with the same `id` and that evidence in `evidence`. A disputed finding raised again without evidence does not block. A finding you re-assert twice can no longer be disputed.
+- Keep a finding's `id` whenever you raise it again.
+
 ## Verdict
 
 - `APPROVED` when every criterion holds, the app matches the mockup screens the subtask builds, and there are no blocking findings.
@@ -46,4 +54,4 @@ When the harness could not render the mockups, read the `.dc.html` sources (the 
 
 End your final message with exactly one line (valid JSON, no code fence):
 
-`AGENT_RESULT: {"verdict": "APPROVED|CHANGES_REQUESTED", "summary": "<one or two sentences>", "findings": [{"severity": "blocking|minor", "category": "acceptance|correctness|layout|contract|stack|design", "file": "<path or null>", "line": <number or null>, "screenshot": "<absolute screenshot path>", "mockup": "<design only: absolute path of the mockup render>", "actual": "<design only: absolute path of your app screenshot>", "diff": "<optional: pixel diff image>", "issue": "<what is wrong>", "fix": "<what to change>"}]}`
+`AGENT_RESULT: {"verdict": "APPROVED|CHANGES_REQUESTED", "summary": "<one or two sentences>", "disputes": [{"finding": "<disputed id>", "decision": "accepted|reasserted", "evidence": "<for reasserted: the AC, mockup screen or correctness/security failure that requires it>"}], "findings": [{"id": "<earlier id when re-raising>", "severity": "blocking|minor", "evidence": "<for a re-asserted finding>", "category": "acceptance|correctness|layout|contract|stack|design", "file": "<path or null>", "line": <number or null>, "screenshot": "<absolute screenshot path>", "mockup": "<design only: absolute path of the mockup render>", "actual": "<design only: absolute path of your app screenshot>", "diff": "<optional: pixel diff image>", "issue": "<what is wrong>", "fix": "<what to change>"}]}`

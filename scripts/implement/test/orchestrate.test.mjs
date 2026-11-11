@@ -406,6 +406,64 @@ test('code subtasks and non-UI stories get no mockups', async () => {
   for (const c of agents.calls) assert.doesNotMatch(c.task, /### Mockups/, c.name);
 });
 
+test('nits and scope: disputes go to the next verifier, accepted ones stop blocking, re-asserted twice stays blocking, follow-ups are recorded', async () => {
+  const env = makeRepo();
+  const bug = { severity: 'blocking', category: 'correctness', file: 'src/Catalog.API/Api.cs', line: 3, issue: 'the owner check is missing', fix: 'add it' };
+  const nit = { severity: 'blocking', category: 'style', file: 'src/Catalog.API/Api.cs', line: 1, issue: 'rename x to total', fix: 'rename' };
+  const label = { severity: 'blocking', category: 'correctness', file: 'src/Catalog.API/Api.cs', line: 2, issue: 'the response field must be Total', fix: 'rename the field' };
+  const agents = fakeAgents({
+    implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])]), async () => result({ action: 'fail', reason: 'give up' })],
+    'pair-implementer': [
+      writeIn('src/Catalog.API/Api.cs', 'v1'),
+      async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v2'), result({ status: 'done', reason: 'fixed the bug', disputes: [{ finding: 'api-r1-2', kind: 'nit', reason: 'AC 1 says nothing about naming' }, { finding: 'the response field must be Total', kind: 'out-of-scope', reason: 'no AC names the field' }], followUps: [{ title: 'Rename legacy totals', reason: 'confusing names across Catalog.API' }] })),
+      async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v3'), result({ status: 'done', reason: 'no', disputes: [{ finding: 'api-r1-3', kind: 'out-of-scope', reason: 'still no AC' }] })),
+      async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v4'), result({ status: 'done', reason: 'no', disputes: [{ finding: 'api-r1-3', kind: 'out-of-scope', reason: 'still no AC' }] })),
+    ],
+    'pair-verifier': [
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'three', findings: [bug, nit, label] }),
+      // Accepts the nit, re-asserts the field name with evidence.
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'field', disputes: [{ finding: 'api-r1-2', decision: 'accepted' }, { finding: 'api-r1-3', decision: 'reasserted', evidence: 'AC 2: the API returns Total' }], findings: [{ ...label, id: 'api-r1-3', evidence: 'AC 2: the API returns Total' }] }),
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'field', findings: [{ ...label, id: 'api-r1-3', evidence: 'AC 2 again' }] }),
+      // After two re-assertions the dispute is overruled: raised again without evidence, it still blocks.
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'field', findings: [{ ...label, id: 'api-r1-3' }] }),
+    ],
+  });
+  const r = await orchestrate(context(env, makeConfig(env.repo, { maxPairRounds: 4 }), agents));
+  assert.equal(r.ok, false);
+  const impl = agents.calls.filter((c) => c.name === 'pair-implementer');
+  const ver = agents.calls.filter((c) => c.name === 'pair-verifier');
+  assert.match(impl[1].task, /\[id api-r1-2\] src\/Catalog\.API\/Api\.cs:1 rename x to total/);
+  assert.match(impl[1].task, /Do not act on nits/);
+  assert.match(impl[1].task, /"disputes": \[\{"finding"/);
+  assert.match(ver[1].task, /### Disputes from the implementer[\s\S]*- api-r1-2 \(nit\): "rename x to total"\n {2}Implementer: AC 1 says nothing about naming/);
+  assert.match(ver[1].task, /- api-r1-3 \(out-of-scope\)/);
+  assert.match(impl[2].task, /Re-asserted after your dispute \(1x\): AC 2: the API returns Total/);
+  assert.match(impl[3].task, /Re-asserted after your dispute \(2x\): AC 2 again It can no longer be disputed/);
+  assert.match(ver[3].task, /api-r1-3: "the response field must be Total" was re-asserted 2 times; the implementer's new dispute is overruled/);
+
+  const run = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0];
+  assert.deepEqual(run.rounds.map((x) => [x.verdict, x.disputes.accepted, x.disputes.reasserted, x.disputes.overruled, x.disputes.followUps]), [['CHANGES_REQUESTED', 0, 0, 0, 0], ['CHANGES_REQUESTED', 1, 1, 0, 1], ['CHANGES_REQUESTED', 0, 1, 0, 0], ['CHANGES_REQUESTED', 0, 0, 1, 0]]);
+  assert.deepEqual(run.followUps.map((u) => [u.title, u.subtask, u.round]), [['Rename legacy totals', 'api', 2]]);
+  const verdicts = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl')).filter((d) => d.stage === 'implement-verify');
+  assert.deepEqual(verdicts[1].disputes.map((d) => [d.finding, d.kind, d.ruling]), [['api-r1-2', 'nit', 'accepted'], ['api-r1-3', 'out-of-scope', 'reasserted']]);
+  assert.deepEqual(verdicts[1].follow_ups, [{ title: 'Rename legacy totals', reason: 'confusing names across Catalog.API' }]);
+  assert.deepEqual(verdicts[1].items[0].dispute, { kind: 'out-of-scope', ruling: 'reasserted' });
+});
+
+test('a disputed nit the verifier raises again without evidence does not block', async () => {
+  const env = makeRepo();
+  const nit = { severity: 'blocking', category: 'style', file: 'src/Catalog.API/Api.cs', line: 1, issue: 'rename x to total', fix: 'rename' };
+  const agents = fakeAgents({
+    implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])])],
+    'pair-implementer': [writeIn('src/Catalog.API/Api.cs', 'v1'), async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v2'), result({ status: 'done', reason: 'ok', disputes: [{ finding: 'api-r1-1', kind: 'nit', reason: 'naming is not in any AC' }] }))],
+    'pair-verifier': [async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'nit', findings: [nit] }), async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'nit', findings: [{ ...nit, id: 'api-r1-1' }] })],
+  });
+  const r = await orchestrate(context(env, makeConfig(env.repo), agents));
+  assert.ok(r.ok, JSON.stringify(r));
+  const run = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0];
+  assert.deepEqual(run.rounds.map((x) => [x.verdict, x.disputes.nit, x.disputes.accepted]), [['CHANGES_REQUESTED', 0, 0], ['APPROVED', 1, 1]]);
+});
+
 test('verify "ui" is rejected for a non-UI story', async () => {
   const env = makeRepo();
   const agents = fakeAgents({ implementer: [async () => plan([sub('web', ['src/WebApp/**'], { verify: 'ui' })])] });

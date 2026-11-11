@@ -29,7 +29,7 @@ test('a decision record carries the plan, its reasons and the story features', (
 
 test('subtask runs record counts, not finding text', () => {
   const round = roundRecord({ round: 1, verdict: 'CHANGES_REQUESTED', findings: [{ severity: 'blocking', category: 'correctness', issue: 'secret' }, { severity: 'minor', category: 'fit' }], diagnostics: { available: true, errors: [1], warnings: [1, 2] }, outOfOwns: ['x'], crossFindings: 1 });
-  assert.deepEqual(round, { round: 1, verdict: 'CHANGES_REQUESTED', findings: { 'blocking/correctness': 1, 'minor/fit': 1 }, designFindings: 0, diagnostics: { errors: 1, warnings: 2 }, outOfOwnsEdits: 1, crossSubtaskFindings: 1 });
+  assert.deepEqual(round, { round: 1, verdict: 'CHANGES_REQUESTED', findings: { 'blocking/correctness': 1, 'minor/fit': 1 }, designFindings: 0, diagnostics: { errors: 1, warnings: 2 }, outOfOwnsEdits: 1, crossSubtaskFindings: 1, disputes: { nit: 0, outOfScope: 0, accepted: 0, reasserted: 0, overruled: 0, followUps: 0 } });
   const r = subtaskRunRecord({ ts: 't', key: 'K', decisionId: 'd', subtaskId: 'api', maxRounds: 3, rounds: [round], approved: true });
   assert.equal(r.escalation, 'none');
   assert.equal(r.tokens, null);
@@ -101,7 +101,7 @@ test('plan attempts and pair verdicts go to the shared decision log, and the lab
 
   const verdict = sharedRecord(verdictDecisionLog({ key: 'DEMO-1', decisionId: 'd-1', st: { id: 'api' }, round: 2, verdict: { verdict: 'CHANGES_REQUESTED', summary: 'missing check', findings: [{ severity: 'blocking', category: 'logic', file: 'src/Catalog.API/A.cs', line: 3, issue: 'no owner check', fix: 'add it' }] }, verifier: { version: 'v9' } }));
   assert.deepEqual([verdict.stage, verdict.agent, verdict.subject, verdict.decision, verdict.subtask, verdict.agent_ver], ['implement-verify', 'pair-verifier', 'pair-implementer', 'changes-requested', 'api', 'v9']);
-  assert.deepEqual(verdict.items[0], { severity: 'blocking', category: 'logic', file: 'src/Catalog.API/A.cs', line: 3, screenshot: null, reason: 'no owner check', fix: 'add it' });
+  assert.deepEqual(verdict.items[0], { id: null, severity: 'blocking', category: 'logic', file: 'src/Catalog.API/A.cs', line: 3, screenshot: null, reason: 'no owner check', fix: 'add it' });
 });
 
 test('subtask and story records carry tokens, cost and premium requests summed from their runs', () => {
