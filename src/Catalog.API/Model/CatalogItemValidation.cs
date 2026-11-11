@@ -10,9 +10,14 @@ public static class CatalogItemValidation
     {
         var errors = new Dictionary<string, string[]>();
 
-        if (item.Name is null)
+        if (string.IsNullOrWhiteSpace(item.Name))
         {
             errors[nameof(CatalogItem.Name)] = ["The Name field is required."];
+        }
+
+        if (item.Price < 0)
+        {
+            errors[nameof(CatalogItem.Price)] = ["The Price field must be zero or greater."];
         }
 
         return errors;
