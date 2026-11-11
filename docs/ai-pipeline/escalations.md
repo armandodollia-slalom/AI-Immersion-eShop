@@ -54,7 +54,7 @@ flowchart TD
 
 ## Re-running
 
-- **A whole story:** `node scripts/pipeline/pipeline.mjs implement run product-research/stories/<KEY>-<title>.md`. It reuses the existing worktree and branch, calls `pipeline start` (which resets the review rounds and PR check runs) and continues from the code already on the branch. Add `--force` if the story file you pass already has `## Implementation Notes`.
+- **A whole story:** `node scripts/pipeline/pipeline.mjs implement run <KEY>`. It reuses the existing worktree and branch, calls `pipeline start` (which resets the review rounds and PR check runs) and continues from the code already on the branch. Add `--force` if the story file you pass already has `## Implementation Notes`.
 - **Only the tests:** from the worktree, `node scripts/qe/qe.mjs plan KEY` and `node scripts/qe/qe.mjs automate KEY` (add `--background` to detach).
 - **Only the review:** `node scripts/review/review.mjs run KEY` runs one round and prints it.
 - **Interactively:** open an agent session in the worktree, run `node scripts/pipeline/pipeline.mjs start KEY`, make the fix, then `node scripts/pipeline/pipeline.mjs done`. The Stop hook runs review, QE and the PR check again.

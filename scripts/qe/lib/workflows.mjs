@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentDefinition, runAgent } from '../../pipeline/lib/agents.mjs';
@@ -20,6 +21,7 @@ import {
 import { clearEscalation, escalate, lockFile, logFile, loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { RECOVERY_DONE, nextAttempt, runDied } from '../../pipeline/lib/recovery.mjs';
 import { casePrefix, storySha } from '../../pipeline/lib/stories.mjs';
+import { storyVersion } from '../../board/lib/source.mjs';
 import { acquireLock, appendJsonl, extractResult, lockHolder, log, nowIso, releaseLock, run, runAsync, selfProcess, sleep, tail } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, formatGaps, runVerifier } from './verify.mjs';
 
@@ -47,18 +49,24 @@ function logPrecheck(config, stage, story, round, errors) {
   });
 }
 
-// Finds the committed version of the story the plan was written against and diffs it with the
-// current story, so an update can edit the affected cases in place instead of rewriting the plan.
-export function storyDiffSince(config, story, oldSha) {
+// Finds the version of the story the plan was written against (the ticket cache keeps every version it
+// fetched, by story sha; else the issue's edit history) and diffs it with the current story, so an update
+// can edit the affected cases in place instead of rewriting the plan.
+export function storyDiffSince(config, story, oldSha, { version = storyVersion } = {}) {
   if (!oldSha) return null;
-  const revs = git(config.root, ['log', '--format=%H', '-n', '50', '--', story.file]).stdout.split('\n').filter(Boolean);
-  for (const rev of revs) {
-    const text = git(config.root, ['show', `${rev}:${story.file}`]);
-    if (text.status === 0 && storySha(text.stdout) === oldSha) {
-      return git(config.root, ['diff', '--no-ext-diff', rev, '--', story.file]).stdout || null;
-    }
+  const current = config.abs(story.file);
+  if (!fs.existsSync(current) || storySha(fs.readFileSync(current, 'utf8')) === oldSha) return null;
+  const old = version(config, story.key, oldSha);
+  if (old == null) return null;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'story-diff-'));
+  try {
+    const before = path.join(tmp, 'story.md');
+    fs.writeFileSync(before, old);
+    const diff = git(config.root, ['diff', '--no-index', '--no-ext-diff', '--', before, current]).stdout;
+    return diff ? diff.replaceAll(before, `${story.key}@${oldSha}`).replaceAll(current, story.file) : null;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
-  return null;
 }
 
 // ---------------------------------------------------------------------------------------------

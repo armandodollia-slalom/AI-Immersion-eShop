@@ -9,8 +9,7 @@ import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
-import { findEpic } from '../pipeline/lib/costs.mjs';
-import { resolveStory } from '../pipeline/lib/stories.mjs';
+import { epicTickets, loadTicket } from '../pipeline/lib/tickets.mjs';
 import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { collectStories } from './lib/batch.mjs';
 import { DECISIONS_FILE, OUTCOMES_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
@@ -24,10 +23,11 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
-  run <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
-        implement every <KEY>-<title>.md story given (or every story of an epic): each gets a worktree
-        and branch, the implementer agent, the review loop and verified tests. Stories "Blocked by"
-        another story in the batch run after it, stacked on its branch. The run syncs the board and
+  run <KEY...> | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
+        implement the given board tickets (fetched into .agent-state/board/; a cached story.md or a
+        <KEY>-<title>.md file works too), or every story of an epic in Blocked-by order: each gets a
+        worktree and branch, the implementer agent, the review loop and verified tests. Stories "Blocked
+        by" another story in the batch run after it, stacked on its branch. The run syncs the board and
         claims each story's card first; a card another machine holds is skipped unless --takeover.
         --force runs stories again that are already implemented (or whose card is in Pending Review or Done).
   resume [KEY] [--parallel N] [--pr] [--background]
@@ -56,7 +56,7 @@ const interruptedBatch = (config) => {
   return batch && !batch.finishedAt && !isProcessAlive(batch.pid, batch.boot) ? batch : null;
 };
 
-async function runStories(config, inputs, { base, force = false, takeover = false, parallel, pr = false, dryRun = false }) {
+async function runStories(config, inputs, { base, force = false, takeover = false, parallel, pr = false, dryRun = false, extraSources = [] }) {
   const stories = plan(config, inputs, { base, force });
   if (!dryRun) {
     // The board: closed stories to Done and epics in step, then this machine claims the cards it runs.
@@ -66,9 +66,11 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
   }
   console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
-  // Agents may read only the stories handed to this run (scripts/pipeline/lib/story-guard.mjs).
-  process.env.PIPELINE_STORY_SOURCES = inputs.map((p) => path.resolve(p)).join(path.delimiter);
-  const batch = { inputs: inputs.map((p) => path.resolve(p)), base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
+  // Agents may read only the tickets handed to this run (scripts/pipeline/lib/story-guard.mjs): a cached
+  // ticket's whole folder (story and its own mockups), or the files and folders given.
+  // An epic run also hands over the epic's own ticket (its body and mockups).
+  process.env.PIPELINE_STORY_SOURCES = [...inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))), ...extraSources].join(path.delimiter);
+  const batch = { inputs: inputs.map((p) => path.resolve(p)), extraSources, base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
   writeJson(batchFile(config), batch);
   const results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
@@ -108,31 +110,30 @@ async function main() {
 
   switch (command) {
     case 'run': {
-      // --epic <EPIC> stands for every story the epic file names that has a story file.
+      // --epic <EPIC> stands for the epic's stories on the board (its sub-issues), fetched into the cache.
+      let epicDir = null;
       if (typeof flags.epic === 'string') {
-        const epic = findEpic(config, flags.epic);
-        if (!epic) {
-          console.error(`Unknown epic "${flags.epic}".`);
+        const stories = epicTickets(config, flags.epic);
+        if (!stories.length) {
+          console.error(`Epic ${flags.epic} has no stories on the board (or in the ticket cache).`);
           return 2;
         }
-        const keys = [...epic.stories].filter((k) => resolveStory(config, k));
-        if (!keys.length) {
-          console.error(`Epic ${epic.key} names no story with a file in ${config.storiesDir}.`);
-          return 2;
-        }
-        console.log(`Epic ${epic.key} (${epic.title}): ${keys.join(', ')}`);
-        positional.push(...keys.filter((k) => !positional.includes(k)));
+        const epic = stories[0].epic ? loadTicket(config, stories[0].epic, { fetch: false }) : null;
+        if (epic) epicDir = config.abs(epic.dir);
+        console.log(`Epic ${epic?.key ?? flags.epic}${epic ? ` (${epic.title})` : ''}: ${stories.map((s) => s.key).join(', ')}`);
+        positional.push(...stories.map((s) => s.key).filter((k) => !positional.includes(k)));
       }
       if (!positional.length) {
-        console.error(`Give a story key, a stories directory, story files, or --epic <EPIC>.\n\n${USAGE}`);
+        console.error(`Give story keys, --epic <EPIC>, or story files.\n\n${USAGE}`);
         return 2;
       }
-      // A story key (PROMO-3) stands for its file in the stories folder.
+      // A story key (PROMO-3) stands for its ticket, fetched from the board into the cache (re-checked
+      // when already cached, so the run works from the issue's current text).
       for (const [i, arg] of positional.entries()) {
-        if (/^[A-Z][A-Z0-9]*-\d+$/.test(arg) && !fs.existsSync(arg)) {
-          const story = resolveStory(config, arg);
-          if (!story) {
-            console.error(`No story file for ${arg} in ${config.storiesDir}.`);
+        if (/^[A-Z][A-Z0-9]*-\d+$/i.test(arg) && !fs.existsSync(arg)) {
+          const story = loadTicket(config, arg.toUpperCase(), { update: true });
+          if (!story || !['story', 'bug'].includes(story.type)) {
+            console.error(`${arg} is not a story on the board (\`node scripts/board/board.mjs fetch ${arg}\` shows why).`);
             return 2;
           }
           positional[i] = config.abs(story.file);
@@ -140,7 +141,7 @@ async function main() {
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
       const parallel = Math.max(1, Number(flags.parallel ?? config.implement.parallel) || 1);
-      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), takeover: Boolean(flags.takeover), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']) });
+      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), takeover: Boolean(flags.takeover), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']), extraSources: epicDir ? [epicDir] : [] });
     }
 
     case 'resume': {
@@ -160,7 +161,7 @@ async function main() {
         return 1;
       }
       const parallel = Math.max(1, Number(flags.parallel ?? batch.parallel) || 1);
-      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr) });
+      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [] });
     }
 
     case 'hook': {

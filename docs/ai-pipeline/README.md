@@ -36,16 +36,20 @@ flowchart LR
   P[git push] -->|pre-push| D3{{dispatcher}} --> QC[qe stage<br/>plans and tests verified?]
 ```
 
-## Implementing a folder of stories
+## Pipeline inputs: tickets on the board
+
+Stories, bugs, epics and research spikes are issues on the [story board](board.md); each issue body carries the complete story. The pipeline reads them through one loader (`scripts/pipeline/lib/tickets.mjs`) from a local cache in `.agent-state/board/<KEY>/` (`story.md`, `meta.json`, `mockups/`), filled by `node scripts/board/board.mjs fetch <KEY>` or on demand when a command names a key. Write new stories with `board new` ([writing-stories.md](writing-stories.md)). Test plans stay in the repository (`tests/plans/<slug>/`).
+
+## Implementing stories
 
 ```bash
-node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-run   # order, branches, bases
-node scripts/pipeline/pipeline.mjs implement run path/to/stories [--parallel 2] [--pr]
+node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --dry-run   # order, branches, bases
+node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4 [--parallel 2] [--pr]
 node scripts/pipeline/pipeline.mjs implement status
 node scripts/pipeline/pipeline.mjs implement resume                    # after a crash: continue the last run
 ```
 
-Each story gets its own worktree and branch; the implementer plans it into subtasks that verifier pairs implement and check in their own worktrees, then the architecture review loop and verified tests run. A story "Blocked by" another story in the folder runs after it, stacked on its branch. See [implement.md](implement.md).
+Each story gets its own worktree and branch; the implementer plans it into subtasks that verifier pairs implement and check in their own worktrees, then the architecture review loop and verified tests run. A story "Blocked by" another story in the batch runs after it, stacked on its branch. See [implement.md](implement.md).
 
 ## Story board
 
@@ -70,7 +74,7 @@ sequenceDiagram
   participant QE as qe stage (background)
   participant PRC as pr-check stage (background)
 
-  Dev->>Run: implement run stories/ [--parallel N] [--pr]
+  Dev->>Run: implement run KEY... | --epic EPIC [--parallel N] [--pr]
   Run->>Run: parse stories and "Blocked by", order them
   Run->>Git: worktree + feat/KEY-title (stacked on blocker)
   Run->>Disp: pipeline start KEY
@@ -155,7 +159,8 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | Any agent tool call | `PreToolUse` (Gemini `BeforeTool`) | `hook pre-tool` | story guard (see below) | none |
 | Agent session start/resume | `SessionStart` | `hook session-start` | implement, review, qe, pr-check | none |
 | Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then pr-check, then board (Testing, back to In Progress on a product bug, Pending Review) | LLM, only after `pipeline done` |
-| Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
+| Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe: lessons after a merge, only with `git config qe.autoLessons true` (stories are not committed, so commits never start a plan) | LLM if opted in |
+| `board fetch` brings a changed story | (command) | - | qe plans it in the background, only with `git config qe.autoPlan true` | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
 | Pull request opened or pushed | `.github/workflows/pr-demo-video.yml` | `pr-video.mjs specs`, test stack + changed specs, `pr-video.mjs publish`, `pr-video.mjs api` ([demo videos](pr-demo-video.md)) | none | none |
@@ -179,12 +184,12 @@ No agent starts on its own when stories or epics are added or changed: agent wor
 
 ## Story guard
 
-Agents ignore the story and epic folders (`storyGuard.folders` in `scripts/pipeline/config.json`, by default `product-research/`) except for what was handed to the pipeline:
+Agents ignore the ticket cache (`storyGuard.folders` in `scripts/pipeline/config.json`: `.agent-state/board/`, plus the legacy story folder until `board migrate --delete-local` removes it) except for what was handed to the pipeline:
 
-- the story given to `pipeline start <KEY>` (recorded in `.agent-state/active-story`), and
-- the folders or files given to `pipeline implement run`, passed to every worker and agent it starts as `PIPELINE_STORY_SOURCES`.
+- the cache folder of the story given to `pipeline start <KEY>` (recorded in `.agent-state/active-story`): its `story.md` and its own `mockups/`, and
+- the tickets given to `pipeline implement run` (their cache folders, and the epic's own folder for `--epic`), passed to every worker and agent it starts as `PIPELINE_STORY_SOURCES` (cache folders, or ticket keys).
 
-`hook pre-tool` denies any other read, search, listing, edit or shell command that names a path in those folders, including for agents the pipeline starts (`PIPELINE_CHILD=1`); only `PIPELINE_DISABLE=1` lifts it. The QE and review agents get their story text in the prompt, so they never need the folder, and the session-start context names only the active story. `product-research/` is also in `.graphifyignore`, so `graphify query` cannot surface it. A recursive search of the whole repo (for example `grep -r Coupon .`) does not name the folder and can still reach it; the instructions in `AGENTS.md` and its siblings cover that case. Humans are not affected: the guard is an agent hook only. To let an agent write or groom stories, start it with `PIPELINE_DISABLE=1` or set `storyGuard.enabled` to `false` in your copy of the config.
+`hook pre-tool` denies any other read, search, listing, edit or shell command that names a path in those folders, including for agents the pipeline starts (`PIPELINE_CHILD=1`); only `PIPELINE_DISABLE=1` lifts it. The QE and review agents get their story text in the prompt, so they never need the cache, the PR check hands its agents exactly its story's folder, and the session-start context names only the active story. `.agent-state/` is gitignored, so `graphify query` cannot surface tickets. A recursive search of the whole repo (for example `grep -r Coupon .`) does not name the folder and can still reach it; the instructions in `AGENTS.md` and its siblings cover that case. Humans are not affected: the guard is an agent hook only. To let an agent write or groom stories, have it use `board new` / `board publish`, or start it with `PIPELINE_DISABLE=1`.
 
 ## The dispatcher
 
@@ -224,7 +229,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 ## Shared code and state
 
-`scripts/pipeline/lib/` holds what every stage uses: config loading, git helpers, story lookup, per-story state, escalations, the agent runner and background runs.
+`scripts/pipeline/lib/` holds what every stage uses: config loading, git helpers, the ticket loader (`tickets.mjs`, story lookup from the board cache), per-story state, escalations, the agent runner and background runs.
 
 - **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
 - **State:** `.agent-state/` (not committed) holds the active story, one `stories/<KEY>.json` per story with a section per stage, locks, background logs (`logs/`) and escalations (`escalations/<KEY>-<stage>.md`, which the next agent session is told about).

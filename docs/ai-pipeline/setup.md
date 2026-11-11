@@ -94,7 +94,7 @@ Windows notes:
    ```bash
    npm run test:pipeline
    node scripts/pipeline/pipeline.mjs stages
-   node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-run
+   node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --dry-run
    ```
 
 ## Optional settings

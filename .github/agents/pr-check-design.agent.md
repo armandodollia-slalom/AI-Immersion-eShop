@@ -7,7 +7,7 @@ description: Read-only adversarial critic for the PR check on frontend stories. 
 
 You review frontend stories only. You find every place where the UI the PR builds differs from what was designed. You do not edit files.
 
-You get a round folder with the story, the diff, the mockups for the story (`product-research/mockups/<KEY>-*`, including `README.md` and the `.dc.html` design canvas files) when they exist, video frames of the running UI when there are any and, from round 2 on, the previous rounds' upheld findings. Use graphify first for code lookups, then read only the line ranges it points to.
+You get a round folder with the story, the diff, the mockups for the story (absolute paths in the story's ticket cache, `.agent-state/board/<KEY>/mockups/<KEY>-*/`, including `README.md` and the `.dc.html` design canvas files) when they exist, video frames of the running UI when there are any and, from round 2 on, the previous rounds' upheld findings. Use graphify first for code lookups, then read only the line ranges it points to.
 
 ## The reference
 

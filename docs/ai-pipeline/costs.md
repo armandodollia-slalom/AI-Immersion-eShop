@@ -13,7 +13,7 @@ node scripts/pipeline/pipeline.mjs costs PROMO-3 --markdown   # Markdown tables,
 node scripts/pipeline/pipeline.mjs costs --epic promotions --json
 ```
 
-Each row shows the runs, input tokens (uncached), output tokens, cache reads, cache writes, the cache hit rate (cached prompt tokens over all prompt tokens, and how many runs read from the cache), the models used, and the cost. `--epic` takes the epic file's key (`epic-<key>.md` in `product-research/`) or part of its key or title.
+Each row shows the runs, input tokens (uncached), output tokens, cache reads, cache writes, the cache hit rate (cached prompt tokens over all prompt tokens, and how many runs read from the cache), the models used, and the cost. `--epic` takes the epic's key (`epic-<key>` on the board, with or without the prefix) or part of its key or title; epics come from the ticket cache (`board fetch --all`).
 
 The notes under a report list the runs that reported no usage (timed out, crashed, or a custom agent command that wrote none), the tokens on models that have no price, and a reconciliation against the cost the agent CLI itself reported for the same runs (Claude Code reports one).
 

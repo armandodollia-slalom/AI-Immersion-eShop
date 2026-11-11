@@ -8,7 +8,7 @@ It checks four things, plus video evidence:
 | --- | --- | --- | --- |
 | Acceptance criteria | `pr-check-acceptance` | always | every rule and acceptance criterion in the story is implemented and tested |
 | Flow | `pr-check-flow` | always | the end-to-end journey (UI, API, events, data) matches the story's flow, including sad paths |
-| UI design | `pr-check-design` | frontend stories (`[FE` in the title, a mockup under `product-research/mockups/<KEY>-*`, or changed Razor/CSS/WebApp files) | layout, components, states and copy match the mockup and the design system |
+| UI design | `pr-check-design` | frontend stories (`[FE` in the title, a mockup on the story's ticket, or changed Razor/CSS/WebApp files) | layout, components, states and copy match the mockup and the design system |
 | Code style | `pr-check-style` | always | the code follows `AGENTS.md`, `.editorconfig`, the architecture docs and the implementer's conventions |
 | Video evidence | `pr-check-video` | a video was found | frames show the journey working, with no error banners, 500s, blank screens or broken layouts |
 

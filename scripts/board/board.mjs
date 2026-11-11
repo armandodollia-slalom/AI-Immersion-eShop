@@ -13,6 +13,7 @@ import { log, nowIso, readJson, setLogTag } from '../pipeline/lib/util.mjs';
 import { COLUMNS, failureComment, findIssue, isActive, issueItem, listItems, moveStory, project, setup, storyKind, syncEpicAssignees } from './lib/board.mjs';
 import { upsertEpicEvidence } from './lib/epics.mjs';
 import { captureApiEvidence, featureVideo } from './lib/evidence.mjs';
+import { fetchCommand, migrateCommand, newCommand, publishCommand } from './lib/ticket-commands.mjs';
 import { EVENTS, SETTLED, applyEvent, bugComment, cardFlow, claimComment, eventsForState, failStory, owner, testingComment } from './lib/flow.mjs';
 import { syncBoard } from './lib/sync.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
@@ -22,12 +23,23 @@ const CONFIG_FILE = path.join(SCRIPTS_DIR, 'board', 'config.json');
 
 const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
 
-  setup                         enable issues, create the labels, the project and its columns, and an
-                                issue on the board for every story (idempotent; run again for new
-                                stories or columns)
+  setup                         enable issues, create the labels, the project, its columns and views
+                                (idempotent). Ticket issues are created by \`new\` and \`migrate --apply\`
   sync                          move closed stories to Done (recording their late outcome), update
                                 their epic's evidence, and put every epic in the lane its stories call
                                 for (also run at the start of \`pipeline implement run\`)
+
+Tickets (the issue body is the source of truth; see docs/ai-pipeline/board.md)
+  fetch <KEY...> | --epic <EPIC> | --all [--refresh]
+                                download tickets into the local cache (story.md, meta.json,
+                                mockups/); unchanged issues (same updatedAt) are skipped
+  publish <KEY> [--force]       write the cached story (e.g. with Implementation Notes) back to its issue
+  new <file.md|-> [--type story|bug|epic|spike] [--key KEY] [--epic <epic-key>] [--mockups <dir>] [--dry-run]
+                                create a ticket issue from Markdown
+  migrate [--summary] | --apply | --verify [--allow-unplaced] | --delete-local [--dry-run]
+                                move the legacy story folder to the board (dry run by default)
+
+Cards
   mine                          the stories assigned to you and their columns
   claim <story>... [--force] [--takeover] [--how <text>] [--json]
                                 claim the cards for this machine (In Progress); refused when another
@@ -56,7 +68,7 @@ The pipeline is started by hand (\`pipeline implement run <KEY>\` or \`--epic <E
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch']));
+  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch', 'epic', 'type', 'key', 'mockups']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -72,9 +84,20 @@ async function main() {
     case 'hook':
       return hook(config, positional);
 
+    case 'fetch':
+      return fetchCommand(config, { keys: positional, epic: typeof flags.epic === 'string' ? flags.epic : null, all: Boolean(flags.all), refresh: Boolean(flags.refresh) });
+
+    case 'publish':
+      return positional[0] ? publishCommand(config, { key: positional[0].toUpperCase(), force: Boolean(flags.force) }) : (console.error('Usage: board publish <KEY>'), 2);
+
+    case 'new':
+      return newCommand(config, { file: positional[0], type: flags.type, key: flags.key, epic: flags.epic, mockups: flags.mockups, dryRun: Boolean(flags['dry-run']) });
+
+    case 'migrate':
+      return migrateCommand(config, flags);
+
     case 'setup': {
       const url = setup(config, {
-        listStories,
         log: (m) => console.log(m),
         writeProjectNumber: (n) => {
           const file = readJson(CONFIG_FILE, {});

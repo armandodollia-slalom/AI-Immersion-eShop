@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { CACHE, seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = path.resolve(here, '..', '..', '..');
@@ -37,7 +38,6 @@ function pipeline(args) {
 before(() => {
   tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'implement-e2e-')));
   repo = path.join(tmp, 'shop');
-  incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
   for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check', 'scripts/board', 'scripts/models', 'scripts/pr-video']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
@@ -63,10 +63,12 @@ before(() => {
   sh(repo, 'git', ['commit', '-qm', 'init']);
 
   const rule = 'Rule: a valid coupon gives 10% off; an expired coupon is rejected with 400.\n';
-  write(incoming, 'DEMO-1-apply-coupon.md', `# DEMO-1 Apply coupon\n\n${rule}`);
-  write(incoming, 'DEMO-2-coupon-history.md', `# DEMO-2 Coupon history\n\n* **Blocked by:** [DEMO-1](DEMO-1-apply-coupon.md)\n\n${rule}`);
-  write(incoming, 'DEMO-3-loyalty.md', `# DEMO-3 Loyalty\n\n${rule}`);
-  write(incoming, 'DEMO-4-loyalty-tiers.md', `# DEMO-4 Loyalty tiers\n\n* **Blocked by:** [DEMO-3](DEMO-3-loyalty.md)\n\n${rule}`);
+  // The stories are board tickets in the checkout's ticket cache (as `board fetch` leaves them).
+  seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-apply-coupon', text: `# DEMO-1 Apply coupon\n\n${rule}` });
+  seedTicket(repo, { key: 'DEMO-2', slug: 'DEMO-2-coupon-history', text: `# DEMO-2 Coupon history\n\n* **Blocked by:** [DEMO-1](DEMO-1-apply-coupon.md)\n\n${rule}` });
+  seedTicket(repo, { key: 'DEMO-3', slug: 'DEMO-3-loyalty', text: `# DEMO-3 Loyalty\n\n${rule}` });
+  seedTicket(repo, { key: 'DEMO-4', slug: 'DEMO-4-loyalty-tiers', text: `# DEMO-4 Loyalty tiers\n\n* **Blocked by:** [DEMO-3](DEMO-3-loyalty.md)\n\n${rule}` });
+  incoming = ['DEMO-1', 'DEMO-2', 'DEMO-3', 'DEMO-4'];
 });
 
 after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
@@ -91,12 +93,12 @@ test('implement run: each story gets a worktree and branch, loops with the revie
     }),
   );
 
-  const dry = pipeline(['implement', 'run', incoming, '--dry-run']);
+  const dry = pipeline(['implement', 'run', ...incoming, '--dry-run']);
   assert.equal(dry.status, 0, dry.stderr);
   assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon {2}\(blocked by DEMO-1\)/);
   assert.ok(!fs.existsSync(`${scriptFile}.calls.json`), 'a dry run starts no agents');
 
-  const result = pipeline(['implement', 'run', incoming]);
+  const result = pipeline(['implement', 'run', ...incoming]);
   assert.equal(result.status, 1, 'not every story finished');
   assert.match(result.stdout, /DEMO-1 +done +feat\/demo-1-apply-coupon/);
   assert.match(result.stdout, /DEMO-2 +done +feat\/demo-2-coupon-history/);
@@ -114,9 +116,8 @@ test('implement run: each story gets a worktree and branch, loops with the revie
     'DEMO-1: Add verified test plan and automated tests',
     'DEMO-1: Implementation',
     'DEMO-1: Implementation',
-    'DEMO-1: Add story',
   ]);
-  assert.ok(fs.existsSync(path.join(wt1, 'product-research/stories/DEMO-1-apply-coupon.md')));
+  assert.ok(fs.existsSync(path.join(wt1, CACHE, 'DEMO-1/story.md')), "the ticket is in the worktree's cache, not on the branch");
   assert.ok(fs.existsSync(path.join(wt1, 'tests/plans/DEMO-1-apply-coupon/_index.md')));
   const metrics = fs.readFileSync(path.join(wt1, '.agent-metrics/implement-runs.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(metrics.map((m) => [m.story, m.outcome, m.implementer_runs, m.review_blocks]), [['DEMO-1', 'done', 2, 1]]);

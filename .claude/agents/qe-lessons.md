@@ -52,7 +52,7 @@ The task may include a **Factory retro** section: a JSON digest of the decision 
 Use it to find root causes that a lessons rule cannot fix, and fix them at the source:
 
 - QE verifier evidence mainly improves the QE agents (`qe-plan`, `qe-automation`) and their verifiers; architecture review and product-bug evidence mainly improves the `implementer`.
-- Beyond lessons, you may edit only the paths the task allows, for example an agent definition in `.github/agents/` whose instructions cause the mistake, a doc in `docs/` that is wrong or silent, the story template in `product-research/` when stories keep leaving the same thing undefined, or an Architecture Policy Pack rule whose message keeps being misunderstood. Never weaken a policy rule or a verifier check to make agents pass.
+- Beyond lessons, you may edit only the paths the task allows, for example an agent definition in `.github/agents/` whose instructions cause the mistake, a doc in `docs/` that is wrong or silent, the story template in `docs/ai-pipeline/writing-stories.md` when stories keep leaving the same thing undefined, or an Architecture Policy Pack rule whose message keeps being misunderstood. Never weaken a policy rule or a verifier check to make agents pass.
 - Change something only when the evidence spans more than one story or the cause is clear from one strong example. Keep each edit small and in the file's existing style.
 - Cases that caught bugs show what good cases look like; repeated `excluded` items or open questions point at gaps in the story template.
 

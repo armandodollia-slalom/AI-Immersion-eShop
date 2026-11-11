@@ -1,13 +1,20 @@
 # Writing stories for the pipeline
 
-Part of the [AI development pipeline](README.md). The pipeline only knows what the story file says: the implementer builds from it, the QE agents plan and test against it, and the PR check holds the pull request to it. This page is the contract between a story author and the agents.
+Part of the [AI development pipeline](README.md). The pipeline only knows what the story says: the implementer builds from it, the QE agents plan and test against it, and the PR check holds the pull request to it. This page is the contract between a story author and the agents.
 
-## File name and location
+## Where stories live
 
-- Stories live in `product-research/stories/` (`storiesDir` in `scripts/pipeline/config.json`), one file per story, not in subfolders.
-- The file name is `<KEY>-<title>.md`, where `<KEY>` is uppercase letters and digits, a dash and a number: `PROMO-3-cart-pricing-evaluation-api.md`. Files that don't match are ignored; two files with the same key are an error.
-- The branch is `feat/` plus the lowercased file name (first 60 characters), and the test plan goes in `tests/plans/<file name without .md>/`. Renaming a story file after work has started orphans its plan.
-- The first level-1 heading is the story title. Put `[FE` in it (for example `# [FE] Coupon entry in the cart`) for frontend stories, so the PR check runs its UI design critic.
+- Every story is an issue on the [story board](board.md); the issue body holds the whole story in Markdown, between the `board-ticket:source` markers. Create one from a Markdown file (or stdin) with the board, not by adding a file to the repository:
+
+  ```bash
+  node scripts/board/board.mjs new PROMO-10.md --epic epic-promotions-and-recommendations [--mockups path/to/PROMO-10-cart] [--dry-run]
+  ```
+
+  Bugs work the same way (`**Type:** Bug`, or a `BUG-` key); `--type epic` and `--type spike` create epics and research spikes.
+- `<KEY>` is uppercase letters and digits, a dash and a number (`PROMO-10`). Put it in the heading (`# PROMO-10: [FE - WebApp] - Coupon entry in the cart`) or pass `--key`. The issue title is the heading; one issue per key.
+- The **slug** (`PROMO-10-coupon-entry-in-the-cart`, kept in the issue metadata) names the branch (`feat/` plus the lowercased slug, first 60 characters) and the test plan folder (`tests/plans/<slug>/`). It never changes after the issue is created, so renaming the title does not orphan a plan.
+- The first level-1 heading is the story title. Put `[FE` in it (for example `# PROMO-10: [FE - WebApp] - Coupon entry`) for frontend stories, so the PR check runs its UI design critic.
+- Edit a story on GitHub between the markers (or edit the cached `.agent-state/board/<KEY>/story.md` and run `board publish <KEY>`). The next `board fetch`, `pipeline start` or `implement run` picks the change up, and its test plan becomes stale.
 
 ## Sections the agents read
 
@@ -29,14 +36,14 @@ Part of the [AI development pipeline](README.md). The pipeline only knows what t
 
 - **Make every rule testable.** `qe-plan` writes a case for every requirement, field constraint, output field, status code and algorithm step, and a sad path only where the story states or implies the outcome. Anything left undefined (exact error bodies, concurrency, outages) becomes an open question instead of a test.
 - **Answer design questions before you start.** If an Open Question changes the API shape, auth or data model, the implementer stops and the story ends `blocked`. Minor ones it decides conservatively and records under Implementation Notes.
-- **Keep the story self-contained.** The [story guard](README.md#story-guard) denies agents every other story, epic and mockup unless you pass their folder to `implement run`. Copy the parts of an epic the story depends on into the story, or pass the epic folder.
+- **Keep the story self-contained.** The [story guard](README.md#story-guard) denies agents every other ticket and its mockups unless you hand it to `implement run` (the story keys, or `--epic`, which also hands over the epic itself). Copy the parts of an epic or another story the story depends on into the story.
 - **List blockers.** A story blocked by another in the same batch runs after it and stacks on its branch. A blocker outside the batch must already be merged, or the implementer reports the story `blocked`.
 - **Name exact copy.** Labels, messages and formats in Outputs are checked word for word by the acceptance and design critics.
 - **Stay in scope.** The implementer builds exactly the acceptance criteria and lists nice-to-haves in its report instead.
 
 ## Mockups (frontend stories)
 
-Put mockups in `product-research/mockups/<KEY>-*` with a `README.md` (the screens and any review changes) and the `.dc.html` design canvas files. When a mockup exists, the PR check's design critic treats it as the reference for layout, components, states and copy; otherwise it uses the story's Outputs and the existing WebApp design system. A mockup folder for the key also marks the story as frontend.
+Attach mockups to the story with `board new --mockups <folder>`: a folder named `<KEY>-<name>` with a `README.md` (the screens and any review changes) and the `.dc.html` design canvas files and images. They go on the `board-assets` branch, show in the issue's Mockups section, and land in `.agent-state/board/<KEY>/mockups/` when the story is fetched. When a mockup exists, the PR check's design critic treats it as the reference for layout, components, states and copy; otherwise it uses the story's Outputs and the existing WebApp design system. A mockup folder for the key also marks the story as frontend.
 
 ## Changing a story after work started
 

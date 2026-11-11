@@ -97,12 +97,12 @@ function header(config, ctx, round, files) {
     `Round folder: ${files.roundDir}`,
     '',
     'Files (paths relative to the repository root; read what you need):',
-    `- Story: ${story.file}`,
+    `- Story (ticket cache, absolute path): ${config.abs(story.file)}`,
     `- PR description: ${files.prFile}`,
     `- Diff against ${ctx.baseRef} (merge base ${ctx.baseRev.slice(0, 10)}): ${files.diffFile}`,
     `- Changed files (${ctx.diff.files.length}): ${ctx.diff.files.slice(0, 200).join(', ')}${ctx.diff.files.length > 200 ? ', ...' : ''}`,
     `- Conventions: ${ctx.conventions.join(', ') || '(none)'}`,
-    `- Mockups: ${ctx.mockups.join(', ') || '(none for this story)'}`,
+    `- Mockups (absolute paths): ${ctx.mockups.join(', ') || '(none for this story)'}`,
     `- Video frames: ${ctx.video.videos.length ? `${files.framesFile} (${ctx.video.videos.length} video(s), ${ctx.video.videos.reduce((n, v) => n + v.frames.length, 0)} frames)` : '(no readable videos)'}`,
   ];
   if (ctx.video.unreadable.length) lines.push(`- Videos that could not be read: ${ctx.video.unreadable.map((u) => `${u.source} (${u.reason})`).join('; ')}`);

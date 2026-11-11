@@ -8,6 +8,7 @@ import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, load
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { mockupsDir } from './lib/tickets.mjs';
 import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { nowIso } from './lib/util.mjs';
 
@@ -64,10 +65,10 @@ async function main() {
     }
 
     case 'start': {
-      const story = requireStory(config, positional[0]);
+      const story = requireStory(config, positional[0], { update: true });
       setActiveStory(config, story.key);
       updateState(config, story.key, (s) => (s.done = null));
-      console.log(`Active story: ${story.key}.`);
+      console.log(`Active story: ${story.key}. Story: ${story.file}${mockupsDir(config, story.key) ? `; mockups: ${story.mockupsDir}/` : ''}.`);
       for (const { stdout } of dispatchText(config, stages, 'hooks', 'story-start', [story.key])) if (stdout.trim()) console.log(stdout.trim());
       console.log(`Run \`${CMD} done\` when the line of work is complete.`);
       return 0;
@@ -149,7 +150,7 @@ async function main() {
         const story = activeStory(config);
         const header = [];
         if (story) {
-          header.push(`AI pipeline: active story ${story.key}.`);
+          header.push(`AI pipeline: active story ${story.key} (story: ${story.file}${mockupsDir(config, story.key) ? `, mockups: ${story.mockupsDir}/` : ''}).`);
           if (!loadState(config, story.key).done) header.push(`When your line of work for ${story.key} is complete, run \`${CMD} done\` before finishing so the review and test stages run.`);
         }
         const escalations = listEscalations(config);

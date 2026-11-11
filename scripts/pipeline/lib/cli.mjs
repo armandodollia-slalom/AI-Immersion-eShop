@@ -35,12 +35,14 @@ export function readPayload() {
   }
 }
 
-export function requireStory(config, arg, { fallbackActive = false } = {}) {
-  const story = arg ? resolveStory(config, arg) : fallbackActive ? activeStory(config) : null;
+// A story by key (fetched from the board when not cached; `update` re-checks the board), else the
+// active story with `fallbackActive`. Exits 2 when there is none.
+export function requireStory(config, arg, { fallbackActive = false, update = false } = {}) {
+  const story = arg ? resolveStory(config, arg, { update }) : fallbackActive ? activeStory(config) : null;
   if (!story) {
     console.error(
       arg
-        ? `Unknown story "${arg}".`
+        ? `Unknown story "${arg}": it is not in the ticket cache and could not be fetched from the board (\`node scripts/board/board.mjs fetch ${arg}\` shows why).`
         : 'No story given and no active story (run `node scripts/pipeline/pipeline.mjs start <story>` or use a branch named after the story).',
     );
     process.exit(2);

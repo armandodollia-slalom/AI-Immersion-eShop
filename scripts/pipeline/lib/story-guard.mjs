@@ -1,9 +1,13 @@
-// Story guard (PreToolUse): agents stay out of the story and epic folders (config.storyGuard.folders)
-// except for what was handed to the pipeline: the active story (`pipeline start`) and the folders or
-// files given to `pipeline implement run` (PIPELINE_STORY_SOURCES, inherited by every agent it starts).
+// Story guard (PreToolUse): agents stay out of the ticket cache (.agent-state/board/, and the legacy
+// story folder while it exists; config.storyGuard.folders) except for what was handed to the pipeline:
+// the active story's cache folder (`pipeline start`: its story.md and its own mockups) and the tickets
+// given to `pipeline implement run` (PIPELINE_STORY_SOURCES: cache folders or ticket keys, inherited by
+// every agent it starts).
 import fs from 'node:fs';
 import path from 'node:path';
 import { activeStoryFile } from './stories.mjs';
+
+const TICKET_KEY = /^([A-Z][A-Z0-9]*-\d+|(?:epic|spike)-[\w-]+)$/;
 
 const PATH_KEYS = ['file_path', 'path', 'notebook_path', 'absolute_path', 'dir_path', 'directory', 'glob'];
 const isSearch = (tool) => /grep|search/i.test(tool ?? '');
@@ -11,13 +15,17 @@ const inside = (child, parent) => {
   const rel = path.relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 };
-// The fixed part of a glob, e.g. product-research/stories/*.md -> product-research/stories.
+// The fixed part of a glob, e.g. .agent-state/board/*/story.md -> .agent-state/board.
 const staticPrefix = (p) => p.split(/[*?[{]/)[0].replace(/\/+$/, '') || '.';
 
 export function allowedSources(config, env = process.env) {
-  const allowed = (env.PIPELINE_STORY_SOURCES ?? '').split(path.delimiter).filter(Boolean).map((p) => path.resolve(config.root, p));
+  const cache = config.tickets?.dir ?? '.agent-state/board';
+  const allowed = (env.PIPELINE_STORY_SOURCES ?? '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((p) => (TICKET_KEY.test(p) ? path.join(config.root, cache, p) : path.resolve(config.root, p)));
   const active = activeStoryFile(config);
-  if (active) allowed.push(config.abs(active));
+  if (active) allowed.push(path.dirname(config.abs(active)));
   return allowed;
 }
 
@@ -52,7 +60,7 @@ export function storyGuard(config, payload, env = process.env) {
   if (!blocked.length) return null;
   const rel = [...new Set(blocked.map((p) => path.relative(config.root, p) || '.'))].join(', ');
   const scope = allowed.length ? ` Only ${allowed.map((a) => path.relative(config.root, a) || '.').join(', ')} may be used.` : ' No story was handed to the pipeline.';
-  return `Story guard: ${rel} is off limits. Agents do not read, search or edit the story and epic folders (${folders.join(', ')}) except for the stories handed to the pipeline (\`pipeline start <KEY>\` or \`pipeline implement run <dir>\`).${scope}`;
+  return `Story guard: ${rel} is off limits. Agents do not read, search or edit the ticket cache or story folders (${folders.join(', ')}) except for the tickets handed to the pipeline (\`pipeline start <KEY>\` or \`pipeline implement run <KEY...>\`).${scope}`;
 }
 
 export const denyOutput = (reason) => ({

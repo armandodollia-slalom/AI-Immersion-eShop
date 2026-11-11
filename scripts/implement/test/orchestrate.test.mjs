@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 import { loadConfig } from '../../pipeline/lib/config.mjs';
 import { readJsonl } from '../../pipeline/lib/util.mjs';
 import { createContext, orchestrate } from '../lib/orchestrate.mjs';
@@ -32,14 +33,14 @@ function makeRepo(storyText = '# DEMO-1: [BE - Catalog.API] - Thing\n\n## Accept
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-')));
   const repo = path.join(tmp, 'demo-1');
   write(repo, 'src/Shared/Common.cs', '// shared\n');
-  write(repo, 'product-research/stories/DEMO-1-thing.md', storyText);
+  const storyRel = seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-thing', text: storyText });
   write(repo, '.gitignore', '.agent-state/\nartifacts/\n');
   sh(repo, 'init', '-q', '-b', 'feat/demo-1-thing');
   sh(repo, 'config', 'user.email', 't@example.com');
   sh(repo, 'config', 'user.name', 'T');
   sh(repo, 'add', '-A');
   sh(repo, 'commit', '-qm', 'init');
-  return { tmp, repo, storyFile: path.join(repo, 'product-research/stories/DEMO-1-thing.md') };
+  return { tmp, repo, storyFile: path.join(repo, storyRel) };
 }
 
 function makeConfig(repo, over = {}) {

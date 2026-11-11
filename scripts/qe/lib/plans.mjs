@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fsReader } from '../../pipeline/lib/git.mjs';
 import { caseIdsIn, storySha } from '../../pipeline/lib/stories.mjs';
+import { ticketText } from '../../pipeline/lib/tickets.mjs';
 import { parseFrontMatter, sha, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 
 export const INDEX = '_index.md';
@@ -88,8 +89,10 @@ export function precheckPlan(config, story, reader = fsReader(config.root)) {
   return { plan, errors };
 }
 
+// The story text always comes from the ticket cache (the board is the source of truth), whatever
+// revision the plan files are read at.
 export function planStatus(config, story, reader = fsReader(config.root)) {
-  const storyText = reader.read(story.file);
+  const storyText = ticketText(config, story);
   const plan = readPlan(config, story, reader);
   if (!plan.index || plan.cases.length === 0) return { state: 'missing', plan, reasons: ['no plan'] };
   const fm = plan.index.data;
@@ -108,10 +111,11 @@ export function stampIndex(config, story, fields) {
   const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : `# Test plan: ${story.slug}\n`;
   const { data, body } = parseFrontMatter(text);
   const storyText = fs.readFileSync(path.join(config.root, story.file), 'utf8');
+  const { 'story-file': _legacyFile, ...rest } = data;
   const next = {
-    ...data,
+    ...rest,
     story: story.key,
-    'story-file': story.file,
+    ...(story.issue?.url ? { 'story-issue': story.issue.url } : {}),
     'story-sha': storySha(storyText),
     ...fields,
   };

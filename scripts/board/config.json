@@ -18,8 +18,7 @@
     "storyLabel": "story",
     "blockedLabel": "needs-human",
     "epicLabel": "epic",
-    "epicsDir": "product-research",
-    "mockupsDir": "product-research/mockups",
+    "spikeLabel": "spike",
     "evidence": {
       "playwright": [
         "npx",

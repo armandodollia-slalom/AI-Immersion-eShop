@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { seedTicket } from '../../pipeline/test/fixtures/tickets.mjs';
 import { videoLinks } from '../lib/github.mjs';
 import { scoreRound } from '../lib/loop.mjs';
 
@@ -78,12 +79,12 @@ const upheldRound = { result: { score: 6, lensScores: { acceptance: 6 }, summary
 before(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-check-e2e-'));
   scriptFile = path.join(repo, '..', `${path.basename(repo)}-agent.json`);
-  for (const dir of ['scripts/pipeline', 'scripts/pr-check']) {
+  for (const dir of ['scripts/pipeline', 'scripts/pr-check', 'scripts/board', 'scripts/implement']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
   write('.gitignore', '.agent-state/\n.agent-metrics/\n');
-  write('product-research/stories/DEMO-1-apply-coupon.md', '# DEMO-1 Apply coupon\n\nAC 1: a valid coupon gives 10% off. AC 2: an expired coupon is rejected with 400.\n');
+  seedTicket(repo, { key: 'DEMO-1', slug: 'DEMO-1-apply-coupon', text: '# DEMO-1 Apply coupon\n\nAC 1: a valid coupon gives 10% off. AC 2: an expired coupon is rejected with 400.\n' });
   sh('git', ['init', '-q', '-b', 'main']);
   sh('git', ['config', 'user.email', 'qe@example.com']);
   sh('git', ['config', 'user.name', 'QE Test']);

@@ -2,9 +2,11 @@ name: QE check
 
 permissions:
   contents: read
+  issues: read
 
 # QE stage gate, called by ai-pipeline.yml:
-# - stories changed in the PR have a test plan that passed the plan verifier (10/10) for the current story text
+# - stories touched by the PR (plan or scenario folders, tests with their case ids, keys in the branch
+#   or commit messages) have a test plan that passed the plan verifier (10/10) for the current story text
 # - automated tests and scenarios for those stories passed the automation verifier and were not edited afterwards
 on:
   workflow_call:
@@ -27,4 +29,6 @@ jobs:
     - name: Story plans and tests are verifier-approved
       env:
         BASE_REF: ${{ inputs.base-ref }}
+        # Stories are board issues: the check fetches the touched ones (read-only) to compare story-sha.
+        GH_TOKEN: ${{ github.token }}
       run: node scripts/qe/qe.mjs check --changed-from "$BASE_REF"
