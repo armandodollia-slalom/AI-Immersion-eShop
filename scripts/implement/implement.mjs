@@ -24,11 +24,12 @@ const SCRIPT = fileURLToPath(import.meta.url);
 
 const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
-  run <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+  run <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
         implement every <KEY>-<title>.md story given (or every story of an epic): each gets a worktree
         and branch, the implementer agent, the review loop and verified tests. Stories "Blocked by"
         another story in the batch run after it, stacked on its branch. The run syncs the board and
-        claims each story's card first; a card another machine holds is skipped unless --force.
+        claims each story's card first; a card another machine holds is skipped unless --takeover.
+        --force runs stories again that are already implemented (or whose card is in Pending Review or Done).
   resume [KEY] [--parallel N] [--pr] [--background]
                                  continue the last run that did not finish: stories it finished are
                                  kept, interrupted ones resume in their worktree, the rest run.
@@ -55,12 +56,12 @@ const interruptedBatch = (config) => {
   return batch && !batch.finishedAt && !isProcessAlive(batch.pid, batch.boot) ? batch : null;
 };
 
-async function runStories(config, inputs, { base, force = false, parallel, pr = false, dryRun = false }) {
+async function runStories(config, inputs, { base, force = false, takeover = false, parallel, pr = false, dryRun = false }) {
   const stories = plan(config, inputs, { base, force });
   if (!dryRun) {
     // The board: closed stories to Done and epics in step, then this machine claims the cards it runs.
     syncBoard(config.root);
-    const claims = claimStories(config.root, stories.filter((s) => !s.skip).map((s) => s.key), { force });
+    const claims = claimStories(config.root, stories.filter((s) => !s.skip).map((s) => s.key), { force, takeover });
     for (const key of skipRefused(stories, claims)) log(`${key}: ${stories.find((s) => s.key === key).skip}; skipped.`);
   }
   console.log(describePlan(stories));
@@ -139,7 +140,7 @@ async function main() {
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
       const parallel = Math.max(1, Number(flags.parallel ?? config.implement.parallel) || 1);
-      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']) });
+      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), takeover: Boolean(flags.takeover), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']) });
     }
 
     case 'resume': {

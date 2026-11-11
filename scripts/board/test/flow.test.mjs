@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { resetMemo } from '../lib/board.mjs';
 import { mergeEpicEvidence, parseEpicEvidence, renderEpicEvidence, upsertEpicEvidence } from '../lib/epics.mjs';
 import { TRANSITIONS, allocateSeq, applyEvent, encodeMarker, eventsForState, failStory, flowDir, latestMarker, nextLane, parseMarker, readFlow } from '../lib/flow.mjs';
-import { syncBoard } from '../lib/sync.mjs';
+import { videoFromPrBody } from '../lib/evidence.mjs';
+import { syncBoard, syncVideos } from '../lib/sync.mjs';
 import { failedResults, skipRefused } from '../../implement/lib/board-events.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -147,7 +148,9 @@ test("a card another machine holds is not claimed without --force, and that mach
     assert.equal(applyEvent(f.config, 'DEMO-1', { type: 'verified', id: 'verified:x', body: 'x' }).status, 'not-owner');
     assert.equal(f.gh().issues[12].column, 'Testing');
 
-    const forced = applyEvent(f.config, 'DEMO-1', { type: 'claim', id: 'claim:b', force: true, body: 'claim' });
+    const notTaken = applyEvent(f.config, 'DEMO-1', { type: 'claim', id: 'claim:f', force: true, body: 'claim' });
+    assert.equal(notTaken.status, 'refused', '--force alone does not take a card another machine holds');
+    const forced = applyEvent(f.config, 'DEMO-1', { type: 'claim', id: 'claim:b', takeover: true, body: 'claim' });
     assert.deepEqual([forced.status, forced.from, forced.to], ['applied', 'testing', 'inProgress']);
     assert.equal(parseMarker(f.gh().issues[12].comments.at(-1).body).owner, 'me@box');
     // The other machine (a later event of its own) is now the one locked out.
@@ -322,4 +325,38 @@ test('implement run skips stories another machine holds (and stories stacked on 
   ];
   assert.deepEqual(failedResults(results, { pr: true }).map((r) => r.key), ['A-2', 'A-4', 'A-5']);
   assert.deepEqual(failedResults(results, { pr: false }).map((r) => r.key), ['A-2', 'A-5']);
+});
+
+test('the feature video comes from the PR demo video section; notes without a recording are not videos', () => {
+  const section = (inner) => `Intro\n\n<!-- pr-demo-video:start -->\n## Demo video\n\n${inner}\n\n<sub>Updated by \`.github/workflows/pr-demo-video.yml\` on every push; edits inside this section are overwritten.</sub>\n<!-- pr-demo-video:end -->\n\nCloses #12`;
+  const url = 'https://github.com/acme/shop/blob/pr-videos/pr-7/cart.webm';
+  const v = videoFromPrBody(section(`Recorded on the test stack.\n\n### ✅ Cart\n\n[![Cart](https://github.com/acme/shop/blob/pr-videos/pr-7/cart.gif?raw=true)](${url})\n\n[Full video (WebM)](${url}) · \`cart.webm\``));
+  assert.equal(v.url, url);
+  assert.match(v.markdown, /### ✅ Cart/);
+  assert.doesNotMatch(v.markdown, /## Demo video|Updated by/);
+  assert.equal(videoFromPrBody(section('No frontend changes; no video recorded (commit abc1234).')), null);
+  assert.equal(videoFromPrBody('no section here'), null);
+  assert.equal(videoFromPrBody(null), null);
+});
+
+test('board sync posts feature videos published after Pending Review, on the story and the epic, once', () => {
+  const f = fixture();
+  try {
+    upsertEpicEvidence(f.config, { epicNumber: 10, storyNumber: 12, key: 'DEMO-1', story: { status: 'review', pr: 'https://github.com/acme/shop/pull/7' } });
+    upsertEpicEvidence(f.config, { epicNumber: 10, storyNumber: 13, key: 'DEMO-2', story: { status: 'inProgress' } });
+    upsertEpicEvidence(f.config, { epicNumber: 10, epic: { pr: 'https://github.com/acme/shop/pull/9' } });
+    const items = [{ number: 10, labels: ['epic'] }];
+    assert.deepEqual(syncVideos(f.config, items, { findVideo: () => null }), [], 'nothing published yet');
+    const calls = [];
+    const findVideo = (pr, key) => (calls.push(key), { url: `${pr}/video.webm`, markdown: `[Full video (WebM)](${pr}/video.webm)` });
+    assert.deepEqual(syncVideos(f.config, items, { findVideo }), ['DEMO-1', 'epic#10']);
+    assert.deepEqual(calls, ['DEMO-1', 'epic #10'], 'stories without a PR are skipped');
+    assert.match(f.gh().issues[12].comments.at(-1).body, /### Feature video[\s\S]*pull\/7\/video\.webm/);
+    const data = parseEpicEvidence(f.gh().issues[10].comments[0].body);
+    assert.equal(data.stories['DEMO-1'].video, 'https://github.com/acme/shop/pull/7/video.webm');
+    assert.equal(data.epic.video, 'https://github.com/acme/shop/pull/9/video.webm');
+    assert.deepEqual(syncVideos(f.config, items, { findVideo }), [], 'a second sync finds nothing to do');
+  } finally {
+    f.cleanup();
+  }
 });

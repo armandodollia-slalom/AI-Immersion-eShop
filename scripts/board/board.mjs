@@ -29,10 +29,11 @@ const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
                                 their epic's evidence, and put every epic in the lane its stories call
                                 for (also run at the start of \`pipeline implement run\`)
   mine                          the stories assigned to you and their columns
-  claim <story>... [--force] [--how <text>] [--json]
+  claim <story>... [--force] [--takeover] [--how <text>] [--json]
                                 claim the cards for this machine (In Progress); refused when another
-                                machine holds one in In Progress or Testing, unless --force
-  event <story> <${EVENTS.join('|')}> [--id <id>] [--force]
+                                machine holds one in In Progress or Testing, unless --takeover;
+                                --force re-claims a card in Pending Review or Done (run it again)
+  event <story> <${EVENTS.join('|')}> [--id <id>] [--force] [--takeover]
                                 apply a pipeline event (JSON payload on stdin: {"bugs": [...]})
   fail <story> [--id <id>]      Failed lane, needs-human label and the failure comment from the
                                 story's implement run record
@@ -135,7 +136,7 @@ async function main() {
         if (!isActive(config)) r = { status: 'inactive' };
         else {
           try {
-            r = claim(config, key, { force: Boolean(flags.force), how: str(flags.how) ?? 'pipeline implement run', id: str(flags.id) });
+            r = claim(config, key, { force: Boolean(flags.force), takeover: Boolean(flags.takeover), how: str(flags.how) ?? 'pipeline implement run', id: str(flags.id) });
           } catch (error) {
             r = { status: 'error', reason: error.message.split('\n')[0] };
           }
@@ -154,7 +155,7 @@ async function main() {
         console.error(`Unknown event "${type}"; use one of ${EVENTS.join(', ')}.`);
         return 2;
       }
-      const r = applyStoryEvent(config, story, { ...readPayload(), type, id: str(flags.id), force: Boolean(flags.force) });
+      const r = applyStoryEvent(config, story, { ...readPayload(), type, id: str(flags.id), force: Boolean(flags.force), takeover: Boolean(flags.takeover) });
       console.log(describe(config, story.key, type, r));
       return 0;
     }
@@ -238,7 +239,7 @@ function describe(config, key, type, r) {
       return `${key}: ${type} ignored: not allowed from ${lane(config, r.from)}.`;
     case 'not-owner':
     case 'refused':
-      return `${key}: ${type} ignored: ${r.owner} holds the card in ${lane(config, r.from)}${type === 'claim' ? ' (--force to take it over)' : ''}.`;
+      return `${key}: ${type} ignored: ${r.owner} holds the card in ${lane(config, r.from)}${type === 'claim' ? ' (--takeover to take it over)' : ''}.`;
     case 'no-issue':
       return `${key} has no issue on the board (run board setup).`;
     default:
@@ -253,15 +254,15 @@ function describeClaim(config, o) {
   return `${o.key}: claimed (${o.status}).`;
 }
 
-function claim(config, key, { force, how, id }) {
+function claim(config, key, { force, takeover, how, id }) {
   const [login, ...host] = owner().split('@');
-  return applyEvent(config, key, { type: 'claim', id: id ?? `claim:${nowIso()}`, force, body: claimComment(config, { who: `@${login} on \`${host.join('@') || os.hostname()}\``, how }) }, { log });
+  return applyEvent(config, key, { type: 'claim', id: id ?? `claim:${nowIso()}`, force, takeover, body: claimComment(config, { who: `@${login} on \`${host.join('@') || os.hostname()}\``, how }) }, { log });
 }
 
 // A pipeline event with its comment. `verified` posts the review notes and the evidence.
 function applyStoryEvent(config, story, event) {
   if (event.type === 'verified') return markReadyForReview(config, story, { id: event.id, pr: event.pr ?? null, epicBranch: event.epicBranch ?? null }).result;
-  if (event.type === 'claim') return claim(config, story.key, { force: event.force, how: event.how ?? 'board event', id: event.id });
+  if (event.type === 'claim') return claim(config, story.key, { force: event.force, takeover: event.takeover, how: event.how ?? 'board event', id: event.id });
   if (event.type === 'failed') return failStory(config, story.key, { id: event.id, body: event.body ?? 'The pipeline stopped.' }, { log });
   const body = event.type === 'testing' ? testingComment(config) : event.type === 'product-bug' ? bugComment(config, event.bugs ?? [], { cycle: event.cycle }) : null;
   return applyEvent(config, story.key, { type: event.type, id: event.id, force: event.force, body }, { log });
@@ -330,9 +331,10 @@ function markReadyForReview(config, story, { pr, epicBranch = null, id = null })
   const lines = ['## Ready for review', '', ...(pr ? [`Pull request: ${pr}${epicBranch ? ` (merged into the epic branch \`${epicBranch}\`)` : ''}`, ''] : []), '- Architecture review: approved', '- Test plan and automated tests: verified', ''];
   let video = null;
   if (kind === 'ui') {
-    video = featureVideo(config, story, { pr });
-    // TODO(video): link the recording itself once featureVideo() returns the PR's video URL.
-    lines.push(video ? `### Feature video\n\n${video}` : '### Feature video\n\n_The recording is on the pull request (added by the PR demo video workflow)._', '');
+    const found = featureVideo(config, story, { pr });
+    video = found?.url ?? null;
+    // The demo video workflow publishes after the PR opens; `board sync` posts the video once it exists.
+    lines.push(found ? `### Feature video\n\n${found.markdown}` : '### Feature video\n\n_Pending: the PR demo video workflow records it after the PR opens; `board sync` links it here once it is published._', '');
   }
   if (kind === 'api') {
     let evidence;

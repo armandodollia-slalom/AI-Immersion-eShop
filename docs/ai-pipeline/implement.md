@@ -23,7 +23,8 @@ node scripts/pipeline/pipeline.mjs implement decisions [--story KEY] [--json]  #
 | `--base <ref>` | Base for stories with no in-batch blocker (default `baseRef`, `origin/main`; fetched first). |
 | `--pr` | Push each finished branch and open a PR with `gh`, against its base branch (stacked PRs for dependents). |
 | `--epic <EPIC>` | Implement every story the epic file (`epic-<EPIC>.md` next to the stories folder) names that has a story file, in addition to any given. |
-| `--force` | Also implement stories that already have `## Implementation Notes`, and take over [board](board.md) cards another machine holds in In Progress or Testing (or that are already in Pending Review or Done). |
+| `--force` | Also implement stories that already have `## Implementation Notes`, and run stories whose [board](board.md) card is already in Pending Review or Done. |
+| `--takeover` | Take over board cards another machine holds in In Progress or Testing (otherwise those stories, and stories stacked on them, are skipped). |
 
 ## What happens
 

@@ -67,6 +67,12 @@ export function parentOf(config, number) {
 
 const commentId = (c) => c.databaseId ?? (Number(/issuecomment-(\d+)/.exec(c.url ?? '')?.[1]) || null);
 
+// The epic evidence comment's data, or null when the epic has none yet.
+export function readEpicEvidence(config, epicNumber) {
+  const existing = issueComments(config, epicNumber).find((c) => DATA.test(c.body ?? ''));
+  return existing ? parseEpicEvidence(existing.body) : null;
+}
+
 // Creates or edits the epic's evidence comment. `storyNumber` finds the epic (its parent) when
 // `epicNumber` is not given. Returns { epic, url, created } or null when the story has no epic.
 export function upsertEpicEvidence(config, { storyNumber = null, epicNumber = null, key = null, story = {}, epic = {} }) {

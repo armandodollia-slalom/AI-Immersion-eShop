@@ -3,15 +3,49 @@ import path from 'node:path';
 import { fsReader } from '../../pipeline/lib/git.mjs';
 import { casePrefix } from '../../pipeline/lib/stories.mjs';
 import { log, readJson, run, tail } from '../../pipeline/lib/util.mjs';
+import { SECTION_END, SECTION_START } from '../../pr-video/lib/pr-video.mjs';
 
 // ---------------------------------------------------------------------------------------------
 // UI stories: feature video
 // ---------------------------------------------------------------------------------------------
 
-// TODO(video): PR videos are being added to the pipeline separately (Landon). When that lands, return
-// the URL of the video attached to the story's PR so the ticket links the same recording.
-export function featureVideo(/* config, story, { pr } */) {
-  return null;
+// The PR demo video workflow (.github/workflows/pr-demo-video.yml, scripts/pr-video) records the e2e
+// specs a frontend PR changes and keeps a "Demo video" section between markers in the PR body. That
+// section is the story's feature video: the ticket and its epic link the same recording. The workflow
+// runs after the PR opens, so this returns null until it has published; `board sync` fills it in later.
+// Returns { markdown, url } (url: the first full video link) or null.
+export function featureVideo(config, story, { pr, readPrBody = defaultPrBody } = {}) {
+  if (!pr) return null;
+  let body;
+  try {
+    body = readPrBody(config, pr);
+  } catch (error) {
+    log(`${story?.key ?? pr}: could not read the PR body for its demo video: ${error.message.split('\n')[0]}`);
+    return null;
+  }
+  return videoFromPrBody(body);
+}
+
+export function videoFromPrBody(body) {
+  const start = (body ?? '').indexOf(SECTION_START);
+  const end = (body ?? '').indexOf(SECTION_END);
+  if (start < 0 || end < start) return null;
+  const section = body
+    .slice(start + SECTION_START.length, end)
+    .split('\n')
+    .filter((l) => !/^\s*##\s+Demo video\s*$/i.test(l) && !/^<sub>Updated by/.test(l))
+    .join('\n')
+    .trim();
+  const url = /\[Full video[^\]]*\]\((https:\/\/[^)\s]+)\)/.exec(section)?.[1] ?? null;
+  // A note without a recording (for example "no frontend changes") is not a video.
+  if (!url) return null;
+  return { markdown: section, url };
+}
+
+function defaultPrBody(config, pr) {
+  const r = run('gh', ['pr', 'view', String(pr), '--json', 'body', '-q', '.body'], { cwd: config.root });
+  if (r.status !== 0) throw new Error(r.stderr.trim() || `gh pr view ${pr} failed`);
+  return r.stdout;
 }
 
 // ---------------------------------------------------------------------------------------------

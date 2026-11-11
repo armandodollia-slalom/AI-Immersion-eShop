@@ -32,10 +32,10 @@ export function syncBoard(root) {
 
 // Claims the stories' cards for this machine. Returns key -> { status, owner, from }; only `refused`
 // and `not-allowed` stop a story (another machine holds it, or its card is already in Pending Review or
-// Done): --force takes it over.
-export function claimStories(root, keys, { force = false } = {}) {
+// Done): --takeover takes a card another machine holds, --force runs a story in Pending Review or Done again.
+export function claimStories(root, keys, { force = false, takeover = false } = {}) {
   if (!keys.length) return new Map();
-  const r = board(root, ['claim', ...keys, '--json', ...(force ? ['--force'] : [])]);
+  const r = board(root, ['claim', ...keys, '--json', ...(force ? ['--force'] : []), ...(takeover ? ['--takeover'] : [])]);
   const out = new Map();
   for (const line of r.stdout.split('\n')) {
     try {
@@ -59,7 +59,7 @@ export function skipRefused(stories, claims, columns = {}) {
     if (s.skip) continue;
     const c = claims.get(s.key);
     if (claimRefused(c)) {
-      s.skip = c.owner ? `claimed by ${c.owner} on the board (--force to take it over)` : `its card is in ${columns[c.from] ?? c.from} on the board (--force to run it again)`;
+      s.skip = c.owner ? `claimed by ${c.owner} on the board (--takeover to take it over)` : `its card is in ${columns[c.from] ?? c.from} on the board (--force to run it again)`;
       skipped.add(s.key);
     } else if (s.deps?.some((k) => skipped.has(k))) {
       s.skip = `blocker ${s.deps.find((k) => skipped.has(k))} is not claimed by this machine`;

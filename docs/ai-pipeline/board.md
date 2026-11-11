@@ -37,7 +37,7 @@ Pipeline events move a card only along these transitions; any other event is ign
 
 | Event | Sent by | From | To |
 | --- | --- | --- | --- |
-| `claim` | `implement run` (each story it runs), `pipeline start` (story-start hook) | no lane, Backlog, Ready, Failed, In Progress; Testing, Pending Review or Done only with `--force` | In Progress |
+| `claim` | `implement run` (each story it runs), `pipeline start` (story-start hook) | no lane, Backlog, Ready, Failed, In Progress; Testing, Pending Review or Done only with `--force`; a card another machine holds only with `--takeover` | In Progress |
 | `testing` | the runner after the review approves; the Stop hook (interactive) | In Progress | Testing |
 | `product-bug` | the runner when QE reports bugs and a bug-fix cycle starts; the Stop hook | Testing, In Progress | In Progress |
 | `verified` | the runner after it opens the PR (`board review`); the Stop hook | In Progress, Testing | Pending Review |
@@ -46,7 +46,7 @@ Pipeline events move a card only along these transitions; any other event is ign
 
 Testing goes back to In Progress only on a product bug. A claim of a card in Testing by the machine that holds it (a resumed run) leaves it in Testing.
 
-**Claims.** A claim fails when the card is in In Progress or Testing and its latest event came from another user or machine (`<gh login>@<host>`). `implement run` then skips that story (and any story stacked on it) and says who holds it; `--force` takes it over. While another machine holds a card, events from this machine are ignored (`not-owner`), so a stale run cannot move a card someone else took over.
+**Claims.** A claim fails when the card is in In Progress or Testing and its latest event came from another user or machine (`<gh login>@<host>`). `implement run` then skips that story (and any story stacked on it) and says who holds it; `--takeover` takes it over (`--force` is for running a story in Pending Review or Done again). While another machine holds a card, events from this machine are ignored (`not-owner`), so a stale run cannot move a card someone else took over.
 
 **Sequence numbers.** Every event carries a per-ticket number that only grows. The last applied number is stored in two places:
 
@@ -69,7 +69,7 @@ node scripts/board/board.mjs mine                                               
 
 `implement run` first runs `board sync`, then claims every story it will run. The headless runner reports `testing`, `product-bug` and `verified` from each story's worktree as they happen, and after the batch it moves every story that did not finish to Failed. Fix a failed story, remove the `needs-human` label and run it again (the claim takes it out of Failed), or move it back to Ready by hand (`board move <KEY> ready --force`).
 
-**Interactive sessions.** `pipeline start <KEY>` claims the card (story-start hook; a card another machine holds is not taken: `board claim <KEY> --force` takes it). The board stage's Stop hook reads the story's pipeline state and reports, in order, a product bug QE found since the last stop, the review approving the code QE is now testing, and the verified tests of a finished line of work, so the card moves the same way as in a headless run. Headless runs (`PIPELINE_HEADLESS=1`) skip both hooks because the runner reports its own events.
+**Interactive sessions.** `pipeline start <KEY>` claims the card (story-start hook; a card another machine holds is not taken: `board claim <KEY> --takeover` takes it). The board stage's Stop hook reads the story's pipeline state and reports, in order, a product bug QE found since the last stop, the review approving the code QE is now testing, and the verified tests of a finished line of work, so the card moves the same way as in a headless run. Headless runs (`PIPELINE_HEADLESS=1`) skip both hooks because the runner reports its own events.
 
 ## board sync
 
@@ -146,8 +146,8 @@ The board is active only when `scripts/board/config.json` has a `projectNumber`,
 node scripts/board/board.mjs setup
 node scripts/board/board.mjs sync                          # closed stories to Done, late outcomes, epic lanes
 node scripts/board/board.mjs mine
-node scripts/board/board.mjs claim <KEY>... [--force]      # claim for this machine (implement run does this)
-node scripts/board/board.mjs event <KEY> claim|testing|product-bug|verified|failed|closed [--id <id>] [--force]
+node scripts/board/board.mjs claim <KEY>... [--force] [--takeover]  # claim for this machine (implement run does this)
+node scripts/board/board.mjs event <KEY> claim|testing|product-bug|verified|failed|closed [--id <id>] [--force] [--takeover]
 node scripts/board/board.mjs fail <KEY>                    # Failed + needs-human from the implement run record
 node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|testing|review|failed|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>] [--epic-branch <branch>]   # Pending Review + evidence

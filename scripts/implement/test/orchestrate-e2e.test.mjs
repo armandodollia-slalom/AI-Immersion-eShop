@@ -38,7 +38,7 @@ before(() => {
   repo = path.join(tmp, 'shop');
   incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check', 'scripts/board', 'scripts/models']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check', 'scripts/board', 'scripts/models', 'scripts/pr-video']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -58,7 +58,21 @@ before(() => {
   write(incoming, 'DEMO-1-coupons.md', '# DEMO-1: [BE - Catalog.API, Basket.API] - Coupons\n\n## Acceptance Criteria\n\n- a valid coupon gives 10% off\n- an expired coupon is rejected with 400\n');
 });
 
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+// The runner leaves detached background work (QE runs) that can still be writing into the repo when
+// the tests end. Give it a moment to finish, stop what is left, then remove the folder with retries,
+// so cleanup never fails with "directory not empty".
+after(() => {
+  const running = () => (spawnSync('pgrep', ['-f', tmp], { encoding: 'utf8' }).stdout ?? '').split('\n').map(Number).filter((pid) => pid && pid !== process.pid);
+  for (let i = 0; i < 50 && running().length; i++) spawnSync('sleep', ['0.1']);
+  for (const pid of running()) {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // already gone
+    }
+  }
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+});
 
 const sub = (id, owns, over = {}) => ({ id, goal: `build ${id}`, acceptance: [`${id} works`], owns, dependsOn: [], modelClass: 'medium', verify: 'code', modelReason: 'normal', verifyReason: 'api', expectedFiles: 1, expectedLoc: 3, confidence: 0.8, alternatives: [{ option: 'self', reason: 'two services' }], ...over });
 

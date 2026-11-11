@@ -113,7 +113,8 @@ export function postComment(config, number, body) {
 // Applying an event
 // ---------------------------------------------------------------------------------------------
 
-// Applies `event` ({ type, id, force, body }) to the story's card. `body` is the comment posted with
+// Applies `event` ({ type, id, force, takeover, body }): `force` lets a claim leave Testing, Pending Review
+// or Done (run the story again); `takeover` lets it take a card another machine holds. to the story's card. `body` is the comment posted with
 // the transition (the hidden marker is appended); null posts none. Returns { status, ... } where status
 // is one of applied, stale, refused (claimed by another machine), not-owner (another machine claimed it
 // since), not-allowed (the table forbids it from the current lane), no-issue.
@@ -132,10 +133,10 @@ export function applyEvent(config, key, event, { log = () => {} } = {}) {
   const item = issueItem(config, issue);
   const from = item.column;
   const holder = ACTIVE.has(from) && remote.owner && remote.owner !== me ? remote.owner : null;
-  if (event.type === 'claim' && holder && !event.force) return { status: 'refused', owner: holder, from, seq, issue };
+  if (event.type === 'claim' && holder && !event.takeover) return { status: 'refused', owner: holder, from, seq, issue };
   if (event.type !== 'claim' && event.type !== 'closed' && holder) return { status: 'not-owner', owner: holder, from, seq, issue };
   // A machine re-running its own story keeps the card where it is (Testing is left only on a bug).
-  const to = event.type === 'claim' && from === 'testing' && !event.force && !holder ? 'testing' : nextLane(from, event.type, { force: event.force });
+  const to = event.type === 'claim' && from === 'testing' && !event.force && !holder ? 'testing' : nextLane(from, event.type, { force: event.force || Boolean(event.takeover && holder) });
   if (!to) return { status: 'not-allowed', from, seq, issue };
 
   if (from !== to) setColumn(config, item.id, to);
