@@ -457,6 +457,8 @@ test('bug epic: a group re-delivered by a later run keeps the PR it already has'
   const r2 = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: second.deps, log: () => {} });
   assert.deepEqual(second.prs.map((p) => p.existing), r1.epic.prs, 'the second run hands the existing PR to openPr');
   assert.deepEqual(r2.epic.prs, r1.epic.prs);
+  // The tickets merged by the first run still get their cards moved with the PR.
+  for (const k of ['BUG-1', 'BUG-2', 'BUG-3']) assert.ok(second.board.some((b) => b[0] === k && b[1] === 'review' && b.includes(r1.epic.prs[0])), `${k} review with the group PR`);
 });
 
 test('singleGroups: one group per ticket', () => {

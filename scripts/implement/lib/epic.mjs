@@ -510,6 +510,9 @@ async function deliverUnit(env, unit, units, epicWt) {
   const results = await runUnitStories(uenv, { parallel: feature ? env.parallel : 1, deferReview: !feature });
   if (only) return { outcome: 'joined', results };
   const state = loadEpicRun(config, epic.key);
+  // Every ticket merged into the unit, in this run or an earlier one: a group PR opened by a later run
+  // moves the cards of the tickets merged before it too.
+  const delivered = results.filter((x) => state.stories?.[x.key]?.merged);
   const open = results.filter((r) => !(DONE.has(r.outcome) && state.stories?.[r.key]?.merged) && !(r.outcome === 'skipped' && !/^blocker /.test(r.reason ?? '')));
   const finish = (outcome, extra = {}) => {
     saveUnit(config, epic.key, unit.id, { status: outcome === 'done' ? 'done' : 'failed', outcome, ...extra });
@@ -519,7 +522,7 @@ async function deliverUnit(env, unit, units, epicWt) {
   if (open.length) {
     const reason = `${feature ? 'epic' : `group ${unit.id}`} not delivered: ${open.map((r) => `${r.key} ${r.outcome}`).join(', ')}`;
     log(`no PR: ${reason}`);
-    if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome) && state.stories?.[x.key]?.merged)) reportStory(uenv, r);
+    if (!feature) for (const r of delivered) reportStory(uenv, r);
     return finish('stories-failed', { reason, failed: open.filter((r) => r.outcome !== 'skipped').map((r) => r.key) });
   }
 
@@ -575,7 +578,7 @@ async function deliverUnit(env, unit, units, epicWt) {
   if (followUps.length) saveUnit(config, epic.key, unit.id, { followUps });
   const body = epicPrBody({ followUps, epic, branch: unit.branch, stories: uenv.stories, results: runs, qe, prChecks, foundation: feature ? loadEpicRun(config, epic.key).foundation : null, noteFile: path.relative(config.root, env.noteFile), group: feature ? null : unit.group });
   if (!env.pr || prsDisabled()) {
-    if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
+    if (!feature) for (const r of delivered) reportStory(uenv, r);
     log(`every ticket verified and merged into ${unit.branch}${env.pr ? ' (PRs disabled)' : '; --pr opens the PR'}`);
     return finish('done', { prBody: body });
   }
@@ -583,13 +586,13 @@ async function deliverUnit(env, unit, units, epicWt) {
   const opened = deps.openPr(uenv, { title, body, existing: state.units?.[unit.id]?.pr ?? null });
   if (!opened.url) {
     log(`no PR: ${opened.reason}`);
-    if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
+    if (!feature) for (const r of delivered) reportStory(uenv, r);
     return finish('done', { reason: opened.reason });
   }
   if (feature) {
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch]);
   } else {
-    for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r, opened.url);
+    for (const r of delivered) reportStory(uenv, r, opened.url);
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch, '--group', unit.id, '--title', unit.group.title, '--tickets', unit.keys.join(',')]);
   }
   log(`PR: ${opened.url}`);
