@@ -46,7 +46,9 @@ public static class AuthenticationExtensions
             options.TokenValidationParameters.ValidIssuers = [identityUrl];
 #endif
 
-            options.TokenValidationParameters.ValidateAudience = false;
+            // Tokens carry an aud per requested API scope, so a token without this API's scope is rejected.
+            options.TokenValidationParameters.ValidateAudience = true;
+            options.TokenValidationParameters.ValidAudience = audience;
         });
 
         services.AddAuthorization();
