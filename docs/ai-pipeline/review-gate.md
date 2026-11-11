@@ -47,7 +47,7 @@ The agent's usage is recorded like every other run (stage `bug-triage` in `token
 | Decision | When | What happens |
 | --- | --- | --- |
 | **auto-merge** | the PR severity is **Low**, every ticket has **high confidence**, no ticket has a **human reopen**, the PR's **checks pass**, and `implement.autoMerge.enabled` | until the gate's auto-merge step lands, reviewed like any other PR |
-| **wait** | everything qualifies but the checks are still running (or none reported yet) | the notice says so |
+| **wait** | everything qualifies but the checks are still running (or none reported yet) | the label `approvals:0` and the notice; `board sync` evaluates the PR again |
 | **review** | anything else: Medium, High or Severe, low confidence, a human reopen, failing checks, a ticket that was not assessed, auto-merge switched off | **1 required approval** (the [approvals policy](#approvals-policy) table; never fewer than 1), the labels `approvals:N` and `needs-human`, review requests, and the notice. The card stays in Pending Review |
 
 Reviewers are requested from each ticket's **assignees**, or, for a ticket without one, the **CODEOWNERS** of the files it touches (`.github/CODEOWNERS`); never the PR's author. CODEOWNERS stay optional reviewers on every PR, and the team can bring in more reviewers themselves: the gate only sets the **number** of required approvals.
@@ -61,6 +61,30 @@ A PR that needed people stays that way: later evaluations never auto-merge it, e
 GitHub rulesets set one approval count per branch, not per PR, so `.github/workflows/review-quorum.yml` enforces the count per PR. It runs on `pull_request` (opened, pushed, labeled, ...) and `pull_request_review` (submitted, edited, dismissed), and passes when approvals from **distinct people**, not the author, given on the **latest push** (an approval from before it is stale), reach the PR's `approvals:N` label. Each reviewer's latest approving or "changes requested" review counts; a comment does not change a verdict. A PR without the label, or with `approvals:0`, passes. The check runs `scripts/review-gate/quorum.mjs` from the **base branch**, so a PR cannot change how its own approvals are counted; changes to `.github/workflows/`, `.github/CODEOWNERS` and `scripts/review-gate/` are severity floor paths for the same reason.
 
 **Making it required is a repository setting**, armando's call: Settings → Rules → Rulesets → the ruleset for `main` → "Require status checks to pass" → add `review-quorum`. Until then it is a visible check that nothing blocks on. `main` has no branch protection and no required approvals today; the gate does not change any repository setting.
+
+## Human reopens
+
+A **human reopen** is a person sending a triaged bug fix back after the gate assessed it. It is counted apart from QE's `bugFixCycles` (those are the pipeline's own tests failing before the PR existed). `board sync` finds them (`lib/sync.mjs`, `lib/reopens.mjs`):
+
+| Source | Detected when |
+| --- | --- |
+| `card` | the card moved back to **In Progress** from Pending Review or Done with **no pipeline event behind it**: the last pipeline event on the card (its hidden marker) left it in review or done. The board is a user project, so `projects_v2_item` webhooks don't fire and GitHub Actions can't watch lane moves; the sync compares the card with that last event instead |
+| `issue` | the issue was reopened (open, closed earlier, its card still in Done) |
+| `changes-requested` | a "changes requested" review on an open gated PR, against the tickets it **names** (in its body or inline comments), or against **every ticket in the PR** when it names none. Each review counts once (the PR's gate state keeps the ids) |
+
+Each reopen:
+
+- bumps the ticket's severity **+1 level**, capped at Severe, recomputed from the stored ratings and floor ("Impact Medium, Fix risk Low → Medium, +1 reopen → High"), and **blocks auto-merge for that ticket for good** (the reopen stays in its `## Triage`);
+- updates the `## Triage` section and the **Severity** and **Human reopens** fields, labels the issue `reopened`, and appends a `type: "reopen"` record to `decision-outcomes.jsonl` (`story`, `pr`, `source`, `by`, `afterMerge`, `reopens`, `severity`);
+- adds the reason (the reviewer's comments, or the people's comments on the issue since the last pipeline event) as a new round under **`## Decisions`** in the issue body, so every agent of the re-run gets it as a binding requirement, like a human's answers to escalation questions;
+- posts a `reopened` board event (Pending Review or Done → In Progress), which also keeps the next sync from counting the same move again.
+
+What happens next depends on the PR:
+
+- **Before the PR merges:** the PR's auto-merge is turned off (`gh pr merge --disable-auto`), its gate goes back to **review** (`approvals:N`, `needs-human`, the notice names the reopen), and the ticket re-runs **on its PR's branch**: a single-ticket PR's branch (fetched from origin when this machine has none, fast-forwarded to a person's commits on it), or its bug-epic **PR group's branch** (it joins the delivered group while the group PR is open). The push updates the PR, the ticket goes back to Pending Review with it, and the gate assesses the PR again.
+- **After it merged:** the fix runs as a **follow-up** on a new branch from the base (`<branch>-r<n>`), and its new PR goes through the same gate; the ticket's reopens keep it from auto-merging.
+
+The re-runs start from [`implement requeue`](escalations.md#requeue-on-a-timer) (by hand or on its timer): `board sync --json` lists the reopened tickets (`reopened`), and requeue runs them with `--force`, apart from the tickets a human resolved. The run removes the `reopened` label when it starts (`board clear-reopened`); the reopen itself stays on the ticket.
 
 ## Approvals policy
 
@@ -85,4 +109,6 @@ node scripts/review-gate/review-gate.mjs publish --pr <url> --tickets BUG-1,BUG-
 node scripts/review-gate/review-gate.mjs status [--pr <url>]
 node scripts/review-gate/quorum.mjs <pr number> --repo owner/name    # what the review-quorum check runs
 node scripts/board/board.mjs setup        # creates the triage fields on the board
+node scripts/board/board.mjs sync         # reopens, gated PRs evaluated again
+node scripts/pipeline/pipeline.mjs implement requeue   # re-runs reopened bug fixes (and resolved tickets)
 ```

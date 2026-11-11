@@ -93,7 +93,7 @@ sequenceDiagram
 
 1. Skips (exit 0, logged) when an `implement run` is active on this machine, the last one was interrupted (resume it first: `implement resume`), another requeue is running, or the agent provider reported an outage in the last `implement.requeue.outageCooldownMin` (60) minutes (`.agent-state/implement/agent-outage.json`).
 2. Runs `board sync`, which moves the resolved Failed cards to Ready. Nothing resolved: exits 0.
-3. Starts `implement run <KEY...> --parallel auto --pr` for all of them. Tickets of an epic whose epic run is still in progress go per delivery unit (one run per bug-epic PR group they belong to), so they join their group's branch and PR; every other ticket goes in the single run. A run that stops on a provider outage (exit 75) stops the requeue too.
+3. Starts `implement run <KEY...> --parallel auto --pr` for all of them. Bug fixes a person reopened after the [review gate](review-gate.md#human-reopens) assessed them (`reopened` in `board sync --json`) run too, in their own runs with `--force`: on their PR's branch while the PR is open, else as a follow-up PR. Tickets of an epic whose epic run is still in progress go per delivery unit (one run per bug-epic PR group they belong to), so they join their group's branch and PR; every other ticket goes in the single run. A run that stops on a provider outage (exit 75) stops the requeue too.
 
 `--requeue-only` moves the cards and starts nothing; `--dry-run` lists what it would run without moving anything; `--parallel N`, `--no-pr` and `--base <ref>` pass through. Each pass logs to `.agent-state/logs/requeue-<time>.log` (the runs' output included) and records itself in `.agent-state/implement/requeue-last.json`.
 

@@ -130,7 +130,7 @@ test('publish: a qualifying PR whose checks are still running waits, with no lab
   const pr = gh.addPr(6, { checks: [{ name: 'ci', bucket: 'pending' }] });
   const r = publishGate(gateConfigFor(root, { autoMerge: { enabled: true } }), { pr: pr.url, keys: ['BUG-3'], base: 'main' }, { gh: gh.gh, runAgent: fakeTriage({ 'BUG-3': low }).runAgent });
   assert.equal(r.decision.action, 'wait');
-  assert.deepEqual(pr.labels, []);
+  assert.deepEqual(pr.labels, ['approvals:0'], 'found again by board sync; nothing for review-quorum to enforce');
   assert.match(pr.comments[0].body, /waiting for the checks/);
   assert.equal(parseState(pr.comments[0].body).action, 'wait');
 });

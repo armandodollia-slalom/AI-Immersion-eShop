@@ -89,6 +89,7 @@ export function gateState(a, d, prior = null, extra = {}) {
     headSha: a.headSha,
     class: a.class,
     severity: a.severity?.level ?? null,
+    systems: { names: a.systems?.names ?? [], shared: Boolean(a.systems?.shared), contract: Boolean(a.systems?.contract) },
     tickets: a.tickets.map((t) => ({ key: t.key, issue: t.issue?.number ?? null, severity: t.severity?.level ?? null, high: Boolean(t.confidence?.high), reopens: t.reopens?.length ?? 0 })),
     countedReviews: prior?.countedReviews ?? [],
     assessedAt: a.assessedAt,
@@ -160,13 +161,15 @@ export function applyReview(config, gh, a, d, state, { assignees, codeowners, au
       return null;
     }
   };
+  // Every gated PR carries `approvals:N` (approvals:0 while it waits for its checks or auto-merges), so
+  // `board sync` finds it again and the review-quorum check knows the count.
+  const want = approvalsLabel(s, d.action === 'review' ? d.approvals : 0);
+  const prefix = approvalsLabel(s, '');
+  const stale = currentLabels.filter((l) => l.startsWith(prefix) && l !== want);
   if (d.action === 'review') {
-    const want = approvalsLabel(s, d.approvals);
-    const prefix = approvalsLabel(s, '');
-    const stale = currentLabels.filter((l) => l.startsWith(prefix) && l !== want);
     attempt('labels', () => editPrLabels(gh, repo, a.pr, { add: [want, s.labels?.needsHuman ?? 'needs-human'], remove: stale }));
     reviewers = attempt('reviewers', () => requestReviewers(gh, repo, a.pr, reviewersFor(a, { assignees, codeowners, author }))) ?? [];
-  }
+  } else if (!currentLabels.includes(want) || stale.length) attempt('labels', () => editPrLabels(gh, repo, a.pr, { add: currentLabels.includes(want) ? [] : [want], remove: stale }));
   attempt('notice', () => upsertComment(gh, repo, a.pr, MARKER, renderNotice(a, d, { ...state, reviewers })));
   return { reviewers, problems };
 }

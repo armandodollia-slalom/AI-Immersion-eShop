@@ -307,6 +307,32 @@ test('bug epic: the orchestrator groups the bugs; each group gets its branch, it
   assert.deepEqual(outcomes.map((o) => [o.groupId, o.verified, Boolean(o.pr), o.cost_usd]).sort(), [['auth', 1, true, 1.5], ['cart', 2, true, 3]]);
 });
 
+test('bug epic: a reopened ticket of a delivered group joins it again while its PR is open, pushes it and re-gates it', async () => {
+  const env = makeRepo({ bugs: true });
+  const origin = path.join(env.tmp, 'origin.git');
+  git(env.tmp, 'init', '-q', '--bare', origin);
+  git(env.repo, 'remote', 'add', 'origin', origin);
+  const note = { summary: 'one area', stories: [], prGroups: [{ id: 'cart', title: 'Cart', tickets: ['BUG-1', 'BUG-2', 'BUG-3'], reason: 'same area', risk: 'low' }] };
+  const f = fakeDeps(note, { startWorker: fakeWorker().startWorker, openPr: (e) => (git(e.worktree, 'push', '-q', 'origin', e.branch), { url: 'https://github.com/example/repo/pull/101' }) });
+  await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+  assert.equal(loadEpicRun(env.config, 'epic-shop').status, 'delivered');
+  const bug1 = env.tickets.find((t) => t.key === 'BUG-1');
+  assert.equal(epicToJoin(env.config, [bug1]), null, 'a delivered epic is not joined');
+  assert.equal(epicToJoin(env.config, [bug1], { reopen: true, prOpen: () => false }), null, 'its PR merged: a follow-up instead');
+  assert.equal(epicToJoin(env.config, [bug1], { reopen: true, prOpen: () => true }).unit.branch, 'bugfix/shop/cart');
+  git(env.repo, 'worktree', 'remove', '--force', path.join(env.tmp, 'shop-worktrees', 'bug-1'));
+  git(env.repo, 'branch', '-D', 'feat/bug-1');
+  const again = fakeWorker({ files: { 'BUG-1': 'src/BUG-1-reopen-fix.cs' } });
+  const f2 = fakeDeps(note, { startWorker: again.startWorker });
+  const j = await runEpic(env.config, { epic: env.epic, tickets: [bug1], inputs: [env.inputs[env.tickets.indexOf(bug1)]], base: 'main', only: ['BUG-1'], force: true, pr: true, deps: f2.deps, log: () => {} });
+  assert.equal(j.epic.outcome, 'joined');
+  assert.deepEqual(again.calls.map((c) => [c.key, c.base]), [['BUG-1', 'bugfix/shop/cart']]);
+  assert.equal(f2.prs.length, 0, 'the open group PR is reused');
+  assert.equal(git(env.repo, 'rev-parse', 'bugfix/shop/cart'), git(origin, 'rev-parse', 'bugfix/shop/cart'), 'the group branch was pushed');
+  assert.deepEqual(f2.gates, [{ pr: 'https://github.com/example/repo/pull/101', keys: ['BUG-1', 'BUG-2', 'BUG-3'], worktree: f2.gates[0].worktree, base: 'main' }]);
+  assert.ok(f2.board.some((b) => b[0] === 'BUG-1' && b[1] === 'review' && b.includes('https://github.com/example/repo/pull/101')));
+});
+
 test('bug epic: a grouping that stays invalid falls back to one PR per bug; a failed group skips the groups that depend on it', async () => {
   const env = makeRepo({ bugs: true });
   const worker = fakeWorker({ outcomes: { 'BUG-1': 'pair-exhausted' } });

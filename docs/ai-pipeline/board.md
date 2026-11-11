@@ -45,6 +45,7 @@ Pipeline events move a card only along these transitions; any other event is ign
 | `verified` | the runner after it opens the PR (`board review`); the Stop hook | In Progress, Testing | Pending Review |
 | `failed` | `implement run` for every story that did not finish (`board fail`) | no lane, Backlog, Ready, In Progress, Testing | Failed |
 | `closed` | `board sync` | any lane but Done | Done |
+| `reopened` | `board sync` (the [review gate](review-gate.md#human-reopens)), when a person reopened a triaged bug fix | Pending Review, Done, In Progress | In Progress |
 
 Testing goes back to In Progress only on a product bug. A claim of a card in Testing by the machine that holds it (a resumed run) leaves it in Testing.
 
@@ -80,6 +81,7 @@ node scripts/board/board.mjs mine                                               
 - Closed story issues move to Done, and their section on the epic's evidence comment shows Done.
 - Their late outcome is recorded for the [implement decision log](implement.md#decision-log): whether the PR merged, how many commits and lines humans added on the branch before merge, and which BUG-* stories name the story (`type: "late"` in `.agent-metrics/decision-outcomes.jsonl` of the checkout, left uncommitted). Only stories this machine implemented have a run record to compare with.
 - Failed story cards labeled `escalation-resolved` and not `needs-human` (a human answered the escalation questions) move to Ready. `--json` prints the keys moved (`requeued`) and every resolved ticket in Ready (`resolved`), which `implement requeue` runs.
+- The [review gate](review-gate.md)'s bookkeeping for bug-fix PRs: **human reopens** of triaged tickets (a card moved back to In Progress with no pipeline event behind it, a reopened issue, a "changes requested" review on a gated PR) are recorded (severity +1, `reopened` label, a `reopened` event, the reason under `## Decisions`), and every open gated PR is evaluated again. `--json` lists the reopened tickets (`reopened`), which `implement requeue` re-runs ([human reopens](review-gate.md#human-reopens)).
 - Every epic card moves to the lane its stories call for.
 
 ## Pending Review evidence
@@ -252,7 +254,9 @@ The board is active only when `scripts/board/config.json` has a `projectNumber`,
 
 | Label | Set by | Meaning |
 | --- | --- | --- |
-| `needs-human` | `board fail` | The pipeline could not finish the ticket; the latest comment has the questions and the Resolved box |
+| `needs-human` | `board fail`; the [review gate](review-gate.md) on a bug-fix PR | On an issue: the pipeline could not finish the ticket; the latest comment has the questions and the Resolved box. On a PR: the gate requires a person's approval |
+| `reopened` | `board sync` (the [review gate](review-gate.md#human-reopens)) | A person reopened a triaged bug fix; `implement requeue` re-runs it and removes the label when it starts (`board clear-reopened`). The reopen stays in the issue's `## Triage` |
+| `approvals:N`, `auto-merged` (PRs) | the [review gate](review-gate.md) | How many approvals a bug-fix PR needs (`review-quorum` enforces it); a PR the gate merged |
 | `escalation-resolved` | `board-escalation-resolve` workflow (or a human) | A human answered the questions; `board sync` moves the card from Failed to Ready, the next run re-runs it and removes the label when it claims the card |
 
 | Workflow | Trigger | What it does |
@@ -270,7 +274,7 @@ node scripts/board/board.mjs fetch <KEY>... | --epic <EPIC> | --all [--refresh] 
 node scripts/board/board.mjs new <file.md|-> [--type story|bug|epic|spike] [--key KEY] [--epic <epic-key>] [--mockups <dir>] [--dry-run]
 node scripts/board/board.mjs publish <KEY> [--force]       # the cached story back to its issue
 node scripts/board/board.mjs migrate [--apply|--verify [--allow-unplaced]|--delete-local [--dry-run]]
-node scripts/board/board.mjs sync [--json]                 # closed stories to Done, resolved Failed to Ready, late outcomes, epic lanes
+node scripts/board/board.mjs sync [--json]                 # closed stories to Done, resolved Failed to Ready, late outcomes, review gate (reopens, gated PRs), epic lanes
 node scripts/board/board.mjs resolved [--json]             # resolved tickets (escalation-resolved, no needs-human); moves nothing
 node scripts/board/board.mjs mine
 node scripts/board/board.mjs claim <KEY>... [--force] [--takeover]  # claim for this machine (implement run does this)
@@ -278,6 +282,7 @@ node scripts/board/board.mjs event <KEY> claim|testing|product-bug|verified|fail
 node scripts/board/board.mjs fail <KEY>                    # Failed + needs-human, questions and Resolved box from the run record
 node scripts/board/board.mjs resolve-check <issue> [--actor <login>] [--comment <id>] [--label]   # run by board-escalation-resolve
 node scripts/board/board.mjs clear-resolved <KEY>          # drop escalation-resolved (a re-run started; implement run does this)
+node scripts/board/board.mjs clear-reopened <KEY>          # drop reopened (a re-run of a reopened bug fix started; implement run does this)
 node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|testing|review|failed|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>] [--epic-branch <branch>]   # Pending Review + evidence
 node scripts/board/board.mjs epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]

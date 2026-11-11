@@ -156,6 +156,7 @@ export const triageData = (a, t) => ({
   confidence: { score: t.confidence.score, high: t.confidence.high, criteria: t.confidence.criteria, reasons: t.confidence.reasons },
   agentConfidence: t.agentConfidence,
   systems: t.systems,
+  paths: (t.paths ?? []).slice(0, 50),
   summary: t.summary,
   reopens: t.reopens,
 });

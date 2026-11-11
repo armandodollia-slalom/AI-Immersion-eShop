@@ -30,8 +30,9 @@ const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
   setup                         enable issues, create the labels, the project, its columns and views
                                 (idempotent). Ticket issues are created by \`new\` and \`migrate --apply\`
   sync                          move closed stories to Done (recording their late outcome), update
-                                their epic's evidence, and put every epic in the lane its stories call
-                                for (also run at the start of \`pipeline implement run\`)
+                                their epic's evidence, put every epic in the lane its stories call
+                                for, and do the review gate's bookkeeping (human reopens, gated PRs);
+                                also run at the start of \`pipeline implement run\`
 
 Tickets (the issue body is the source of truth; see docs/ai-pipeline/board.md)
   fetch <KEY...> | --epic <EPIC> | --all [--refresh]
@@ -60,6 +61,7 @@ Cards
                                 untick and list what is missing, or swap needs-human for
                                 escalation-resolved and record the answers under ## Decisions
   clear-resolved <story>        drop the escalation-resolved label (a re-run of the ticket started)
+  clear-reopened <story>        drop the reopened label (a re-run of a reopened bug fix started)
   resolved [--json]             the open story cards labeled escalation-resolved without needs-human
                                 (what \`board sync\` re-queues); changes nothing
   move <story> <column> [--force]
@@ -154,12 +156,12 @@ async function main() {
     case 'sync': {
       // Informational wherever it runs, so an inactive board is not an error.
       if (!isActive(config)) {
-        console.log(flags.json ? JSON.stringify({ done: [], requeued: [], resolved: [], outcomes: [], epics: [] }) : 'Board inactive; nothing to sync.');
+        console.log(flags.json ? JSON.stringify({ done: [], requeued: [], resolved: [], reopened: [], outcomes: [], epics: [] }) : 'Board inactive; nothing to sync.');
         return 0;
       }
       const r = syncBoard(config, { listStories, log: (m) => console.log(m) });
-      if (flags.json) console.log(JSON.stringify({ done: r.done, requeued: r.requeued, resolved: r.resolved, outcomes: r.outcomes, epics: r.epics }));
-      else console.log(`Board synced: ${r.done.length} story(ies) moved to ${config.board.columns.done}, ${r.requeued.length} resolved story(ies) moved to ${config.board.columns.ready}, ${r.outcomes.length} late outcome(s) recorded, ${r.epics.length} epic(s) moved.`);
+      if (flags.json) console.log(JSON.stringify({ done: r.done, requeued: r.requeued, resolved: r.resolved, reopened: r.reopened, outcomes: r.outcomes, epics: r.epics }));
+      else console.log(`Board synced: ${r.done.length} story(ies) moved to ${config.board.columns.done}, ${r.requeued.length} resolved story(ies) moved to ${config.board.columns.ready}, ${r.reopened.length} reopened bug fix(es) to re-run, ${r.outcomes.length} late outcome(s) recorded, ${r.epics.length} epic(s) moved.`);
       return 0;
     }
 
@@ -251,6 +253,15 @@ async function main() {
       }
       const r = resolveCheck(config, number, { actor: str(flags.actor), comment: str(flags.comment), viaLabel: Boolean(flags.label) });
       console.log(`#${number}: ${r.status}${r.missing?.length ? ` (${r.missing.join(' ')})` : ''}${r.answers?.length ? ` (${r.answers.map((a) => `${a.id}=${a.choice}`).join(', ')})` : ''}`);
+      return 0;
+    }
+
+    case 'clear-reopened': {
+      requireActive(config);
+      const story = requireStory(config, positional[0]);
+      const issue = findIssue(config, story.key);
+      if (issue) removeLabel(config, issue.number, 'reopened');
+      console.log(issue ? `${story.key} (#${issue.number}): reopened removed (re-run started; the reopen stays in its Triage).` : `${story.key} has no issue; nothing to clear.`);
       return 0;
     }
 
