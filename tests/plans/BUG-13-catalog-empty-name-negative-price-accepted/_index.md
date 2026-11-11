@@ -6,10 +6,10 @@ plan-sha: 2f89deafbce0
 verified-score: 9
 verified-at: "2026-11-11T14:34:16.825Z"
 verified-by: qe-plan@c3934e11/456099fb
-automation-sha: 74479c4320e8
+automation-sha: 4b1bf27f6529
 automation-plan-sha: 2f89deafbce0
 automation-score: 9
-automation-verified-at: "2026-11-11T14:38:39.565Z"
+automation-verified-at: "2026-11-11T16:52:36.904Z"
 ---
 # Test plan: BUG-13 Catalog accepts items with an empty name or a negative price
 
