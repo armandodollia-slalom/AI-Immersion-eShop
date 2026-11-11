@@ -139,3 +139,17 @@ test('a rewritten subtask keeps its id and must not overlap the others', () => {
   assert.equal(ok.subtask.goal, 'better goal');
   assert.ok(!validateRewrite(original, { owns: ['src/B/x.cs'] }, [other], { storyText: BE }).ok);
 });
+
+test('a subtask may name an allowed model alias (sol on Copilot) instead of its class', async () => {
+  const { loadConfig } = await import('../../pipeline/lib/config.mjs');
+  const base = loadConfig('implement');
+  const allowedModels = ['opus', 'sonnet', 'sol'];
+  const v = validatePlan(plan([sub('api', ['src/Catalog.API/**'], { model: 'sol' }), sub('web', ['src/WebApp/**'])]), { storyText: BE, limits: { ...limits, allowedModels } });
+  assert.ok(v.ok, v.errors.join('\n'));
+  assert.equal(v.plan.subtasks[0].model, 'sol');
+  assert.equal('model' in v.plan.subtasks[1], false);
+  assert.match(validatePlan(plan([sub('api', ['src/Catalog.API/**'], { model: 'gpt-4' })]), { storyText: BE, limits: { ...limits, allowedModels } }).errors.join(), /`model` must be one of the allowed models \(opus, sonnet, sol\)/);
+  const copilot = { ...base, agent: { ...base.agent, cmd: null, cli: 'copilot', allowedModels, modelIds: { ...base.agent.modelIds, copilot: { ...base.agent.modelIds.copilot, sol: 'gpt-6.1-sol' } } } };
+  assert.equal(resolveModelForRole(copilot, 'pairImplementer', 'medium', 'sol'), 'sol');
+  assert.throws(() => resolveModelForRole({ ...copilot, agent: { ...copilot.agent, cli: 'claude' } }, 'pairImplementer', 'medium', 'sol'), /no id for agent CLI "claude"/);
+});

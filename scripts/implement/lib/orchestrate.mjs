@@ -95,10 +95,10 @@ function limit(ctx, outcome, message) {
 }
 
 // The model and CLI a role runs with.
-export function agentSettings(config, role, modelClass) {
+export function agentSettings(config, role, modelClass, explicitModel = null) {
   const s = config.implement;
   const cli = s.roles?.[role]?.cli || null;
-  const model = resolveModelForRole(config, role, modelClass);
+  const model = resolveModelForRole(config, role, modelClass, explicitModel);
   return { cli, model, cliName: config.agent.cmd ? 'custom' : roleCli(config, role) };
 }
 
@@ -106,7 +106,7 @@ export function agentSettings(config, role, modelClass) {
 const USAGE_STAGE = { orchestrator: 'implement', pairImplementer: 'implement-pair', verifier: 'implement-verify', uiVerifier: 'implement-ui-verify' };
 
 // Runs one agent under the story's budget and the machine-wide agent semaphore.
-export async function callAgent(ctx, { role, name, task, mode, modelClass = 'medium', cwd, timeoutSec, step = null, round = null }) {
+export async function callAgent(ctx, { role, name, task, mode, modelClass = 'medium', model: explicitModel = null, cwd, timeoutSec, step = null, round = null }) {
   checkBudget(ctx);
   const release = await ctx.deps.acquire(`${ctx.key}:${name}`);
   if (!release) throw limit(ctx, 'limit-wall-clock', 'no agent slot (maxConcurrentAgents) before the story deadline');
@@ -114,7 +114,7 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
     const left = checkBudget(ctx);
     ctx.metrics.agentRuns++;
     ctx.metrics.byRole[role] = (ctx.metrics.byRole[role] ?? 0) + 1;
-    const { cli, model, cliName } = agentSettings(ctx.config, role, modelClass);
+    const { cli, model, cliName } = agentSettings(ctx.config, role, modelClass, explicitModel);
     const t0 = Date.now();
     const res = await ctx.deps.runAgent(ctx.config, { name, task, mode, model, cli, noSubagents: true, cwd, timeoutSec: Math.max(1, Math.min(timeoutSec, left)), signal: ctx.abort.signal, usage: { stage: USAGE_STAGE[role] ?? 'implement', story: ctx.key, step, round } });
     if (ctx.abort.signal.aborted) throw new AbortedError('aborted');
@@ -155,7 +155,10 @@ export async function runChecks(ctx, cwd, files) {
 // Plan
 // ---------------------------------------------------------------------------------------------
 
-const limitsOf = (s) => ({ maxSubtasks: s.maxSubtasks, maxLargeSubtasks: s.maxLargeSubtasks, selfModeMaxFiles: s.selfModeMaxFiles });
+const limitsOf = (s, config = null) => ({ maxSubtasks: s.maxSubtasks, maxLargeSubtasks: s.maxLargeSubtasks, selfModeMaxFiles: s.selfModeMaxFiles, ...(config ? { allowedModels: modelsFor(config) } : {}) });
+
+// The model aliases a pair implementer may run on this run's CLI (allowed and with an id for it).
+export const modelsFor = (config) => (config.agent.allowedModels ?? []).filter((a) => config.agent.cmd || config.agent.modelIds?.[roleCli(config, 'pairImplementer')]?.[a]);
 
 export async function planStory(ctx) {
   const uiStory = isUiStory(ctx.storyText);
@@ -169,7 +172,7 @@ export async function planStory(ctx) {
       round: attempt,
       cwd: ctx.worktree,
       timeoutSec: ctx.s.timeouts.plannerSec,
-      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits: limitsOf(ctx.s), errors, epicNote: ctx.epicNote }),
+      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits: limitsOf(ctx.s, ctx.config), errors, epicNote: ctx.epicNote }),
     });
     const raw = parsePlanOutput(res.output);
     const agent = { cli: res.cli, model: res.model, version: res.version };
@@ -177,13 +180,13 @@ export async function planStory(ctx) {
       logDecision(ctx.config, planDecisionLog(decisionRecord({ ts: nowIso(), key: ctx.key, attempt, accepted: false, errors: [`blocked: ${raw.reason ?? ''}`], agent, raw, storyText: ctx.storyText, uiStory }), { blocked: true }));
       return { fail: 'blocked', reason: raw.reason ?? 'the orchestrator reported the story blocked' };
     }
-    const v = raw ? validatePlan(raw, { storyText: ctx.storyText, limits: limitsOf(ctx.s) }) : { ok: false, errors: ['no plan found: end your reply with `AGENT_RESULT: <plan JSON on one line>`'], fatal: [] };
+    const v = raw ? validatePlan(raw, { storyText: ctx.storyText, limits: limitsOf(ctx.s, ctx.config) }) : { ok: false, errors: ['no plan found: end your reply with `AGENT_RESULT: <plan JSON on one line>`'], fatal: [] };
     const decisionId = v.ok ? randomUUID() : null;
     logDecision(ctx.config, planDecisionLog(decisionRecord({ ts: nowIso(), key: ctx.key, decisionId, attempt, accepted: v.ok, errors: v.errors, agent, raw, plan: v.plan, storyText: ctx.storyText, uiStory })));
     if (v.ok) {
       // Every model the plan needs must pass the model policy before any pair starts.
       try {
-        for (const st of v.plan.subtasks) resolveModelForRole(ctx.config, st.self ? 'orchestrator' : 'pairImplementer', st.modelClass);
+        for (const st of v.plan.subtasks) resolveModelForRole(ctx.config, st.self ? 'orchestrator' : 'pairImplementer', st.modelClass, st.model ?? null);
         for (const role of ['verifier', ...(v.plan.subtasks.some((st) => st.verify === 'ui') ? ['uiVerifier'] : [])]) resolveModelForRole(ctx.config, role);
       } catch (error) {
         return { fail: 'model-policy', reason: error.message };
@@ -322,6 +325,8 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
         name: implementer,
         mode: 'implement',
         modelClass: st.modelClass,
+        // The planner may name a model alias (e.g. sol) for a pair implementer; the orchestrator keeps its own.
+        model: role === 'pairImplementer' ? st.model ?? null : null,
         cwd: worktree,
         timeoutSec: ctx.s.timeouts.pairImplementerSec,
         task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self) }),
@@ -459,7 +464,7 @@ export async function runSubtask(ctx, st, others) {
     });
     let next = null;
     if (['rewrite', 'takeover'].includes(d.action)) {
-      const v = validateRewrite(st, d.subtask ?? {}, others, { storyText: ctx.storyText, limits: limitsOf(ctx.s) });
+      const v = validateRewrite(st, d.subtask ?? {}, others, { storyText: ctx.storyText, limits: limitsOf(ctx.s, ctx.config) });
       if (!v.ok) r = { status: 'failed', reason: `the orchestrator's ${d.action} of ${st.id} is invalid: ${v.errors[0]}`, findings: priorFindings };
       else next = v.subtask;
     }

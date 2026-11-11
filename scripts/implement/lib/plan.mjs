@@ -252,6 +252,8 @@ export function validatePlan(raw, { storyText = '', limits = {} } = {}) {
     if (s.dependsOn != null && (!Array.isArray(s.dependsOn) || !s.dependsOn.every((d) => typeof d === 'string'))) errors.push(`${at}: \`dependsOn\` must be a list of subtask ids`);
     if (!MODEL_CLASSES.includes(s.modelClass)) errors.push(`${at}: \`modelClass\` must be one of ${MODEL_CLASSES.join(', ')}`);
     if (s.modelClass === 'large' && !nonEmptyString(s.justification)) errors.push(`${at}: modelClass "large" needs a \`justification\``);
+    // An explicit model alias (for example "sol" on Copilot) overrides the class; it must be allowed.
+    if (s.model != null && (!nonEmptyString(s.model) || (limits.allowedModels && !limits.allowedModels.includes(s.model)))) errors.push(`${at}: \`model\` must be one of the allowed models (${(limits.allowedModels ?? []).join(', ') || 'agent.allowedModels'}) or left out`);
     if (!VERIFY_KINDS.includes(s.verify)) errors.push(`${at}: \`verify\` must be "code" or "ui"`);
     if (s.verify === 'ui' && !uiStory) errors.push(`${at}: verify "ui" is only allowed for UI stories`);
     if (s.scenario != null && !nonEmptyString(s.scenario)) errors.push(`${at}: \`scenario\` must be a teststack scenario name`);
@@ -263,6 +265,7 @@ export function validatePlan(raw, { storyText = '', limits = {} } = {}) {
       owns: s.owns,
       dependsOn: s.dependsOn ?? [],
       modelClass: s.modelClass,
+      ...(s.model ? { model: s.model } : {}),
       verify: s.verify,
       justification: s.justification ?? null,
       scenario: s.scenario ?? null,
@@ -337,7 +340,12 @@ export function resolveModel(config, role, modelClass) {
 // THE place the implement harness picks a model for an agent run: every orchestrator, pair and verifier
 // run goes through here. The orchestrator uses `agent.models.implementer` when set, else its role's
 // model class; other roles use the class they are given (planner's choice, or the verifier's fixed one).
-export function resolveModelForRole(config, role, modelClass = null) {
+export function resolveModelForRole(config, role, modelClass = null, explicit = null) {
+  // A subtask's explicit `model` alias (the planner's choice, e.g. sol) wins over its class.
+  if (explicit) {
+    if (!config.agent.cmd) resolvePipelineModel(config, explicit, roleCli(config, role));
+    return explicit;
+  }
   if (role === 'orchestrator') {
     const pinned = config.agent.models?.implementer;
     if (pinned) {
@@ -352,7 +360,7 @@ export function resolveModelForRole(config, role, modelClass = null) {
 // A subtask the orchestrator rewrote after an escalation: the same checks as a plan, against the
 // subtasks it must not overlap. Its reasoning fields carry over from the original when not given.
 export function validateRewrite(original, proposed, others, { storyText = '', limits = {} } = {}) {
-  const allowed = ['goal', 'acceptance', 'owns', 'modelClass', 'justification', 'verify', 'scenario', 'modelReason', 'verifyReason', 'expectedFiles', 'expectedLoc', 'confidence', 'alternatives'];
+  const allowed = ['goal', 'acceptance', 'owns', 'modelClass', 'model', 'justification', 'verify', 'scenario', 'modelReason', 'verifyReason', 'expectedFiles', 'expectedLoc', 'confidence', 'alternatives'];
   const flat = (s) => ({ ...s, ...(s.decision ?? {}), dependsOn: [] });
   const candidate = { ...flat(original), ...Object.fromEntries(Object.entries(proposed ?? {}).filter(([k]) => allowed.includes(k))), id: original.id };
   const v = validatePlan(
