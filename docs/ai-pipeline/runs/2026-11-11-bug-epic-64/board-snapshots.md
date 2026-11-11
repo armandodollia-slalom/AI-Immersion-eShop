@@ -94,3 +94,32 @@ Group PRs: #70 (`catalog-write-auth`).
 | BUG-21 | #44 | In Progress | - |
 
 Lane counts: In Progress: 15, Pending Review: 1, Testing: 6
+
+## 06:21 (BUG-4, BUG-5 and BUG-6 have PRs; BUG-1 escalated; BUG-17 running)
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | Testing | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | Pending Review | - |
+| BUG-5 | #47 | Pending Review | - |
+| BUG-6 | #48 | Pending Review | - |
+| BUG-7 | #49 | Testing | - |
+| BUG-8 | #50 | Testing | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | Testing | - |
+| BUG-17 | #39 | Testing | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 14, Pending Review: 3, Testing: 5

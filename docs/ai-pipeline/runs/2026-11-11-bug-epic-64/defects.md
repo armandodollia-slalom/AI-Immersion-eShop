@@ -199,6 +199,25 @@ worked on): symptom, root cause, fix, commit and impact.
 - **Impact:** cosmetic for this run (PR #70 kept, card already in Pending
   Review). The next restart applies the fix.
 
+## D10: QE used the user's slot-0 stack at parallel 1
+
+- **Symptom:** after auto resources dropped to `--parallel 1` (05:35), QE ran
+  each story's e2e specs on slot 0 (`eshop-teststack`, the user's stack) behind
+  the machine-wide lock instead of on a leased slot. The QE agents rebuilt slot
+  0 from their own worktree (`bug-1` at 05:36, `bug-5` at 06:02), so the user's
+  stack ended up running unreviewed ticket code. If an agent had skipped the
+  rebuild, the specs would have tested `main`.
+- **Root cause:** `wantsSlot` leased a slot only when `IMPLEMENT_PARALLEL > 1`.
+  At 1 it assumed slot 0 was the right stack, but under `implement` the ticket
+  lives in its own worktree, and slot 0 was never built from it.
+- **Fix:** lease a slot whenever `IMPLEMENT_PARALLEL` is set (any `implement`
+  run). A developer's own `qe` run outside `implement` still uses slot 0.
+  `qe.md` and `implement.md` are updated, and the test is updated. Commit
+  `839c842`.
+- **Impact:** BUG-1's and BUG-5's results stand (they tested their own code).
+  The user's slot 0 should be rebuilt from `main` after the run (`testing/teststack up`
+  from the main checkout).
+
 ## Observations (not changed)
 
 - **O1, lspd leak on kill.** The implement runner has no signal handlers, so
