@@ -17,6 +17,7 @@ Part of the [AI development pipeline](README.md). Every agent is defined once in
 | `qe-automation` | [qe](qe.md) | QE after review approval, or `qe automate` | writes tests and `testing/scenarios/` | the verified plan, the implementation | tests, or `product-bug` |
 | `qe-automation-verifier` | [qe](qe.md) | automation loop | read-only | case files, tests, scenario, keyframes | score 0-10 and gaps (with `root_stage`) |
 | `qe-lessons` | [qe](qe.md#auto-improvement) | `qe lessons` (weekly) | writes `.github/agents/lessons/`, plus agent definitions and docs in `lessons.retro.allowedPaths` (other edits are discarded) | aggregated metrics, the decision-log retro digest and existing lessons | updated lessons files and proposed factory changes (opened as a PR) |
+| `bug-triage` | [review-gate](review-gate.md) | review gate, once per published bug-fix PR | read-only | every ticket of the PR, the systems it touches, its diff | Impact, Complexity and Fix risk per ticket with reasons, floor categories, its confidence |
 | `pr-check` | [pr-check](pr-check.md) | you (Copilot or Claude Code) | runs `npm run pr-check` | the PR or branch | summary of the report |
 | `pr-check-acceptance` | [pr-check](pr-check.md) | PR check round | read-only | story, diff | lens score and findings |
 | `pr-check-flow` | [pr-check](pr-check.md) | PR check round | read-only | story, diff | lens score and findings |
@@ -38,6 +39,7 @@ Unset models use the agent CLI's default.
 | `agent.models.default` in `scripts/pipeline/config.json` | every agent without a more specific setting |
 | `agent.models.implementer` in `scripts/implement/config.json` | `implementer` |
 | `agent.models.reviewer` in `scripts/review/config.json` | `architecture-reviewer` |
+| `agent.models.bugTriage` in `scripts/implement/config.json` | `bug-triage` (`opus`) |
 | `agent.models.verifier`, `agent.models.audit` in `scripts/qe/config.json` | QE verifiers; the stricter calibration auditor |
 | `prCheck.models.<cli>.<role>` in `scripts/pr-check/config.json`, or `PR_CHECK_MODEL_<ROLE>` | PR check critics, defender, judge and fixer (see [pr-check.md](pr-check.md#models)) |
 

@@ -11,6 +11,14 @@
     "projectNumber": 1,
     "projectTitle": "eShop Story Board",
     "statusField": "Status",
+    "fields": {
+      "impact": "Impact",
+      "complexity": "Complexity",
+      "fixRisk": "Fix risk",
+      "severity": "Severity",
+      "confidence": "Confidence",
+      "reopens": "Human reopens"
+    },
     "columns": {
       "backlog": "Backlog",
       "ready": "Ready",

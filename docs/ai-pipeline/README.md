@@ -8,6 +8,7 @@ Agents take a user story from implementation to reviewed code with verified test
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 | `pr-check` | `scripts/pr-check/` | Adversarial critics, defender and judge score the work against its story (acceptance criteria, flow, UI design, style, video evidence). From the Stop hook, once QE has verified the tests, it reports and the agent fixes; on demand, a fixer loops it to 10/10 | [pr-check.md](pr-check.md) |
+| `review-gate` | `scripts/review-gate/` | After the pipeline publishes a bug-fix PR (single bug or bug-epic group): a read-only triage agent rates each ticket, the harness computes Severity and Confidence and records them on the issues and the board | [review-gate.md](review-gate.md) |
 | `board` | `scripts/board/` | Moves the story's card on the GitHub Project board as pipeline events happen (In Progress, Testing, back to In Progress on a product bug, Pending Review with evidence, Failed), keeps its epic's lane and evidence comment in step | [board.md](board.md) |
 
 Pull requests also get a generated section in their description, written in CI by `.github/workflows/pr-demo-video.yml` (`scripts/pr-video/`, [pr-demo-video.md](pr-demo-video.md)):
@@ -23,6 +24,7 @@ Stages run in the order listed in `scripts/pipeline/stages.json`. All of them ar
 | [writing-stories.md](writing-stories.md) | story authors: the file format and sections the agents rely on |
 | [agents.md](agents.md) | every agent: what starts it, what it sees, its access, model and lessons |
 | [escalations.md](escalations.md) | what to do when a story fails or a loop escalates to a human |
+| [review-gate.md](review-gate.md) | reviewers and armando: how a bug-fix PR is rated, when it auto-merges, what triggers review, reopens, and the repository settings it relies on |
 
 ```mermaid
 flowchart LR
@@ -53,7 +55,7 @@ Each story gets its own worktree and branch; the implementer plans it into subta
 
 ## Story board
 
-Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Testing, Pending Review, Failed, Done). Stories wait in Backlog until they are ready. An engineer starts the pipeline by hand for one story or a whole epic; the run claims each card (In Progress), and the card follows the pipeline: Testing once the review approves and QE starts, back to In Progress when QE finds a product bug, Pending Review with the PR and evidence, Failed (with the reason and findings) when it cannot finish, Done when the PR merges. Each epic follows its stories and collects their evidence in one comment. Automatic pickup was removed and will be reworked later. See [board.md](board.md).
+Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Testing, Pending Review, Failed, Done). Stories wait in Backlog until they are ready. An engineer starts the pipeline by hand for one story or a whole epic; the run claims each card (In Progress), and the card follows the pipeline: Testing once the review approves and QE starts, back to In Progress when QE finds a product bug, Pending Review with the PR and evidence, Failed (with the reason and findings) when it cannot finish, Done when the PR merges. A bug-fix PR then goes through the [review gate](review-gate.md): it auto-merges when it is Low risk with high confidence (behind a switch), and otherwise waits for a person's approval; a person sending a bug fix back (moving its card, reopening the issue, requesting changes) raises its severity and re-runs it. Each epic follows its stories and collects their evidence in one comment. Automatic pickup was removed and will be reworked later. See [board.md](board.md).
 
 ```bash
 node scripts/pipeline/pipeline.mjs implement run --epic <EPIC> --pr   # or one story: implement run <KEY> --pr
@@ -115,6 +117,9 @@ sequenceDiagram
   opt --pr
     Run->>Git: push + gh pr create (stacked on blocker)
     Note over Git: pr-demo-video.yml records the changed specs<br/>and adds the videos (and API summary) to the PR description
+    opt a bug fix
+      Run->>Git: review gate: triage, severity, confidence;<br/>auto-merge (Low) or approvals:N + reviewers
+    end
   end
   Run-->>Dev: outcome table
 ```
@@ -163,6 +168,9 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | `board fetch` brings a changed story | (command) | - | qe plans it in the background, only with `git config qe.autoPlan true` | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
+| The runner opens a bug-fix PR (single bug or bug-epic group) | `scripts/implement/lib/post-publish.mjs` | `review-gate.mjs publish` ([review gate](review-gate.md)) | review-gate (triage agent, then auto-merge, wait or review) | LLM (one `bug-triage` run per PR) |
+| `board sync` (start of every `implement run`, by hand, `implement requeue`) | (command) | - | board, review-gate (human reopens, gated PRs evaluated again, `pr-review` records) | none |
+| Pull request opened, pushed, labeled or reviewed | `.github/workflows/review-quorum.yml` | `review-gate/quorum.mjs` from the base branch | the `review-quorum` check: approvals reach the PR's `approvals:N` | none |
 | Pull request opened or pushed | `.github/workflows/pr-demo-video.yml` | `pr-video.mjs specs`, test stack + changed specs, `pr-video.mjs publish`, `pr-video.mjs api` ([demo videos](pr-demo-video.md)) | none | none |
 | Manual (local, or `workflow_dispatch`) | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
@@ -179,7 +187,8 @@ No agent starts on its own when stories or epics are added or changed: agent wor
 | [Story guard](#story-guard) | agents reading stories, epics and mockups they were not given |
 | `PIPELINE_CHILD=1` | spawned agents re-triggering hooks recursively |
 | `pre-push` hook and CI | unverified plans or tests reaching the remote |
-| Lessons via pull request | unreviewed changes to agent behavior |
+| Lessons via pull request | unreviewed changes to agent behavior (and to the review gate's approvals policy) |
+| [Review gate](review-gate.md): harness-computed severity, `review-quorum`, sticky review | a bug fix merging without a person unless it is Low risk with high confidence; an agent rating its way past review |
 | `PIPELINE_DISABLE=1`, `QE_SKIP=1`, `PR_CHECK_SKIP=1` | escape hatches for humans |
 
 ## Story guard
@@ -245,7 +254,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
   | pr-check | Stop-hook waiter in the story state; manual runs in `progress.json` after each critique and fix | session start, Stop, `pipeline resume` ([pr-check](pr-check.md#interrupted-checks)) |
   | lessons and factory retro (`qe lessons`) | `lessons-run.json`: phase, branch and process | the next `qe lessons`, session start, `pipeline resume` ([qe](qe.md#crash-recovery)) |
 
-- **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files. `decisions.jsonl` is shared: every stage records why its agents decided what they did (the implement orchestrator its plans, escalations and pair verdicts) (`scripts/pipeline/lib/decisions.mjs`, see [qe](qe.md#decision-log)), and the weekly lessons run turns it into lessons and proposed factory changes. `token-usage.jsonl` is also shared: every agent run's tokens, models, cache hits and cost, reported per ticket and epic by `pipeline costs` (see [costs](costs.md)).
+- **Metrics:** `.agent-metrics/*.jsonl` (committed; `merge=union` keeps every record across branches). Each stage owns its files. `decisions.jsonl` is shared: every stage records why its agents decided what they did (the implement orchestrator its plans, escalations and pair verdicts) (`scripts/pipeline/lib/decisions.mjs`, see [qe](qe.md#decision-log)), and the weekly lessons run turns it into lessons and proposed factory changes. `decision-outcomes.jsonl` also carries the [review gate](review-gate.md)'s `reopen`, `pr-review` and `revert` records, from which the retro proposes changes to the approvals policy for bug-fix PRs. `token-usage.jsonl` is also shared: every agent run's tokens, models, cache hits and cost, reported per ticket and epic by `pipeline costs` (see [costs](costs.md)).
 
 ## Adding a stage
 
@@ -270,6 +279,7 @@ node scripts/pipeline/pipeline.mjs costs [KEY] [--epic <epic>] [--since <date>] 
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]|pre-tool
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
 node scripts/pr-check/pr-check.mjs run --pr 42 [--no-fix]   # adversarial PR check until 10/10
+node scripts/review-gate/review-gate.mjs publish|status     # review gate for bug-fix PRs (see review-gate.md)
 node scripts/pr-video/pr-video.mjs specs|backend|publish|api|cleanup  # PR demo videos and API summary (pr-demo-video.yml)
 node scripts/board/board.mjs setup|pick|mine|move|review|status   # see board.md
 npm run test:pipeline                     # dispatcher and stage tests (fake agent, no LLM)

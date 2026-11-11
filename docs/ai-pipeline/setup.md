@@ -116,6 +116,18 @@ Setting a variable for one command:
 
 Per-stage limits, timeouts and models are in each stage's `scripts/<stage>/config.json`; see the stage pages and the [agent catalog](agents.md).
 
+## Review gate for bug-fix PRs
+
+The [review gate](review-gate.md) needs nothing extra to assess PRs and request reviews (the pipeline machine's `gh` login with the `project` scope; run `board setup` once to create its board fields). Repository settings it relies on are the owner's call, and the gate never changes them:
+
+| Setting | Where | Why |
+| --- | --- | --- |
+| `review-quorum` as a required status check on `main` | Settings → Rules → Rulesets → `main` → Require status checks to pass | enforces each PR's `approvals:N`; until then it is a visible check only |
+| Allow auto-merge | Settings → General → Pull Requests | `gh pr merge --auto` waits for GitHub's own requirements instead of failing |
+| A GitHub App with a ruleset bypass, its token in `REVIEW_GATE_APP_TOKEN`, and `implement.autoMerge.identity: "app"` | the App's settings; the ruleset's bypass list | only once `main` requires approvals from people: a Low PR that needs none can then merge only through a bypass |
+
+Auto-merge itself is off until `implement.autoMerge.enabled` is set to `true` in `scripts/implement/config.json`.
+
 ## CI
 
 `.github/workflows/ai-pipeline.yml` runs on pull requests without any LLM calls. Two workflows call agents: `pr-check.yml` (the `ai-pr-check` label) and `qe-lessons.yml` (weekly). Both use `.github/actions/setup-agent-cli`, so they work with any provider. Pick it with repository variables (**Settings → Secrets and variables → Actions → Variables**) and add its credential as a secret:

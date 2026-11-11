@@ -23,6 +23,9 @@ import { LimitError, agentSettings, checkBudget, createContext, orchestrate } fr
 import { applyResources, resourcesFromEnv, waitForMemory } from './resources.mjs';
 import { newFeedbackLog } from './feedback.mjs';
 import { epicNoteBlock, integrationTask } from './tasks.mjs';
+import { isBugTicket } from './epic-plan.mjs';
+import { reviewGatePublish } from './post-publish.mjs';
+import { isReopened, openPrFor, placeReopened, syncFromRemote } from './reopen.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
 const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
@@ -41,6 +44,11 @@ const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(lo
 // failure asks again) and the old escalation notes go, so the next failure comment only shows new ones.
 export function startResolvedReruns(config, stories, { event = boardEvent } = {}) {
   const started = [];
+  // A reopened bug fix (review gate) re-runs once: the label comes off; the reopen stays in its Triage.
+  for (const s of stories.filter((x) => x.reopened && !x.skip)) {
+    event(config.root, s.key, ['clear-reopened', s.key]);
+    log(`${s.key}: re-run of a reopened bug fix${s.reopenedPr ? ` on ${s.branch} (${s.reopenedPr})` : s.followUp ? ` as a follow-up on ${s.branch}` : ''}.`);
+  }
   for (const s of stories.filter((x) => x.resolved && !x.skip)) {
     const removed = clearEscalationNotes(config, s.key, [s.worktree]);
     event(config.root, s.key, ['clear-resolved', s.key]);
@@ -54,16 +62,18 @@ export function startResolvedReruns(config, stories, { event = boardEvent } = {}
 // Batch: order the stories, then run one worker process per story, at most `parallel` at a time
 // ---------------------------------------------------------------------------------------------
 
-export function plan(config, inputs, { base = config.baseRef, force = false } = {}) {
+export function plan(config, inputs, { base = config.baseRef, force = false, placeReopenedRuns = true, reopenDeps = {} } = {}) {
   const stories = orderStories(collectStories(inputs));
   const byKey = new Map(stories.map((s) => [s.key, s]));
   for (const s of stories) {
-    s.skip = s.implemented && !force ? 'already implemented (Implementation Notes or a closed issue; --force to redo)' : null;
+    // A bug fix a person reopened after the review gate assessed it runs again (reopen.mjs).
+    s.reopened = isReopened(config, s);
+    s.skip = s.implemented && !force && !s.reopened ? 'already implemented (Implementation Notes or a closed issue; --force to redo)' : null;
     // A human answered the escalation questions of its last run (the issue is labeled
     // escalation-resolved): the ticket runs again, fresh, as with --force for its earlier run's outcome
     // (also a standing qe/review escalation, which otherwise waits for a human).
     s.resolved = Boolean(s.labels?.includes(config.board?.resolvedLabel ?? RESOLVED_LABEL));
-    const retry = force || s.resolved;
+    const retry = force || s.resolved || s.reopened;
     // A later run continues where an interrupted one stopped: finished stories are kept, stories that
     // died part-way resume in their worktree.
     const prev = retry || s.skip ? null : loadRun(config, s.key);
@@ -89,6 +99,7 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
     deps.sort((a, b) => ancestors.get(b).size - ancestors.get(a).size);
     s.base = deps.length ? byKey.get(deps[0]).branch : base;
     s.merge = deps.slice(1).map((k) => byKey.get(k).branch);
+    if (s.reopened && !s.skip && placeReopenedRuns) placeReopened(config, s, reopenDeps);
   }
   return stories;
 }
@@ -160,6 +171,7 @@ export function startWorker(config, story, { pr, script }) {
   if (story.epicBranch) args.push('--epic-branch', story.epicBranch);
   if (pr) args.push('--pr');
   if (story.resume) args.push('--resume');
+  if (story.fromRemote) args.push('--from-remote');
   saveRun(config, story.key, { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) });
   log(`${story.key}: started on ${story.branch} (log: ${path.relative(config.root, logPath)})`);
   const fd = fs.openSync(logPath, 'a');
@@ -180,7 +192,10 @@ export function startWorker(config, story, { pr, script }) {
 // Worker: one story, start to finish, in its own worktree
 // ---------------------------------------------------------------------------------------------
 
-export function prepareWorktree(config, { key, file, base, branch, worktree, merge = [] }) {
+export function prepareWorktree(config, { key, file, base, branch, worktree, merge = [], fromRemote = false }) {
+  // A reopened bug fix re-runs on its open PR's branch: start from the remote branch when this machine
+  // has none, and take a person's commits on the PR (fast-forward) when it has.
+  if (fromRemote && !revExists(config.root, `refs/heads/${branch}`) && git(config.root, ['fetch', '-q', 'origin', `${branch}:${branch}`], { env: commitEnv }).status === 0) log(`${key}: ${branch} fetched from origin (reopened bug fix)`);
   if (!fs.existsSync(worktree)) {
     if (!revExists(config.root, base)) throw new Error(`base ${base} does not exist`);
     fs.mkdirSync(path.dirname(worktree), { recursive: true });
@@ -190,6 +205,7 @@ export function prepareWorktree(config, { key, file, base, branch, worktree, mer
   } else {
     log(`${key}: reusing worktree ${worktree}`);
   }
+  if (fromRemote && !syncFromRemote(worktree, branch, commitEnv)) log(`${key}: ${branch} could not be fast-forwarded to origin/${branch}; continuing from the local branch`);
   for (const other of merge) {
     const r = git(worktree, ['merge', '--no-edit', '-q', other], { env: commitEnv });
     if (r.status !== 0) {
@@ -526,13 +542,17 @@ async function implementStoryInner(config, opts, holder) {
     const baseBranch = base.replace(/^origin\//, '');
     const title = `${key}: ${fs.readFileSync(prep.story, 'utf8').match(/^#\s+(.+)$/m)?.[1]?.replace(new RegExp(`^${key}[:\\s-]*`), '') ?? key}`;
     const orch = ctx ? `\n- Orchestration: ${ctx.metrics.mode}${ctx.plan?.mode === 'delegate' ? ` (${ctx.plan.subtasks.length} subtasks, ${ctx.metrics.pairRounds} pair rounds, ${ctx.metrics.takeovers} takeover(s))` : ''}, ${ctx.metrics.agentRuns} agent runs` : '';
-    const issueUrl = readJson(path.join(path.dirname(prep.story), 'meta.json'), {})?.issue?.url;
+    const ticketMeta = readJson(path.join(path.dirname(prep.story), 'meta.json'), {}) ?? {};
+    const issueUrl = ticketMeta.issue?.url;
     const body = `Implements ${key}${issueUrl ? ` (${issueUrl})` : ''} (generated by \`pipeline implement\`).\n\n- Architecture review: approved\n- Test plan and automated tests: verified\n- Implementer runs: ${metrics.implementerRuns}, review rounds blocked: ${metrics.reviewBlocks}, QE bug-fix cycles: ${metrics.bugFixCycles}${orch}\n\nThe demo video of the changed e2e specs (and, for backend changes, an API summary of the endpoints) is added below by the PR demo video workflow once it has recorded them.`;
     const created = run('gh', ['pr', 'create', '--base', baseBranch, '--head', branch, '--title', title, '--body', body], { cwd: worktree });
-    const prUrl = created.status === 0 ? created.stdout.trim() : null;
+    // The branch's PR may already be open (a reopened bug fix re-runs on it): the push updated it.
+    const prUrl = created.status === 0 ? created.stdout.trim() : openPrFor(wt, branch);
     publishTicket(worktree, key);
     reportToBoard(worktree, key, prUrl);
-    return { ...result, pr: prUrl, ...(created.status !== 0 ? { reason: `gh pr create failed: ${tail(created.stderr, 300)}` } : {}) };
+    // A published bug fix goes through the review gate (assessment, then auto-merge or review).
+    if (prUrl && isBugTicket({ key, type: ticketMeta.type })) reviewGatePublish(worktree, { pr: prUrl, keys: [key], base });
+    return { ...result, pr: prUrl, ...(!prUrl ? { reason: `gh pr create failed: ${tail(created.stderr, 300)}` } : {}) };
   }
   if (outcome === 'done') {
     publishTicket(worktree, key);

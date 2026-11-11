@@ -9,12 +9,40 @@
 //  - Every epic card moves to the lane its stories call for.
 //  - Feature videos the PR demo video workflow published after a story (or epic) reached Pending Review
 //    are posted on the story issue and linked from the epic's evidence comment.
+//  - The review gate's bookkeeping for bug-fix PRs (scripts/review-gate/lib/sync.mjs): human reopens of
+//    triaged tickets, open gated PRs evaluated again. Reopened tickets are listed for `implement requeue`.
 import { listItems, setColumn, syncEpicColumns } from './board.mjs';
 import { readEpicEvidence, upsertEpicEvidence } from './epics.mjs';
 import { featureVideo } from './evidence.mjs';
 import { resolvedLabel } from './escalation.mjs';
-import { postComment } from './flow.mjs';
+import { applyEvent, issueComments, latestMarker, postComment } from './flow.mjs';
 import { recordLateOutcome } from './outcomes.mjs';
+import { git } from '../../pipeline/lib/git.mjs';
+import { gateConfig, gateOff } from '../../review-gate/lib/config.mjs';
+import { realGh } from '../../review-gate/lib/github.mjs';
+import { syncGate } from '../../review-gate/lib/sync.mjs';
+
+// The review gate's step of the sync, with the real GitHub. Returns { reopens, regated, reopenedLabel }.
+export function reviewGateSync(config, items, { log = () => {} } = {}) {
+  const gc = gateConfig(config.root);
+  const reopenedLabel = gc.implement.reviewGate?.labels?.reopened ?? 'reopened';
+  if (gateOff(gc)) return { reopens: [], regated: [], reopenedLabel };
+  const comments = (n) => issueComments(config, n).map((c) => ({ author: c.author?.login ?? c.author ?? null, body: c.body ?? '', createdAt: c.createdAt ?? null }));
+  // The base branch's recent log, for reverts of merged gated PRs.
+  const baseLog = () => {
+    git(config.root, ['fetch', '-q', 'origin']);
+    return git(config.root, ['log', '--since=90.days', '--format=%H%x1f%s%x1f%b%x1e', config.baseRef ?? 'origin/main']).stdout.split('\x1e').map((e) => e.trim()).filter(Boolean).map((e) => {
+      const [sha, subject, body] = e.split('\x1f');
+      return { sha, subject, body };
+    });
+  };
+  const r = syncGate(gc, { gh: realGh, items, log, markerOf: (n) => latestMarker(issueComments(config, n)), commentsOf: comments, applyEvent: (key, ev) => applyEvent(config, key, ev, { log }), metricsConfig: config, baseLog });
+  return { ...r, reopenedLabel };
+}
+
+// Open story cards a human reopened after the gate assessed them (label `reopened`, In Progress):
+// `implement requeue` runs them again.
+export const reopenedItems = (config, items, label = 'reopened') => items.filter((i) => i.key && i.state !== 'CLOSED' && i.labels.includes(label) && !i.labels.includes(config.board.epicLabel) && i.column === 'inProgress');
 
 // Backfills videos that did not exist yet when the evidence was posted. Returns the keys (and `epic#N`)
 // that got one.
@@ -58,7 +86,7 @@ export function syncVideos(config, items, { findVideo = (pr, key) => featureVide
   return added;
 }
 
-export function syncBoard(config, { listStories, log = () => {}, findVideo } = {}) {
+export function syncBoard(config, { listStories, log = () => {}, findVideo, gate = reviewGateSync } = {}) {
   const items = listItems(config);
   const done = [];
   const outcomes = [];
@@ -83,9 +111,16 @@ export function syncBoard(config, { listStories, log = () => {}, findVideo } = {
     }
   }
   const { requeued, resolved } = requeueResolved(config, items, { log });
+  let gated = { reopens: [], regated: [], reopenedLabel: 'reopened' };
+  try {
+    gated = gate(config, items, { log });
+  } catch (error) {
+    log(`review gate: ${error.message.split('\n')[0]}`);
+  }
+  const reopened = [...new Set([...gated.reopens, ...reopenedItems(config, items, gated.reopenedLabel).map((i) => i.key)])].filter((k) => !resolved.includes(k));
   const epics = syncEpicColumns(config, items, { log });
   const videos = syncVideos(config, items, { log, ...(findVideo ? { findVideo } : {}) });
-  return { done, outcomes, epics, videos, requeued, resolved };
+  return { done, outcomes, epics, videos, requeued, resolved, reopened, regated: gated.regated };
 }
 
 // Open story cards a human resolved (`escalation-resolved`, no `needs-human`): Failed ones move to Ready.

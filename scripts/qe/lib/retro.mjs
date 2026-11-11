@@ -3,6 +3,7 @@
 // improvements anywhere in the factory (agent definitions, docs, story template, policies), not
 // only the per-agent lessons files.
 import { git, revExists } from '../../pipeline/lib/git.mjs';
+import { reviewDigest } from '../../review-gate/lib/review-retro.mjs';
 
 const take = (list, n) => list.slice(-n);
 const key = (...parts) => parts.map((p) => p ?? '').join('\u0000');
@@ -26,7 +27,9 @@ export function retroSince(config, now = Date.now()) {
 }
 
 // Every decision in the window, grouped by the question it answers. Empty `counts` means nothing to review.
-export function retroDigest(config, decisions, since) {
+// `outcomes` (decision-outcomes.jsonl) and `policy` ({ table, retro }: the review gate's approvals table and
+// its retro settings) add the review section: the review gate's pr-review records grouped by PR class.
+export function retroDigest(config, decisions, since, { outcomes = [], policy = null } = {}) {
   const n = config.lessons.examplesPerCategory;
   const recent = decisions.filter((d) => !since || d.ts > since);
   const of = (stage) => recent.filter((d) => d.stage === stage);
@@ -97,8 +100,14 @@ export function retroDigest(config, decisions, since) {
       escalations: take(of('implement-plan').filter((d) => d.decision?.startsWith('escalation-') || d.decision === 'gave-up').map((d) => ({ story: d.story, subtask: d.subtask, decision: d.decision, pairOutcome: d.pair_outcome, reason: d.reason })), n),
       verifierFindings: findingGroups(of('implement-verify').filter((d) => d.decision !== 'approved'), (i) => key(i.agent, i.category, i.severity)).slice(0, n * 2),
     },
+    // 6. How people reviewed the bug-fix PRs the review gate sent them (all pr-review records, so each
+    //    class has its whole sample): whether the 2nd and 3rd reviewers found what the earlier ones
+    //    didn't, escapes by approval count, latency per extra reviewer. The approvals policy proposals
+    //    are computed here, in code; the lessons run applies them to the table in its PR.
+    reviews: reviewDigest(outcomes, policy ?? {}),
+    newPrReviews: outcomes.filter((r) => r.type === 'pr-review' && (!since || r.ts > since)).length,
   };
   return digest;
 }
 
-export const digestIsEmpty = (digest) => Object.keys(digest.counts).length === 0;
+export const digestIsEmpty = (digest) => Object.keys(digest.counts).length === 0 && !digest.newPrReviews && !(digest.reviews?.proposals ?? []).length;

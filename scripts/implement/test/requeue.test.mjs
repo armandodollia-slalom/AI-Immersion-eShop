@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { batchesFor, blockedReason, lastRequeue, requeue } from '../lib/requeue.mjs';
 import { renderPlist } from '../requeue-schedule.mjs';
 
-function env({ resolved = [], requeued = resolved, tickets = {}, epicRuns = {}, exit = () => 0 } = {}) {
+function env({ resolved = [], requeued = resolved, reopened = [], tickets = {}, epicRuns = {}, exit = () => 0 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'requeue-'));
   const config = { root, stateDir: '.agent-state', implement: {} };
   const calls = { board: [], runs: [], logs: [] };
@@ -16,7 +16,7 @@ function env({ resolved = [], requeued = resolved, tickets = {}, epicRuns = {}, 
     log: (m) => calls.logs.push(m),
     board: (args) => {
       calls.board.push(args);
-      return { status: 0, stdout: `Board synced.\n${JSON.stringify({ resolved, requeued: args[0] === 'sync' ? requeued : [] })}\n` };
+      return { status: 0, stdout: `Board synced.\n${JSON.stringify({ resolved, requeued: args[0] === 'sync' ? requeued : [], reopened })}\n` };
     },
     ticketOf: (key) => tickets[key] ?? { key, epic: null },
     epicRunOf: (epic) => epicRuns[epic] ?? null,
@@ -51,6 +51,18 @@ test('several resolved tickets run in one batch with the usual flags', async () 
     assert.deepEqual(e.calls.runs, [['run', 'BUG-1', 'BUG-3', 'PROMO-2', '--parallel', 'auto', '--pr']]);
     assert.ok(e.calls.logs.some((l) => /Moved to Ready: BUG-1, BUG-3, PROMO-2/.test(l)));
     assert.equal(fs.existsSync(path.join(e.runs, 'requeue.lock')), false, 'the lock is released');
+  } finally {
+    e.cleanup();
+  }
+});
+
+test('bug fixes reopened after the review gate run again with --force, apart from the resolved tickets', async () => {
+  const e = env({ resolved: ['BUG-1'], reopened: ['BUG-7', 'BUG-1'], tickets: { 'BUG-7': { key: 'BUG-7', epic: 'epic-64' } }, epicRuns: { 'epic-64': { status: 'delivered', units: { g: { id: 'g', keys: ['BUG-7'], branch: 'bugfix/x/g' } } } } });
+  try {
+    const r = await requeue(e.config, {}, e.deps);
+    assert.equal(r.status, 'ran');
+    assert.deepEqual(e.calls.runs, [['run', 'BUG-1', '--parallel', 'auto', '--pr'], ['run', 'BUG-7', '--parallel', 'auto', '--pr', '--force']]);
+    assert.ok(e.calls.logs.some((l) => /Reopened by a human after the review gate: BUG-7/.test(l)));
   } finally {
     e.cleanup();
   }

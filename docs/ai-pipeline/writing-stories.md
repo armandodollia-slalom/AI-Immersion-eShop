@@ -10,7 +10,7 @@ Part of the [AI development pipeline](README.md). The pipeline only knows what t
   node scripts/board/board.mjs new PROMO-10.md --epic epic-promotions-and-recommendations [--mockups path/to/PROMO-10-cart] [--dry-run]
   ```
 
-  Bugs work the same way (`**Type:** Bug`, or a `BUG-` key); `--type epic` and `--type spike` create epics and research spikes.
+  Bugs work the same way (`**Type:** Bug`, or a `BUG-` key); `--type epic` and `--type spike` create epics and research spikes. Once a bug's fix PR is published, the [review gate](review-gate.md) adds a generated `## Triage` section to the issue body, outside the story's source; don't edit it (it is overwritten) and don't put requirements there. To send a fix back, request changes on the PR or move the card back to In Progress, and say why in a comment: the reason goes to the re-run as a binding decision.
 - `<KEY>` is uppercase letters and digits, a dash and a number (`PROMO-10`). Put it in the heading (`# PROMO-10: [FE - WebApp] - Coupon entry in the cart`) or pass `--key`. The issue title is the heading; one issue per key.
 - The **slug** (`PROMO-10-coupon-entry-in-the-cart`, kept in the issue metadata) names the branch (`feat/` plus the lowercased slug, first 60 characters) and the test plan folder (`tests/plans/<slug>/`). It never changes after the issue is created, so renaming the title does not orphan a plan.
 - The first level-1 heading is the story title. Put `[FE` in it (for example `# PROMO-10: [FE - WebApp] - Coupon entry`) for frontend stories, so the PR check runs its UI design critic.
