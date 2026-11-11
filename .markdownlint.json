@@ -6,6 +6,8 @@
     "line-length":                     false,
     "blanks-around-headings":          false,
     "no-duplicate-heading":            { "siblings_only": true },
+    // QE test cases carry their title in the front matter and as the "# <id>: <title>" heading.
+    "single-title":                    { "front_matter_title": "" },
     "no-trailing-punctuation":         false,
     "blanks-around-fences":            false,
     "blanks-around-lists":             false,
