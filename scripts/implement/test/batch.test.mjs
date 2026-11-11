@@ -131,3 +131,43 @@ test('approvedOnDisk: a resumed story stacked on a group branch matches the hash
   assert.equal(approvedOnDisk(wt, { ...prior, review: { ...prior.review, lastVerdict: 'CHANGES_REQUESTED' } }, 'bugfix/group'), false);
   fs.rmSync(repo, { recursive: true, force: true });
 });
+
+test('a cached ticket whose issue is closed counts as implemented, even without Implementation Notes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-ticket-'));
+  const ticket = (key, state) => {
+    fs.mkdirSync(path.join(dir, key));
+    fs.writeFileSync(path.join(dir, key, 'story.md'), `# ${key}: Story\n\n**Blocked by:** None\n`);
+    fs.writeFileSync(path.join(dir, key, 'meta.json'), JSON.stringify({ key, slug: key.toLowerCase(), issue: { number: 1, state } }));
+  };
+  ticket('DEMO-1', 'CLOSED');
+  ticket('DEMO-2', 'OPEN');
+  const byKey = Object.fromEntries(collectStories([path.join(dir, 'DEMO-1'), path.join(dir, 'DEMO-2')]).map((s) => [s.key, s.implemented]));
+  assert.deepEqual(byKey, { 'DEMO-1': true, 'DEMO-2': false });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a ticket labeled escalation-resolved runs again despite its standing qe escalation, like --force', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'implement-resolved-'));
+  const ticket = (key, labels) => {
+    fs.mkdirSync(path.join(dir, key));
+    fs.writeFileSync(path.join(dir, key, 'story.md'), `# ${key}: Story\n\n**Blocked by:** None\n`);
+    fs.writeFileSync(path.join(dir, key, 'meta.json'), JSON.stringify({ key, slug: key.toLowerCase(), issue: { number: 1, state: 'OPEN', labels } }));
+  };
+  ticket('B-1', ['bug', 'escalation-resolved']);
+  ticket('B-2', ['bug']);
+  const config = { baseRef: 'origin/main', root: dir, stateDir: '.agent-state', implement: { branchPrefix: 'feat/', worktreeDir: '../{repo}-wt' } };
+  const runs = path.join(dir, '.agent-state', 'implement');
+  fs.mkdirSync(runs, { recursive: true });
+  const escalations = path.join(dir, '.agent-state', 'escalations');
+  fs.mkdirSync(escalations, { recursive: true });
+  for (const key of ['B-1', 'B-2']) {
+    fs.writeFileSync(path.join(runs, `${key}.json`), JSON.stringify({ key, worktree: dir, status: 'finished', outcome: 'qe-escalated' }));
+    fs.writeFileSync(path.join(escalations, `${key}-automation.md`), `# ${key} automation: tests did not reach 9/10\n`);
+  }
+  const by = Object.fromEntries(plan(config, [path.join(dir, 'B-1'), path.join(dir, 'B-2')]).map((s) => [s.key, s]));
+  assert.equal(by['B-1'].resolved, true);
+  assert.equal(by['B-1'].skip, null, 'the resolved label bypasses the standing escalation');
+  assert.equal(by['B-1'].resume, false, 'it starts fresh, as with --force');
+  assert.match(by['B-2'].skip, /qe-escalated in a previous run: its escalation waits for a human/, 'without the label it still waits');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -179,6 +179,10 @@ export function addLabel(config, number, label) {
   gh(['issue', 'edit', String(number), '-R', config.board.repo, '--add-label', label]);
 }
 
+export function removeLabel(config, number, label) {
+  gh(['issue', 'edit', String(number), '-R', config.board.repo, '--remove-label', label]);
+}
+
 // Every issue card on the board, with its column and assignees.
 export function listItems(config) {
   const { owner, ownerType, projectNumber, statusField } = config.board;
@@ -212,26 +216,6 @@ export function listItems(config) {
   }
 }
 
-// The comment posted when the pipeline does not finish a story: outcome, reason, findings, branch and
-// log, from the implement run record (`.agent-state/implement/<KEY>.json`).
-export function failureComment(config, result, { host = 'this machine', maxFindings = 20 } = {}) {
-  const r = result ?? {};
-  const lines = [`The pipeline stopped: **${r.outcome ?? 'no result'}**${r.reason ? ` (${r.reason})` : ''}.`];
-  const findings = Array.isArray(r.findings) ? r.findings : [];
-  if (findings.length) {
-    lines.push('', '**Findings**', '');
-    for (const f of findings.slice(0, maxFindings)) {
-      if (typeof f === 'string') lines.push(`- ${f}`);
-      else lines.push(`- ${f.subtask ? `[${f.subtask}] ` : ''}${f.file ? `\`${f.file}${f.line ? `:${f.line}` : ''}\` ` : ''}${f.issue ?? f.detail ?? JSON.stringify(f)}${f.fix ? ` Fix: ${f.fix}` : ''}${f.screenshot ? ` (screenshot: \`${f.screenshot}\`)` : ''}`);
-    }
-    if (findings.length > maxFindings) lines.push(`- ... and ${findings.length - maxFindings} more`);
-  }
-  const where = [r.branch ? `Branch: \`${r.branch}\`.` : '', r.log ? `Log on \`${host}\`: \`${r.log}\`.` : ''].filter(Boolean).join(' ');
-  if (where) lines.push('', where);
-  lines.push('', `Fix it, remove the \`${config.board.blockedLabel}\` label and move the card back to ${config.board.columns.ready} (\`board move <KEY> ready --force\`) to retry.`);
-  return lines.join('\n');
-}
-
 // ---------------------------------------------------------------------------------------------
 // One-time setup: issues on, labels, the project and its columns, and an issue per story
 // ---------------------------------------------------------------------------------------------
@@ -239,6 +223,7 @@ export function failureComment(config, result, { host = 'this machine', maxFindi
 const LABELS = (config) => [
   [config.board.storyLabel, '5319e7', 'A product story run through the AI pipeline'],
   [config.board.blockedLabel, 'b60205', 'The pipeline could not finish this story; a human needs to look'],
+  [config.board.resolvedLabel ?? 'escalation-resolved', '0e8a16', 'A human answered the escalation questions; board sync re-queues the ticket'],
   ['frontend', '1d76db', 'Visible UI work (WebApp)'],
   ['backend', '0e8a16', 'API and service work'],
   [config.board.epicLabel, '3e4b9e', 'A group of stories; its stories are its sub-issues'],
@@ -251,7 +236,7 @@ const COLUMN_STYLE = {
   inProgress: ['YELLOW', 'The pipeline is implementing the story (or fixing a bug QE found)'],
   testing: ['ORANGE', 'The review approved the code; QE is writing and verifying the automated tests'],
   review: ['BLUE', 'Implemented and verified; the PR is waiting for a human review'],
-  failed: ['RED', 'The pipeline could not finish the story; see the latest comment, then move it back to Ready to retry'],
+  failed: ['RED', 'The pipeline could not finish the story; answer the questions in the latest comment and tick Resolved to re-queue it'],
   done: ['GREEN', 'Merged'],
 };
 

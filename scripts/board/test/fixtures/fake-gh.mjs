@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // A fake `gh` for the board tests: serves the calls the board stage makes from a JSON file
 // (FAKE_GH_STATE) and records every call in it. Issues: { number: { title, state, labels, assignees,
-// parent, item, column, comments: [{ id, body }] } }; the project's Status options are `options`.
+// parent, item, column, body, comments: [{ id, body, author, createdAt }] } }; the project's Status
+// options are `options`.
 import fs from 'node:fs';
 
 const file = process.env.FAKE_GH_STATE;
@@ -68,8 +69,11 @@ function main() {
   }
   if (a === 'issue' && b === 'view') {
     const it = issue(args[2]);
-    if (opt('--json') === 'comments') return out({ comments: (it.comments ?? []).map((c) => ({ id: `IC_${c.id}`, url: `${url(args[2])}#issuecomment-${c.id}`, body: c.body })) });
-    return out({ body: it.body ?? '' });
+    const comments = () => (it.comments ?? []).map((c) => ({ id: `IC_${c.id}`, url: `${url(args[2])}#issuecomment-${c.id}`, body: c.body, author: { login: c.author ?? state.login }, createdAt: c.createdAt ?? null }));
+    if (opt('--json') === 'comments') return out({ comments: comments() });
+    const fields = (opt('--json') ?? 'body').split(',');
+    const all = { number: Number(args[2]), title: it.title, body: it.body ?? '', labels: (it.labels ?? []).map((name) => ({ name })), comments: comments(), state: it.state ?? 'OPEN', url: url(args[2]), updatedAt: it.updatedAt ?? null };
+    return out(Object.fromEntries(fields.map((f) => [f, all[f]])));
   }
   if (a === 'issue' && b === 'comment') {
     const it = issue(args[2]);
@@ -79,13 +83,22 @@ function main() {
   }
   if (a === 'issue' && b === 'edit') {
     const it = issue(args[2]);
-    if (opt('--add-label')) it.labels = [...new Set([...(it.labels ?? []), opt('--add-label')])];
+    if (opt('--add-label')) {
+      if (state.knownLabels && !state.knownLabels.includes(opt('--add-label'))) throw new Error(`could not add label: '${opt('--add-label')}' not found`);
+      it.labels = [...new Set([...(it.labels ?? []), opt('--add-label')])];
+    }
+    if (opt('--remove-label')) it.labels = (it.labels ?? []).filter((l) => l !== opt('--remove-label'));
+    if (args.includes('--body-file')) it.body = stdin();
     return out('');
   }
   if (a === 'project' && b === 'item-edit') {
     const name = Object.entries(state.options).find(([, id]) => id === opt('--single-select-option-id'))?.[0];
     const it = Object.values(state.issues).find((x) => x.item === opt('--id'));
     it.column = name;
+    return out('');
+  }
+  if (a === 'label' && b === 'create') {
+    if (state.knownLabels) state.knownLabels.push(args[2]);
     return out('');
   }
   if (a === 'pr' && b === 'list') return out('[]');

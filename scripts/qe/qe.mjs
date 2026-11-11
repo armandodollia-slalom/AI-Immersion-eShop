@@ -11,7 +11,7 @@ import { selfProcess, setLogTag } from '../pipeline/lib/util.mjs';
 import { calibrateCommand, formatLessonsRecovery, lessonsCommand, recoverLessons } from './lib/lessons.mjs';
 import { computeMetrics, formatMetrics } from './lib/metrics.mjs';
 import { automationFiles, automationStatus, planStatus, tidyPlan } from './lib/plans.mjs';
-import { automationLoop, formatRecovery, hookStop, planLoop, recoverAll, sessionContext, spawnQe } from './lib/workflows.mjs';
+import { automationLoop, formatRecovery, hookStop, planLoop, precheckAutomation, recoverAll, sessionContext, spawnQe } from './lib/workflows.mjs';
 
 setLogTag('qe');
 
@@ -23,6 +23,8 @@ Workflow 1 (story -> verified test plan)
 
 Workflow 2 (review-approved implementation -> verified automated tests)
   automate <story> [--impl-hash <h>] [--skip-tests] [--resume] [--background]
+  precheck <story> [--tests]    the automation round's deterministic checks (coverage, story tags,
+                                auto-fix then lint, scenario validation); --tests also runs the tests
   status [story]
   tidy <story>                  normalize the plan's markdown tables (keeps a verified plan verified)
 
@@ -188,6 +190,17 @@ async function main() {
       const result = await automationLoop(config, story, { implHash: flags['impl-hash'] ?? null, skipTests: Boolean(flags['skip-tests']), resume: Boolean(flags.resume) });
       console.log(`${story.key}: ${result.status}`);
       return ['verified', 'busy'].includes(result.status) ? 0 : 1;
+    }
+
+    case 'precheck': {
+      const story = requireStory(config, positional[0], { fallbackActive: true });
+      const pre = await precheckAutomation(config, story, { skipTests: !flags.tests });
+      if (!pre.errors.length) {
+        console.log(`${story.key}: precheck passed${flags.tests ? '' : ' (tests not run; pass --tests to run them)'}`);
+        return 0;
+      }
+      console.log(`${story.key}: precheck failed:\n${pre.errors.map((e) => `- ${e}`).join('\n')}`);
+      return 1;
     }
 
     case 'resume': {

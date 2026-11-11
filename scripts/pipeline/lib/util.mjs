@@ -26,7 +26,7 @@ export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true }
   const out = {
     status: result.status ?? (result.error ? 127 : 1),
     stdout: result.stdout ?? '',
-    stderr: (result.stderr ?? '') + (result.error ? `\n${result.error.message}` : ''),
+    stderr: (result.stderr ?? '') + (result.error ? `\n${result.error.message}` : '') + (result.signal ? `\nkilled by ${result.signal}` : ''),
     timedOut: result.error?.code === 'ETIMEDOUT',
   };
   if (!allowFail && out.status !== 0) {

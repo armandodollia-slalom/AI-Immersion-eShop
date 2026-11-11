@@ -55,14 +55,16 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
 | manual (local, or `workflow_dispatch`) | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
 
-Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself; `qe plan <KEY>` re-checks the issue first. Opt in to automatic planning with `git config qe.autoPlan true`: `board fetch` then plans every story it brings in changed (commits no longer do, since stories are not files in the repository); opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the 10/10 bar (for experiments only).
+Adding or changing a story never starts an agent: run `node scripts/qe/qe.mjs plan <story>` (or `--stale`) yourself; `qe plan <KEY>` re-checks the issue first. Opt in to automatic planning with `git config qe.autoPlan true`: `board fetch` then plans every story it brings in changed (commits no longer do, since stories are not files in the repository); opt in to lessons runs after merges with `git config qe.autoLessons true`. Bypass the pre-push gate once with `QE_SKIP=1 git push`; CI still enforces it. `QE_REQUIRED_SCORE` overrides the required score (`loops.requiredScore`, 9/10; for experiments only).
 
 ## Verifier loops
 
 - Each round starts a new verifier process whose prompt holds only what it needs: the story and plan for plans; the case files, the tests and the scenario for automation. It cannot see the producer's reasoning or earlier verdicts.
-- Cheap deterministic checks run before any verifier call (front matter, sections, happy and sad cases, index lists every id; every case has a test, no orphan ids, `[Trait("Story", ...)]`, scenario validates, tests pass). They also run the commit hook's linters on the agent's files (`precheck.lint`: markdownlint, eslint, `dotnet format whitespace`), so a lint error goes back to the agent instead of failing the pipeline's commit. Before the precheck and before the pipeline commits a story's tests, the runner normalizes the plan's table delimiter rows (`|---|` to `| --- |`, `qe tidy <story>`), which `markdownlint --fix` cannot repair; a verified plan stays verified because only that whitespace changed.
+- Cheap deterministic checks run before any verifier call (front matter, sections, happy and sad cases, index lists every id; every case has a test, no orphan ids, `[Trait("Story", ...)]`, scenario validates, tests pass). They also run the commit hook's linters on the agent's files (`precheck.lint`: markdownlint, eslint, `dotnet format whitespace`), so a lint error goes back to the agent instead of failing the pipeline's commit. Before linting, the automation precheck auto-fixes the agent's files with the same tools (`precheck.fix`: `markdownlint --fix`, `eslint --fix`, and `dotnet format eShop.Web.slnf --include`, which adds the UTF-8 BOM `.editorconfig` requires and orders imports). The `.cs` lint is the same solution-wide `dotnet format --verify-no-changes` that CI's `lint:cs` runs, so a file that passes the precheck passes CI, so formatting never costs a round. Before the precheck and before the pipeline commits a story's tests, the runner normalizes the plan's table delimiter rows (`|---|` to `| --- |`, `qe tidy <story>`), which `markdownlint --fix` cannot repair; a verified plan stays verified because only that whitespace changed.
+- The automation agent runs the same checks itself before it finishes: `node scripts/qe/qe.mjs precheck <KEY>` (coverage, story tags, auto-fix and lint, scenario validation; `--tests` also runs the tests). A failure it can fix in its own turn doesn't use up a round.
 - A verdict passes at the required score (`loops.requiredScore`, 9) or above. Gaps listed with a passing score are minor; they are logged in the metrics but don't block. A lower score without gaps counts as an unexplained gap. Gaps on a failing verdict go back to the producer as its next task.
-- Automation gaps the verifier traces to the case itself (`root_stage: plan`) are sent to the plan loop and attributed to the plan agent in the metrics.
+- Every round is a fresh agent session; work carries over only through the files on disk and the feedback. The last verifier round's gaps stay in the feedback until a verifier runs again, so a precheck failure or a crashed run in between does not hide them from the next round.
+- Automation gaps the verifier traces to the case itself (`root_stage: plan`) are sent to the plan loop and attributed to the plan agent in the metrics. That includes cases a test cannot carry out through a public interface (HTTP, the UI, the database, a published event, the AppHost model), such as reading the token held in the WebApp's server-side session; the plan verifier rejects those too (`untestable-expectation`).
 - After 5 rounds below the required score, the loop stops and writes `.agent-state/escalations/<KEY>-<stage>.md`, which the next agent session is told about.
 
 ## Crash recovery
@@ -86,10 +88,10 @@ All results are appended to `.agent-metrics/*.jsonl` (architecture reviews are i
 | `verifier-runs.jsonl` | verifier round: stage, story, round, score, passed, producer and verifier prompt versions |
 | `verifier-denials.jsonl` | gap: category, subtype, case, detail, location, `root_stage`, `attributed_agent` |
 | `precheck-failures.jsonl` | failed deterministic check |
-| `calibration.jsonl` | audit of a past 10/10 verdict (`agreed`, or each gap the verifier missed) |
+| `calibration.jsonl` | audit of a past passing verdict (`agreed`, or each gap the verifier missed) |
 | `decisions.jsonl` | agent decision and its reasons (see [Decision log](#decision-log)) |
 
-`node scripts/qe/qe.mjs metrics` (or `--json`; `pipeline metrics` combines every stage) reports denial rates, first-round pass rates, rounds to 10/10, denials by category and agent, the trend for each prompt version (a version is the hash of the agent file plus its lessons), cross-stage denials and calibration misses.
+`node scripts/qe/qe.mjs metrics` (or `--json`; `pipeline metrics` combines every stage) reports denial rates, first-round pass rates, rounds to a passing score, denials by category and agent, the trend for each prompt version (a version is the hash of the agent file plus its lessons), cross-stage denials and calibration misses.
 
 ### Decision log
 
@@ -117,7 +119,7 @@ The `qe-lessons` agent writes the rules into `.github/agents/lessons/<agent>.md`
 
 The same run holds a **factory retro**: it digests the decision log since the last merged lessons PR (or the last `lessons.retro.windowDays`) into the four questions (why the plan has these cases and which of them later failed or caught bugs, why reviews blocked or approved the implementer, why the automation verifier denied the tests, and why the tests failed the implementation) and hands it to the `qe-lessons` agent. QE verifier evidence mainly improves the QE agents; review and product-bug evidence mainly improves the implementer. When the cause is not something a lessons rule can fix, the agent may also edit the paths in `lessons.retro.allowedPaths` (agent definitions, docs, the story template, the policy pack); edits anywhere else are discarded, and each change it makes is listed under "Proposed factory changes" in the PR with its evidence. The retro runs whenever the window holds new decisions, even when no lessons threshold is reached.
 
-Verifiers improve through calibration: `qe calibrate` re-audits recent 10/10 verdicts with a stricter auditor (optionally a different model, `agent.models.audit`), and gaps the verifier missed become lessons for that verifier.
+Verifiers improve through calibration: `qe calibrate` re-audits recent passing verdicts (at or above `loops.requiredScore`) with a stricter auditor (optionally a different model, `agent.models.audit`), and gaps the verifier missed become lessons for that verifier.
 
 Tune thresholds, round limits, models and categories in `scripts/qe/config.json`.
 

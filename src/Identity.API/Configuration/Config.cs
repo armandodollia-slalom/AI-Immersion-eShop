@@ -10,6 +10,7 @@
                 new ApiResource("orders", "Orders Service"),
                 new ApiResource("basket", "Basket Service"),
                 new ApiResource("webhooks", "Webhooks registration Service"),
+                new ApiResource("promotions", "Promotions Service"),
             };
         }
 
@@ -22,6 +23,7 @@
                 new ApiScope("orders", "Orders Service"),
                 new ApiScope("basket", "Basket Service"),
                 new ApiScope("webhooks", "Webhooks registration Service"),
+                new ApiScope("promotions", "Promotions Service"),
             };
         }
 
@@ -104,7 +106,8 @@
                         "orders",
                         "basket",
                         "webshoppingagg",
-                        "webhooks"
+                        "webhooks",
+                        "promotions"
                     },
                     AccessTokenLifetime = 60*60*2, // 2 hours
                     IdentityTokenLifetime= 60*60*2 // 2 hours

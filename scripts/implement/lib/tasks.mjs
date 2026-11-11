@@ -1,6 +1,7 @@
 // Task prompts the orchestrated implement flow gives its agents. Each agent's standing instructions are in
 // .github/agents/<name>.agent.md; these add the run-specific facts and the exact result line to end with.
 import path from 'node:path';
+import { decisionsBlock } from '../../pipeline/lib/human-decisions.mjs';
 import { formatFindings } from './plan.mjs';
 
 const fence = (text, lang = '') => `\`\`\`\`${lang}\n${String(text ?? '').replace(/\r\n/g, '\n').trimEnd()}\n\`\`\`\``;
@@ -64,7 +65,7 @@ const mockupBlock = (mockups, { plan = false } = {}) =>
       ]
     : [];
 
-export function planTask({ key, storyFile, worktree, uiStory, limits, errors = null, mockups = null, epicNote = null }) {
+export function planTask({ key, storyFile, worktree, uiStory, limits, errors = null, mockups = null, epicNote = null, decisions = null }) {
   const lines = [
     `Plan story ${key}: ${path.relative(worktree, storyFile)}`,
     '',
@@ -89,6 +90,7 @@ export function planTask({ key, storyFile, worktree, uiStory, limits, errors = n
     '',
     fence(planSchema, 'jsonc'),
   ];
+  lines.push(...decisionsBlock(decisions, 'implement'));
   if (epicNote) lines.push('', epicNoteBlock(epicNote));
   if (errors?.length) lines.push('', 'Your previous plan was rejected. Fix these problems and return the whole plan again:', '', ...errors.map((e) => `- ${e}`));
   return lines.join('\n');
@@ -108,7 +110,7 @@ export function epicNoteBlock(note) {
 // What implementers and verifiers hold findings to: the ticket, not taste. See implement.md#nits-and-scope.
 const disputeFields = '"disputes": [{"finding": "<finding id or quoted issue>", "kind": "nit" | "out-of-scope", "reason": "<the acceptance criterion, owns glob or mockup that shows why>"}], "followUps": [{"title": "<real problem outside this ticket>", "reason": "<why it matters>"}]';
 
-export function pairImplementerTask({ key, storyFile, st, worktree, branch, base, round, maxRounds, findings, screenshots, diagnostics, self = false, mockups = null, mockupRenders = [] }) {
+export function pairImplementerTask({ key, storyFile, st, worktree, branch, base, round, maxRounds, findings, screenshots, diagnostics, self = false, mockups = null, mockupRenders = [], decisions = null }) {
   const ui = st.verify === 'ui' && Boolean(mockups);
   const lines = [
     `Implement subtask "${st.id}" of story ${key} (story file: ${path.relative(worktree, storyFile)}; read it for context only).`,
@@ -129,6 +131,7 @@ export function pairImplementerTask({ key, storyFile, st, worktree, branch, base
     '- Run the fast checks your agent file lists (build, existing unit tests of what you touched) before you finish; the harness runs them again and a fresh verifier reviews your diff.',
     ...(ui ? mockupBlock(mockups) : []),
   ];
+  lines.push(...decisionsBlock(decisions, 'implement'));
   if (ui && mockupRenders?.length) lines.push('', 'Renders of the mockup screens the UI verifier compared with last round:', ...mockupRenders.map((s) => `- ${s}`));
   if (findings?.length) {
     lines.push(
@@ -176,7 +179,7 @@ function judgingBlock(disputes) {
   return lines;
 }
 
-export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, disputes = null }) {
+export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, disputes = null, decisions = null }) {
   return [
     `Verify subtask "${st.id}" of story ${key}, round ${round} of ${maxRounds}. You have a fresh context: judge only the subtask spec, the diff and the outputs below. You may read files and query graphify; you do not edit anything.`,
     '',
@@ -195,6 +198,7 @@ export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diag
     '### Diff against the story branch',
     '',
     fence(diff, 'diff'),
+    ...decisionsBlock(decisions, 'verify'),
     ...judgingBlock(disputes),
     '',
     'Every blocking finding must name the file and line (from the diff) and say exactly what to change. Errors in the diagnostics block approval anyway; do not repeat them unless you add something.',
@@ -218,7 +222,7 @@ function designBlock({ mockups, renders, screenshotsDir, implementerScreens }) {
   return lines;
 }
 
-export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, webappUrl, screenshotsDir, worktree, mockups = null, renders = null, implementerScreens = null, disputes = null }) {
+export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, webappUrl, screenshotsDir, worktree, mockups = null, renders = null, implementerScreens = null, disputes = null, decisions = null }) {
   return [
     `Verify subtask "${st.id}" of story ${key} in the running app, round ${round} of ${maxRounds}. You have a fresh context.`,
     '',
@@ -239,6 +243,7 @@ export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagno
     '### Diff against the story branch',
     '',
     fence(diff, 'diff'),
+    ...decisionsBlock(decisions, 'verify'),
     '',
     ...designBlock({ mockups, renders, screenshotsDir, implementerScreens }),
     ...judgingBlock(disputes),
@@ -294,7 +299,7 @@ export function conflictTask({ key, worktree, branch, subtaskBranch, st, files }
   ].join('\n');
 }
 
-export function integrationTask({ key, storyFile, branch, worktree, base, plan, notes }) {
+export function integrationTask({ key, storyFile, branch, worktree, base, plan, notes, decisions = null }) {
   const lines = [
     `Integrate story ${key}: ${path.relative(worktree, storyFile)}`,
     '',
@@ -306,6 +311,7 @@ export function integrationTask({ key, storyFile, branch, worktree, base, plan, 
     '- Do not create worktrees, switch branches, push, or open a PR. Do not run `pipeline start` or `pipeline done`; the runner does that. Do not spawn subagents.',
     '- Commit your work with clear messages. Anything left uncommitted is committed for you.',
   ];
+  lines.push(...decisionsBlock(decisions, 'implement'));
   if (notes?.length) lines.push('', 'Problems the harness found while merging:', '', ...notes.map((n) => `- ${n}`));
   lines.push('', 'End your reply with exactly one line:', `AGENT_RESULT: {"status": "done" | "blocked" | "partial", "reason": "<one sentence>", ${disputeFields}}`);
   return lines.join('\n');

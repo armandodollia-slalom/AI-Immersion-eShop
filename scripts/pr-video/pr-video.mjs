@@ -27,6 +27,7 @@ const USAGE = `Usage: node scripts/pr-video/pr-video.mjs <command> [options]
         video (frontend changed) and api (backend changed, frontend not).
   api --base <ref> (--pr <n> | --dry-run) [--manifest artifacts/e2e-videos/manifest.json]
       [--openapi <url,url>] [--specs <a,b>] [--head-sha <sha>] [--run-url <url>]
+      [--api true|false --frontend true|false]   the scope from \`scope\`, so it is not diffed again
         Document the HTTP endpoints the PR adds, changes or removes (method, route, parameters, request
         and response types from OpenAPI, and example calls recorded with E2E_API_LOG=1) in the PR's
         "API changes" section, or print it with --dry-run. Only for backend-only PRs; removes the section
@@ -36,7 +37,7 @@ const USAGE = `Usage: node scripts/pr-video/pr-video.mjs <command> [options]
 
 Needs git push access and the gh CLI (GH_TOKEN).`;
 
-const VALUE_FLAGS = new Set(['base', 'pr', 'specs', 'videos-dir', 'note', 'branch', 'head-sha', 'run-url', 'manifest', 'openapi']);
+const VALUE_FLAGS = new Set(['base', 'pr', 'specs', 'videos-dir', 'note', 'branch', 'head-sha', 'run-url', 'manifest', 'openapi', 'api', 'frontend']);
 
 async function main() {
   const { positional, flags } = parseArgs(process.argv.slice(2), VALUE_FLAGS);
@@ -58,7 +59,9 @@ async function main() {
   if (command === 'api') {
     if (!flags.base) throw new Error('api needs --base <ref>');
     if (!(pr > 0) && !flags['dry-run']) throw new Error('api needs --pr <n> or --dry-run');
-    const scope = changeScope(root, flags.base);
+    // The workflow passes the scope its first step already worked out (--api, --frontend), so this
+    // step does not have to diff the PR again.
+    const scope = !flags.api ? changeScope(root, flags.base) : { api: flags.api === 'true', frontend: flags.frontend === 'true' };
     if (!scope.api) {
       const reason = scope.frontend ? 'the PR changes the frontend' : 'the PR changes no backend code';
       if (flags['dry-run']) console.log(`(no API changes section: ${reason})`);
