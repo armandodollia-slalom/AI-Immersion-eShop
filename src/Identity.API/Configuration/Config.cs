@@ -10,6 +10,7 @@
                 new ApiResource("orders", "Orders Service"),
                 new ApiResource("basket", "Basket Service"),
                 new ApiResource("webhooks", "Webhooks registration Service"),
+                new ApiResource("catalog", "Catalog Service") { Scopes = { "catalog" }, UserClaims = { "role" } },
             };
         }
 
@@ -22,6 +23,7 @@
                 new ApiScope("orders", "Orders Service"),
                 new ApiScope("basket", "Basket Service"),
                 new ApiScope("webhooks", "Webhooks registration Service"),
+                new ApiScope("catalog", "Catalog Service"),
             };
         }
 
@@ -64,7 +66,8 @@
                         "orders",
                         "basket",
                         "mobileshoppingagg",
-                        "webhooks"
+                        "webhooks",
+                        "catalog"
                     },
                     //Allow requesting refresh tokens for long lived API access
                     AllowOfflineAccess = true,
@@ -104,7 +107,8 @@
                         "orders",
                         "basket",
                         "webshoppingagg",
-                        "webhooks"
+                        "webhooks",
+                        "catalog"
                     },
                     AccessTokenLifetime = 60*60*2, // 2 hours
                     IdentityTokenLifetime= 60*60*2 // 2 hours
