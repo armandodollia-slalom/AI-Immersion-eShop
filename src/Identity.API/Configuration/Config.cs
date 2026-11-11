@@ -7,10 +7,11 @@
         {
             return new List<ApiResource>
             {
-                new ApiResource("orders", "Orders Service"),
-                new ApiResource("basket", "Basket Service"),
-                new ApiResource("webhooks", "Webhooks registration Service"),
-                new ApiResource("promotions", "Promotions Service"),
+                new ApiResource("orders", "Orders Service") { Scopes = { "orders" } },
+                new ApiResource("basket", "Basket Service") { Scopes = { "basket" } },
+                new ApiResource("webhooks", "Webhooks registration Service") { Scopes = { "webhooks" } },
+                new ApiResource("catalog", "Catalog Service") { Scopes = { "catalog" }, UserClaims = { "role" } },
+                new ApiResource("promotions", "Promotions Service") { Scopes = { "promotions" } },
             };
         }
 
@@ -23,6 +24,7 @@
                 new ApiScope("orders", "Orders Service"),
                 new ApiScope("basket", "Basket Service"),
                 new ApiScope("webhooks", "Webhooks registration Service"),
+                new ApiScope("catalog", "Catalog Service"),
                 new ApiScope("promotions", "Promotions Service"),
             };
         }
@@ -66,7 +68,8 @@
                         "orders",
                         "basket",
                         "mobileshoppingagg",
-                        "webhooks"
+                        "webhooks",
+                        "catalog"
                     },
                     //Allow requesting refresh tokens for long lived API access
                     AllowOfflineAccess = true,
@@ -107,6 +110,7 @@
                         "basket",
                         "webshoppingagg",
                         "webhooks",
+                        "catalog",
                         "promotions"
                     },
                     AccessTokenLifetime = 60*60*2, // 2 hours
