@@ -2,10 +2,10 @@ import http from 'http';
 import http2 from 'http2';
 import { execFileSync } from 'child_process';
 import { DOCKER } from './scenario';
+import { BASKET_GRPC_URL, IDENTITY_URL, WEBAPP_URL } from './ports';
 
-/** The issuer the containers trust; the host does not resolve it, so requests are pinned to 127.0.0.1. */
-export const IDENTITY_URL = 'http://host.docker.internal:18081';
-export const BASKET_GRPC_URL = 'http://localhost:18083';
+// The issuer and the Basket gRPC endpoint follow TESTSTACK_SLOT (./ports).
+export { BASKET_GRPC_URL, IDENTITY_URL };
 export const USER_IDS: Record<string, string> = {
   alice: 'a11ce000-0000-4000-8000-000000000001',
   bob: 'b0b00000-0000-4000-8000-000000000002',
@@ -74,7 +74,7 @@ export class IdentityClient {
 export async function getTokens(username: string, password = 'Pass123$', scope = 'openid profile basket'):
   Promise<{ access_token: string; id_token: string; scope: string }> {
   const client = new IdentityClient();
-  const redirectUri = 'http://localhost:18080/signin-oidc';
+  const redirectUri = `${WEBAPP_URL}/signin-oidc`;
   const query = new URLSearchParams({ client_id: 'webapp', response_type: 'code', scope, redirect_uri: redirectUri, response_mode: 'query', state: 's', nonce: 'n' });
   const authorize = await client.get(`${IDENTITY_URL}/connect/authorize?${query}`);
   const loginUrl = new URL(authorize.headers.location!, IDENTITY_URL).toString();

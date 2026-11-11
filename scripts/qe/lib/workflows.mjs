@@ -7,6 +7,7 @@ import { spawnBackground } from '../../pipeline/lib/background.mjs';
 import { formatBugs, logDecision, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges } from '../../pipeline/lib/git.mjs';
 import { readEvidence, formatEvidence } from './evidence.mjs';
+import { onLeasedSlot } from './slots.mjs';
 import {
   INDEX,
   automationFiles,
@@ -286,23 +287,18 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
     return out;
   })();
 
-  // e2e: one shared teststack per machine, so specs from different stories (different worktrees)
-  // take turns. The lock lives in git's common dir, which every worktree shares. Runs alongside .NET.
+  // e2e: on a leased stack slot of its own when several tickets run at once (qe.useSlots, see
+  // lib/slots.mjs), else the one shared slot-0 teststack per machine, where specs from different stories
+  // (different worktrees) take turns. The lock lives in git's common dir, which every worktree shares.
+  // Runs alongside .NET.
   const e2e = (async () => {
     if (!specFiles.length) return [];
     const argv = expand(config.precheck.playwright, { files: specFiles, casePrefix: casePrefix(story.key), story: story.key });
-    const lock = teststackLock(config);
-    const deadline = Date.now() + config.timeoutsSec.tests * 1000 * 2;
-    while (!acquireLock(lock)) {
-      if (Date.now() > deadline) return [`Timed out waiting for the shared teststack (held by pid ${lockHolder(lock)}).`];
-      log(`${story.key}: waiting for the teststack (pid ${lockHolder(lock)} is running e2e tests)`);
-      await sleep(10_000);
-    }
-    try {
-      log(`${story.key}: running ${argv.join(' ')}`);
+    const runSpecs = async (slotEnv) => {
+      log(`${story.key}: running ${argv.join(' ')}${slotEnv.TESTSTACK_SLOT ? ` on slot ${slotEnv.TESTSTACK_SLOT}` : ''}`);
       const since = nowIso();
       // The verifier needs keyframes from passing tests too, so keep them for every e2e run.
-      const result = await runAsync(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests, env: { ...process.env, E2E_KEEP_VIDEOS: '1' } });
+      const result = await runAsync(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: config.timeoutsSec.tests, env: { ...process.env, E2E_KEEP_VIDEOS: '1', ...slotEnv } });
       evidence = readEvidence(config, { casePrefix: casePrefix(story.key), since });
       if (result.status === 0) return [];
       let error = failure(argv, result);
@@ -312,6 +308,18 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
           + 'starting with the `failure` and `step failed` frames, before you change any code:\n\n' + formatEvidence(failed);
       }
       return [error];
+    };
+    const onSlot = await onLeasedSlot(config, { key: story.key, specFiles, timeoutSec: config.timeoutsSec.tests }, runSpecs);
+    if (onSlot) return onSlot;
+    const lock = teststackLock(config);
+    const deadline = Date.now() + config.timeoutsSec.tests * 1000 * 2;
+    while (!acquireLock(lock)) {
+      if (Date.now() > deadline) return [`Timed out waiting for the shared teststack (held by pid ${lockHolder(lock)}).`];
+      log(`${story.key}: waiting for the teststack (pid ${lockHolder(lock)} is running e2e tests)`);
+      await sleep(10_000);
+    }
+    try {
+      return await runSpecs({});
     } finally {
       releaseLock(lock);
     }
@@ -358,6 +366,7 @@ function automationTask(config, story, { mode, feedback, implFiles }) {
     `Verified plan: ${story.planDir} (${plan.cases.length} cases: ${plan.cases.map((c) => c.data.id).join(', ')})`,
     `Scenario directory: ${config.scenariosDir}/${story.scenario} (name: ${story.scenario})`,
     `Every test name must contain its case id. .NET tests also need the story tag and case id: in xUnit projects (functional tests) [Trait("Story", "${story.key}")] and [Trait("TestCase", "<id>")]; in MSTest projects (unit tests, MSTest.Sdk) [TestCategory("${story.key}")] and [TestProperty("TestCase", "<id>")].`,
+    'Playwright specs under e2e/teststack/ build every URL from e2e/teststack/ports.ts (WEBAPP_URL, IDENTITY_URL, CATALOG_URL, port(name)); never hard-code 18xxx ports, so the specs run on whichever stack slot the run leased.',
     '',
     '### Implementation files changed for this story',
     '',

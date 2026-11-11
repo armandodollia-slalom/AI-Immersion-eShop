@@ -72,6 +72,8 @@ const interruptedBatch = (config) => {
 async function runStories(config, inputs, { base, force = false, takeover = false, parallel, pr = false, dryRun = false, extraSources = [], epicRun = null, delivery = 'story' }) {
   // Every record this run writes (usage, decisions, outcomes) says how it was delivered.
   process.env.PIPELINE_DELIVERY = delivery;
+  // QE leases its own stack slot per story when several run at once (scripts/qe/lib/slots.mjs).
+  process.env.IMPLEMENT_PARALLEL = String(parallel);
   const stories = plan(config, inputs, { base, force });
   if (!dryRun) {
     // The board: closed stories to Done and epics in step, then this machine claims the cards it runs.
