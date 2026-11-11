@@ -1,0 +1,5 @@
+description: >
+  BUG-18 (catalog create with an existing id returns 500): catalog-edge already has what the cases
+  need (14 items with ids 1-14, where id 1 is "Edge 01 Penny Boot", brands and types 1-4, admin user),
+  so this scenario only extends it.
+extends: catalog-edge

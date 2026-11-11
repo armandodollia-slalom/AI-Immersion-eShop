@@ -1,0 +1,4 @@
+description: >
+  BUG-13 (catalog accepts empty name / negative price): catalog-edge already has what the cases
+  need (item 1 to update, brands and types 1-4, admin user), so this scenario only extends it.
+extends: catalog-edge

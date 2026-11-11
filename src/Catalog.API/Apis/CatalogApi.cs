@@ -101,20 +101,24 @@ public static class CatalogApi
             .WithName("UpdateItem")
             .WithSummary("Create or replace a catalog item")
             .WithDescription("Create or replace a catalog item")
-            .WithTags("Items");
+            .WithTags("Items")
+            .RequireAuthorization("CatalogAdmin");
         v2.MapPut("/items/{id:int}", UpdateItem)
             .WithName("UpdateItem-V2")
             .WithSummary("Create or replace a catalog item")
             .WithDescription("Create or replace a catalog item")
-            .WithTags("Items");
+            .WithTags("Items")
+            .RequireAuthorization("CatalogAdmin");
         api.MapPost("/items", CreateItem)
             .WithName("CreateItem")
             .WithSummary("Create a catalog item")
-            .WithDescription("Create a new item in the catalog");
+            .WithDescription("Create a new item in the catalog")
+            .RequireAuthorization("CatalogAdmin");
         api.MapDelete("/items/{id:int}", DeleteItemById)
             .WithName("DeleteItem")
             .WithSummary("Delete catalog item")
-            .WithDescription("Delete the specified catalog item");
+            .WithDescription("Delete the specified catalog item")
+            .RequireAuthorization("CatalogAdmin");
 
         return app;
     }
@@ -357,12 +361,13 @@ public static class CatalogApi
         return await GetAllItems(paginationRequest, services, null, null, brandId is null ? null : [brandId.Value]);
     }
 
-    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> UpdateItemV1(
+    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>, ValidationProblem>> UpdateItemV1(
         HttpContext httpContext,
         [AsParameters] CatalogServices services,
         CatalogItem productToUpdate)
     {
-        if (productToUpdate?.Id == null)
+        // Id is an int, so a body without an id binds to 0; ids are database-generated and start at 1.
+        if (productToUpdate is null || productToUpdate.Id <= 0)
         {
             return TypedResults.BadRequest<ProblemDetails>(new()
             {
@@ -372,12 +377,29 @@ public static class CatalogApi
         return await UpdateItem(httpContext, productToUpdate.Id, services, productToUpdate);
     }
 
-    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> UpdateItem(
+    public static async Task<Results<Created, BadRequest<ProblemDetails>, NotFound<ProblemDetails>, ValidationProblem>> UpdateItem(
         HttpContext httpContext,
         [Description("The id of the catalog item to delete")] int id,
         [AsParameters] CatalogServices services,
         CatalogItem productToUpdate)
     {
+        // The route id identifies the item; a different body id would change the tracked entity's key.
+        if (productToUpdate.Id != 0 && productToUpdate.Id != id)
+        {
+            return TypedResults.BadRequest<ProblemDetails>(new()
+            {
+                Detail = "Route id and body id must match"
+            });
+        }
+        productToUpdate.Id = id;
+
+        var errors = CatalogItemValidation.Validate(productToUpdate);
+        await CatalogItemValidation.AddReferenceErrorsAsync(productToUpdate, services.Context, errors);
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
         var catalogItem = await services.Context.CatalogItems.SingleOrDefaultAsync(i => i.Id == id);
 
         if (catalogItem == null)
@@ -415,10 +437,26 @@ public static class CatalogApi
     }
 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    public static async Task<Created> CreateItem(
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public static async Task<Results<Created, ValidationProblem, Conflict<ProblemDetails>>> CreateItem(
         [AsParameters] CatalogServices services,
         CatalogItem product)
     {
+        var errors = CatalogItemValidation.Validate(product);
+        await CatalogItemValidation.AddReferenceErrorsAsync(product, services.Context, errors);
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
+        if (product.Id > 0 && await services.Context.CatalogItems.AnyAsync(i => i.Id == product.Id))
+        {
+            return TypedResults.Conflict<ProblemDetails>(new()
+            {
+                Detail = $"Item with id {product.Id} already exists."
+            });
+        }
+
         var item = new CatalogItem(product.Name)
         {
             Id = product.Id,

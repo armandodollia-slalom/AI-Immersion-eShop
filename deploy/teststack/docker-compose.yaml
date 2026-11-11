@@ -145,6 +145,7 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_SERVICE_NAME: "catalog-api"
       Seeding__Disabled: "true"
+      Identity__Url: "http://host.docker.internal:${IDENTITY_API_HOST_PORT:-18081}"
     ports:
       - "${CATALOG_API_HOST_PORT:-18082}:${CATALOG_API_PORT}"
     expose:

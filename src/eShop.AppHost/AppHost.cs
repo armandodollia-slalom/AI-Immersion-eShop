@@ -49,7 +49,8 @@ redis.WithParentRelationship(basketApi);
 
 var catalogApi = builder.AddDotnetProject("catalog-api", "../Catalog.API")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
-    .WithReference(catalogDb);
+    .WithReference(catalogDb)
+    .WithEnvironment("Identity__Url", identityEndpoint);
 
 var orderingApi = builder.AddDotnetProject("ordering-api", "../Ordering.API")
     .WithReference(rabbitMq).WaitFor(rabbitMq)
@@ -135,7 +136,7 @@ if (isTestStack)
         ["WebAppClient"] = TestStack.WebAppUrl,
         ["WebhooksWebClient"] = TestStack.WebhooksClientUrl,
     });
-    catalogApi.WithTestStackService(TestStack.CatalogApiPort, seeded: true);
+    catalogApi.WithTestStackService(TestStack.CatalogApiPort, seeded: true, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     orderingApi.WithTestStackService(TestStack.OrderingApiPort, seeded: true, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     promotionsApi.WithTestStackService(TestStack.PromotionsApiPort, seeded: true, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
     basketApi.WithTestStackService(TestStack.BasketApiPort, env: new() { ["Identity__Url"] = TestStack.IdentityUrl });
