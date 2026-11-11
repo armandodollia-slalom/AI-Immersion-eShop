@@ -10,10 +10,27 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var returnUrl = ReturnUrl ?? "/";
-        var url = new Uri(returnUrl, UriKind.RelativeOrAbsolute);
-        Nav.NavigateTo(url.IsAbsoluteUri ? "/" : returnUrl);
+        Nav.NavigateTo(LocalReturnUrl(ReturnUrl));
         await base.OnInitializedAsync();
+    }
+
+    // Same rule as MVC's Url.IsLocalUrl: "/path" and "~/path" are local, "//host" and "/\\host" are not.
+    // Base-relative paths such as "item/7" (what Url(nav) produces) are local too; anything else falls back to "/".
+    public static string LocalReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrEmpty(returnUrl) || returnUrl.Any(char.IsControl))
+        {
+            return "/";
+        }
+
+        var url = returnUrl.StartsWith("~/", StringComparison.Ordinal) ? returnUrl[1..] : returnUrl;
+
+        if (url[0] == '/')
+        {
+            return url.Length == 1 || (url[1] != '/' && url[1] != '\\') ? url : "/";
+        }
+
+        return url[0] != '\\' && Uri.TryCreate(url, UriKind.Relative, out _) ? url : "/";
     }
 
     public static string Url(NavigationManager nav)
