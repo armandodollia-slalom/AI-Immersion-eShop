@@ -7,7 +7,9 @@ Epic: [#64 Epic: Test Stack Bug Findings](https://github.com/armandodollia-slalo
 Agent CLI: GitHub Copilot CLI 1.0.109 (`PIPELINE_AGENT_CLI=copilot`). Allowed
 models: `opus` → claude-opus-5.5, `sonnet` → claude-sonnet-5.5 (default),
 `sol` → gpt-6.1-sol. Machine: macOS, 14 CPUs, 48 GB RAM; Docker on Colima
-(12 CPUs, 24 GB). Operator: Copilot CLI agent (Claude Opus 5.5), unattended.
+(12 CPUs, 24 GB). Operator: Copilot CLI agent (Claude Opus 5.5), unattended;
+from 09:29 the agent CLI and the operator ran on Claude Code (the user's
+personal Claude subscription) after the Copilot monthly quota ran out.
 
 All times are local (CST, UTC-6).
 

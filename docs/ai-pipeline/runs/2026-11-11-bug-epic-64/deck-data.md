@@ -4,22 +4,24 @@ Running numbers and slide material for the presentation about the first real
 end-to-end run of the agent factory on bug epic #64. Updated at every
 checkpoint; `summary.md` gets the final version. Times are local (CST).
 
-## Headline numbers (as of 11:30)
+## Headline numbers (final, 11:49)
 
 | Metric | Value |
 | --- | --- |
 | Tickets in the epic | 21 bugs (BUG-1 to BUG-21) |
-| Wall clock so far | about 5 h 30 min (04:17 start), including about 1 h 35 min of host sleep |
+| Wall clock | 7 h 32 min (04:17–11:49), including about 1 h 35 min of host sleep |
+| Batch starts | 11 (restarts to apply fixes, after the outage, after sleep) |
 | PR groups chosen by the supervisor | 9 (timeline 04:19) |
-| Group PRs open | 6: [#102](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/102) basket-cart (3 bugs), [#100](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/100) catalog-item-validation (6 bugs), [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70) catalog-write-auth, [#71](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/71) token-audience, [#72](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/72) login-open-redirect, [#97](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/97) catalog-paging |
-| Group PR CI | #72 green; #70/#71/#97 fail `teststack` (compose drift from BUG-4), #70/#71 also `test` (scopes test, BUG-4) |
-| Tickets verified (implemented + tests verified) | 14: BUG-4, 5, 6, 7, 8, 11, 12, 13, 14, 17, 18, 19, 20, 21 |
-| Tickets escalated to a human | 1: BUG-1 (QE meta-test), blocking BUG-2/3 |
-| Agent runs | 235 |
-| Token cost (list price) | $52.48 (implement $20.98; PR checks $12.70) |
-| Copilot premium requests | 930 at 08:27, then the monthly quota ran out (~08:55) |
-| Pipeline defects found and fixed | 20 (D1-D20) |
-| Cache hit rate | 88% |
+| Group PRs opened | 7: #70, #71, #72, #97, #100 (6 bugs), #102 (3 bugs), #103 |
+| Group PR CI | #72 green; #70/#71/#97/#100 fail on BUG-4's compose drift and scopes test; #100 MD012; #102 a cross-ticket test assumption |
+| Tickets verified | **15**: BUG-4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
+| Escalated to a human | 1: BUG-1 (QE meta-test); 5 more wait behind it (BUG-2, 3, 9, 10, 15) |
+| Agent runs | 309 |
+| Token cost (list price) | **$75.63**: Copilot $38.08, Claude Code $37.56 |
+| Cost by model | Opus 5.5 $46.79, Sonnet 5.5 $28.81, Haiku 5.5 $0.03 (CLI background), Sol 6.1 $0 |
+| Copilot premium requests | 1,037 (Opus 930, Sonnet 107), then the monthly quota ran out |
+| Pipeline defects found and fixed | **21** (D1–D21, plus D13b) |
+| Cache hit rate | 87% |
 
 ## Lane counts over time
 
@@ -30,6 +32,7 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | 09:10 | 0 | 0 | 0 | 7 | 14 (D12, quota outage) |
 | 09:47 | 0 | 12 | 3 | 7 | 0 |
 | 10:18 | 0 | 9 | 6 | 7 | 0 |
+| 11:49 | 0 | 0 | 0 | 15 | 6 |
 
 ## Cost by stage
 
@@ -39,6 +42,10 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | pr-check (critic panel) | 50 | $12.70 | 50 | $12.70 |
 | QE plan | 31 | $4.29 | 35 | $5.22 |
 | QE automation | 20 | $4.16 | 27 | $6.04 |
+
+Final by stage (11:49): PR checks $26.37 (87 runs), implementation $25.02
+(71), QE automation + verify $11.82 (60), QE plan + verify $8.15 (61), review
+$2.58 (23), verifier pairs $0.93 (6), epic plan $0.77 (1).
 
 ## Story beats for the deck
 
