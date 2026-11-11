@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Factory · Tokens, Cost &amp; Waste</title>
+<style>
+:root{
+  --fg:var(--foreground,#e6e8ee);--mut:var(--muted-foreground,#8b93a7);--cd:var(--card,#161a23);
+  --bd:var(--border,#2a3040);--c1:var(--chart-1,#60a5fa);--c2:var(--chart-2,#34d399);--c3:var(--chart-3,#fbbf24);
+  --c4:var(--chart-4,#f472b6);--c5:var(--chart-5,#a78bfa);--bad:var(--destructive,#f87171);--ok:var(--success,#4ade80);
+  --warn:var(--warning,#f59e0b);--r:var(--radius,10px);--mono:var(--font-mono,ui-monospace,Menlo,Consolas,monospace);
+  --opus:#a78bfa;--sonnet:#60a5fa;
+}
+*{box-sizing:border-box}
+html{background:#0d1017;color-scheme:dark}
+body{background:#0d1017;padding:16px 12px 24px}
+a{color:#60a5fa}
+body{margin:0;color:var(--fg);font-family:var(--font-sans,system-ui,Segoe UI,sans-serif);font-size:13px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px}
+h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);margin:0 0 10px;font-weight:600}
+.sub{color:var(--mut);font-size:12px}
+.box{background:var(--cd);border:1px solid var(--bd);border-radius:var(--r);padding:16px;margin-top:12px}
+.grid{display:grid;gap:10px}
+.k4{grid-template-columns:repeat(4,1fr)}
+.two{grid-template-columns:1fr 1fr}
+.three{grid-template-columns:repeat(3,1fr)}
+@media (max-width:640px){.k4,.three{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+.kpi{background:var(--cd);border:1px solid var(--bd);border-radius:var(--r);padding:12px;position:relative;overflow:hidden}
+.kpi b{display:block;font-size:22px;font-variant-numeric:tabular-nums;margin:2px 0}
+.kpi span{color:var(--mut);font-size:11px}
+.kpi i{position:absolute;left:0;top:0;bottom:0;width:3px}
+.hero{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:center;text-align:center}
+.hero .big{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+.hero .op{font-size:22px;color:var(--mut)}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ok);border:1px solid var(--bd);border-radius:99px;padding:2px 9px}
+.live:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);animation:p 1.6s infinite}
+@keyframes p{50%{opacity:.25}}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+label{font-size:11px;color:var(--mut)}
+input[type=range]{width:180px;accent-color:var(--c4);vertical-align:middle}
+.seg{display:inline-flex;border:1px solid var(--bd);border-radius:99px;overflow:hidden}
+.seg button{background:none;border:0;color:var(--mut);font:inherit;font-size:11px;padding:3px 10px;cursor:pointer}
+.seg button.on{background:var(--c4);color:#0b0d12;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:5px 6px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:11px}
+.num{text-align:right;font-family:var(--mono);white-space:nowrap}
+.pill{font-size:10px;padding:1px 7px;border-radius:99px;border:1px solid var(--bd);color:var(--mut);white-space:nowrap}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--mut);margin-top:8px}
+.legend span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c);vertical-align:-1px}
+svg text{fill:var(--mut);font-size:10px;font-family:var(--font-sans,system-ui)}
+.note{font-size:11px;color:var(--mut);margin-top:8px;line-height:1.45}
+.stack{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:6px 0}
+.stack div{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0b0d12;white-space:nowrap;overflow:hidden}
+.callout{border-left:3px solid var(--c);padding:8px 10px;margin:8px 0;background:color-mix(in srgb,var(--c) 9%,transparent);border-radius:0 6px 6px 0;font-size:12px;line-height:1.45}
+.sev{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;color:#0b0d12}
+.mini{height:6px;border-radius:3px;background:var(--c)}
+a{color:var(--c1)}
+code{font-family:var(--mono);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="row">
+  <div>
+    <h1 id="title"></h1>
+    <div class="sub" id="subline"></div>
+  </div>
+  <span class="live" id="live"></span>
+</div>
+
+<!-- HERO: total cost equation -->
+<div class="box">
+  <div class="row" style="margin-bottom:10px">
+    <h2 style="margin:0">Total cost of the run = agent tokens + human time</h2>
+    <div class="row" style="gap:14px">
+      <label>Rate <b id="rateLbl" style="color:var(--fg)"></b> <input type="range" id="rate" min="10" max="400" step="10" value="220"></label>
+      <div class="seg" id="hrsMode"><button data-m="wall" class="on">Wall-clock hours</button><button data-m="active">Exclude idle time</button></div>
+    </div>
+  </div>
+  <div class="hero">
+    <div><div class="sub">Human cost (pipeline run hours × rate)</div><div class="big" id="hHuman" style="color:var(--c4)"></div><div class="sub" id="hHumanSub"></div></div>
+    <div class="op">+</div>
+    <div><div class="sub">Agent token cost (measured)</div><div class="big" id="hTok" style="color:var(--c1)"></div><div class="sub" id="hTokSub"></div></div>
+    <div class="op">=</div>
+    <div><div class="sub">Total cost incurred</div><div class="big" id="hTotal"></div><div class="sub" id="hTotalSub"></div></div>
+  </div>
+  <div class="stack" id="heroStack" style="height:26px;margin-top:14px"></div>
+  <div class="note" id="heroNote"></div>
+</div>
+
+<div class="grid k4" style="margin-top:12px" id="kpis"></div>
+
+<!-- TOKENS -->
+<div class="grid two">
+  <div class="box">
+    <h2>Where the tokens go</h2>
+    <div class="stack" id="tokStack" style="height:28px"></div>
+    <table id="tokTable"></table>
+    <div class="note" id="tokNote"></div>
+  </div>
+  <div class="box">
+    <h2>Model &amp; CLI split</h2>
+    <table id="modelTable"></table>
+    <div class="note" id="modelNote"></div>
+  </div>
+</div>
+
+<!-- BURN -->
+<div class="box">
+  <h2>Cumulative spend by model &amp; tokens over the run</h2>
+  <svg id="burn" viewBox="0 0 700 240" width="100%"></svg>
+  <div class="legend" id="burnLegend"></div>
+</div>
+
+<!-- WASTE -->
+<div class="box">
+  <div class="row"><h2 style="margin:0">Waste from model hand-offs &amp; rework</h2><span class="pill">tokens · cost · time thrown away</span></div>
+  <div class="grid k4" style="margin-top:12px" id="wasteKpis"></div>
+  <div style="margin-top:12px"><svg id="waterfall" viewBox="0 0 700 200" width="100%"></svg></div>
+  <table id="wasteTable" style="margin-top:6px"></table>
+  <div class="callout" style="--c:var(--c4)" id="engCallout"></div>
+  <div class="callout" style="--c:var(--c5)" id="tierCallout"></div>
+  <h2 style="margin-top:14px">Escalated to the higher tier: what Opus PR-check caught after Sonnet gates passed</h2>
+  <table id="escTable"></table>
+  <div class="note" id="escNote"></div>
+</div>
+
+<!-- TICKETS -->
+<div class="box">
+  <h2>Per-ticket tokens, cost &amp; rework</h2>
+  <table id="ticketTable"></table>
+  <div class="note" id="ticketNote"></div>
+</div>
+
+<!-- HEAL -->
+<div class="box">
+  <h2>Cost per successful heal</h2>
+  <div class="grid k4" id="heal"></div>
+  <div class="note" id="healNote"></div>
+</div>
+
+<div class="note" style="margin:12px 0 4px" id="foot"></div>
+</div>
+
+<script>
+const D=/*__DATA__*/;
+const $=id=>document.getElementById(id);
+const usd=(v,d=2)=>'$'+(v||0).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const M=v=>(v||0)>=1e6?(v/1e6).toFixed(v>=1e7?1:2)+'M':(v||0)>=1e3?(v/1e3).toFixed(0)+'k':String(v||0);
+const hm=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${m}m`:`${m}m`};
+const clk=m=>{m=Math.round(m);m=((m%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct=(a,b)=>b?(a/b*100).toFixed(1)+'%':'0%';
+const kp=a=>a.map(([l,v,s,c])=>`<div class="kpi"><i style="background:var(${c})"></i><span>${l}</span><b>${v}</b><span>${s}</span></div>`).join('');
+const A=D.total,START=D.startMin,END=D.endMin;
+const IDLE=D.bands.filter(b=>b.kind==='idle'),OUTB=D.bands.filter(b=>b.kind==='outage');
+const idleMin=IDLE.reduce((a,b)=>a+b.b-b.a,0),OUTSEC=OUTB.reduce((a,b)=>a+(b.b-b.a)*60,0);
+const measured=D.stories.filter(s=>s.all),verified=D.stories.filter(s=>s.status==='verified');
+const perTicket=Math.max(1,verified.length||measured.length);
+const allRuns=[...measured.flatMap(s=>s.runs),...(D.other.runs||[])];
+const rejOf=s=>s.verifiers.filter(v=>!v.passed).length+s.subtasks.reduce((a,x)=>a+x.rounds.filter(r=>r.verdict!=='APPROVED').length,0);
+const CLIC=['var(--c3)','var(--c2)','var(--c1)','var(--warn)'];
+
+document.title=`Agent Factory · ${D.title} · Tokens, Cost & Waste`;
+$('title').textContent=`Agent Factory · ${D.title} — Tokens, Cost & Waste`;
+$('subline').innerHTML=[`${D.stories.length} stories → ${new Set(measured.map(s=>s.branch)).size} branches`,...D.links.map(l=>`<a href="${esc(l.url)}" target="_blank">${esc(l.label)}</a>`),`telemetry from <code>.agent-metrics/*.jsonl</code> on the epic branches`,`times ${D.tz}`].join(' · ');
+$('live').textContent=`${D.date} · telemetry ${D.first}–${D.last}`;
+$('rate').value=D.rate||220;
+
+// HERO
+let mode='wall';
+function hero(){
+  const rate=+$('rate').value; $('rateLbl').textContent=usd(rate,0)+'/h';
+  const wallMin=END-START,min=mode==='wall'?wallMin:wallMin-idleMin,hrs=min/60;
+  const human=hrs*rate,tok=A.cost,total=human+tok;
+  $('hHuman').textContent=usd(human,0);
+  $('hHumanSub').textContent=`${hrs.toFixed(2)} h (${D.first}→${D.last}${mode==='wall'?'':`, minus ${hm(idleMin*60)} idle`}) × ${usd(rate,0)}`;
+  $('hTok').textContent=usd(tok);
+  $('hTokSub').textContent=`${M(A.tokens)} tokens · ${A.runs} runs`;
+  $('hTotal').textContent=usd(total,0);
+  $('hTotalSub').textContent=`${usd(total/perTicket)} per ${verified.length?'verified':'measured'} ticket`;
+  const hp=human/total*100;
+  $('heroStack').innerHTML=`<div style="width:${hp}%;background:var(--c4)">Human ${hp.toFixed(1)}%</div><div style="width:${100-hp}%;background:var(--c1)">${(100-hp).toFixed(1)}%</div>`;
+  $('heroNote').innerHTML=`Human time is <b>${(human/tok).toFixed(0)}×</b> the token bill. One run-hour of a person (${usd(rate,0)}) buys <b>${M(A.tokens/A.cost*rate)}</b> tokens at this run's blended rate (${usd(A.cost/A.tokens*1e6)} per 1M tokens). Agents did <b>${hm(A.sec)}</b> of compute in that window.`;
+  updEng();
+}
+function updEng(){const r=+$('rate').value;document.querySelectorAll('[data-eng]').forEach(e=>e.textContent=usd(+e.dataset.eng/3600*r+(+e.dataset.add||0),0));const x=$('engRatio');if(x)x.textContent=+x.dataset.c?((+x.dataset.s/3600*r)/(+x.dataset.c)).toFixed(0)+'×':'—';}
+$('rate').addEventListener('input',hero);
+$('hrsMode').querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;$('hrsMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));hero()});
+
+// KPIs
+const W4=D.waste,cats=[
+ ['Sonnet rework','Sonnet|rework',W4.sonnet,'var(--sonnet)','Lower-tier work (QE plan, QE automation, pair rounds) redone after a verifier rejected it','sonnet'],
+ ['Opus rework','Opus|rework',W4.opus,'var(--opus)','Higher-tier implementer rounds redone after the code or UI verifier rejected round 1','opus'],
+ [D.switchLabel+' redo',D.switchLabel+'|redo',W4.switch,'var(--c3)','Stages repeated on another agent CLI after the first one stopped answering','mixed'],
+ ['Failed / timed-out runs','Failed|runs',W4.failed,'var(--bad)','Runs that returned no result (outage answers, timeouts)','mixed']];
+const wTot=cats.reduce((a,[,,w])=>({tokens:a.tokens+w.tokens,cost:a.cost+w.cost,sec:a.sec+w.sec,runs:a.runs+w.runs}),{tokens:0,cost:0,sec:0,runs:0});
+$('kpis').innerHTML=kp([
+ ['Total tokens',M(A.tokens),`${A.runs} agent runs · ${D.premium} premium requests`,'--c3'],
+ ['Total token cost',usd(A.cost),`logged cost_usd · ${usd(A.cost/A.runs,3)} per run`,'--c1'],
+ [`Tokens per ${verified.length?'verified':'measured'} ticket`,M(A.tokens/perTicket),`${usd(A.cost/perTicket)} per ticket (${perTicket} tickets)`,'--c2'],
+ ['Wasted on rework',usd(wTot.cost),`${pct(wTot.cost,A.cost)} of spend · ${M(wTot.tokens)} tokens`,'--bad']]);
+
+// Token anatomy
+(function(){
+  const b=D.breakdown,parts=[['Cache read',b.cache_read||0,'var(--c2)'],['Cache write (5m)',b.cache_write_5m||0,'var(--c3)'],['Cache write (1h)',b.cache_write_1h||0,'var(--warn)'],['Output',b.output||0,'var(--c4)'],['Input (uncached)',b.input||0,'var(--c1)']];
+  const t=parts.reduce((a,p)=>a+p[1],0)||1;
+  $('tokStack').innerHTML=parts.map(([n,v,c])=>`<div title="${n}" style="width:${v/t*100}%;background:${c}">${v/t>.08?(v/t*100).toFixed(0)+'%':''}</div>`).join('');
+  $('tokTable').innerHTML=`<tr><th>Type</th><th class="num">tokens</th><th class="num">share</th></tr>`+parts.map(([n,v,c])=>`<tr><td><span style="color:${c}">■</span> ${n}</td><td class="num">${v.toLocaleString()}</td><td class="num">${(v/t*100).toFixed(1)}%</td></tr>`).join('');
+  $('tokNote').textContent=`Prompt caching makes ${(parts[0][1]/t*100).toFixed(0)}% of all tokens cheap cache reads. Output tokens are ${(parts[3][1]/t*100).toFixed(1)}% of volume.`;
+})();
+(function(){
+  const row=(n,x,c)=>x&&x.runs?`<tr><td><span style="color:${c}">■</span> ${esc(n)}</td><td class="num">${x.runs}</td><td class="num">${M(x.tokens)}</td><td class="num">${usd(x.cost)}</td><td class="num">${usd(x.cost/x.runs,3)}</td><td class="num">${hm(x.sec)}</td></tr>`:'';
+  const span=c=>{const r=allRuns.filter(x=>x[8]===c);return r.length?` (${clk(Math.min(...r.map(x=>x[0])))}–${clk(Math.max(...r.map(x=>x[0]+x[1]/60)))})`:''};
+  $('modelTable').innerHTML=`<tr><th></th><th class="num">runs</th><th class="num">tokens</th><th class="num">cost</th><th class="num">$/run</th><th class="num">agent time</th></tr>`+row('Opus',D.opus,'var(--opus)')+row('Sonnet',D.sonnet,'var(--sonnet)')+
+   `<tr><td colspan="6" style="color:var(--mut);font-size:11px;padding-top:10px">By agent CLI</td></tr>`+Object.entries(D.byCli).map(([c,x],i)=>row(c+span(c),x,CLIC[i%4])).join('');
+  $('modelNote').textContent=`Opus (orchestrator, implementer, PR-check critics/judge) is ${pct(D.opus.runs,A.runs)} of runs but ${pct(D.opus.cost,A.cost)} of spend. Sonnet does planning, test automation and verification.`;
+})();
+
+// Burn
+(function(){
+  const svg=$('burn'),W=700,H=240,L=44,R=44,Tp=12,B=24,t0=Math.floor((START-5)/15)*15,t1=Math.ceil((END+5)/15)*15;
+  const cs=A.cost>200?50:A.cost>60?10:A.cost>20?5:A.cost>8?2:1,maxC=Math.ceil(A.cost/cs)*cs||1;
+  const tt=A.tokens/1e6,ts=tt>200?50:tt>60?20:tt>20?5:tt>8?2:1,maxT=Math.ceil(tt/ts)*ts||1;
+  const x=t=>L+(t-t0)/(t1-t0)*(W-L-R),y=v=>Tp+(1-v/maxC)*(H-Tp-B),y2=v=>Tp+(1-v/maxT)*(H-Tp-B);
+  let s='';
+  D.bands.forEach(b=>{s+=`<rect x="${x(b.a)}" y="${Tp}" width="${x(b.b)-x(b.a)}" height="${H-Tp-B}" fill="${b.kind==='idle'?'color-mix(in srgb,var(--mut) 16%,transparent)':'color-mix(in srgb,var(--bad) 22%,transparent)'}"><title>${esc(b.label)}</title></rect>`+(x(b.b)-x(b.a)>40?`<text x="${(x(b.a)+x(b.b))/2}" y="${Tp+12}" text-anchor="middle">${b.kind==='idle'?'idle':'outage'}</text>`:'')});
+  for(let v=0;v<=maxC;v+=cs)s+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--bd)"/><text x="${L-5}" y="${y(v)+3}" text-anchor="end">$${v}</text>`;
+  for(let v=0;v<=maxT;v+=ts)s+=`<text x="${W-R+5}" y="${y2(v)+3}">${v}M</text>`;
+  const step=(t1-t0)>600?120:(t1-t0)>240?60:30;for(let t=Math.ceil(t0/step)*step;t<=t1;t+=step)s+=`<text x="${x(t)}" y="${H-7}" text-anchor="middle">${clk(t)}</text>`;
+  let o=0,so=0,tk=0;const pts=[[START,0,0,0]];
+  allRuns.map(r=>[r[0]+r[1]/60,r]).sort((a,b)=>a[0]-b[0]).forEach(([t,r])=>{if(r[3]==='opus')o+=r[6];else so+=r[6];tk+=r[7];pts.push([t,o,so,tk/1e6])});
+  const path=f=>pts.map((p,i)=>(i?`${x(p[0])},${y(f(pts[i-1]))} L`:'')+`${x(p[0])},${y(f(p))}`).join(' L');
+  const l=pts[pts.length-1];
+  s+=`<path d="M${x(START)},${y(0)} L${path(p=>p[1]+p[2])} L${x(l[0])},${y(0)}Z" fill="color-mix(in srgb,var(--opus) 70%,transparent)"/>`;
+  s+=`<path d="M${x(START)},${y(0)} L${path(p=>p[2])} L${x(l[0])},${y(0)}Z" fill="color-mix(in srgb,var(--sonnet) 80%,transparent)"/>`;
+  s+=`<path d="M${pts.map(p=>`${x(p[0])},${y2(p[3])}`).join(' L')}" fill="none" stroke="var(--c3)" stroke-width="2"/>`;
+  s+=`<text x="${x(l[0])-4}" y="${y(l[1]+l[2])-6}" text-anchor="end" style="fill:var(--fg);font-weight:700">${usd(l[1]+l[2])}</text>`;
+  s+=`<text x="${x(l[0])-4}" y="${y2(l[3])+14}" text-anchor="end" style="fill:var(--c3);font-weight:700">${l[3].toFixed(1)}M tokens</text>`;
+  svg.innerHTML=s;
+  $('burnLegend').innerHTML=`<span style="--c:var(--opus)">Opus $ (stacked)</span><span style="--c:var(--sonnet)">Sonnet $</span><span style="--c:var(--c3)">tokens (M, right axis)</span>`+[...new Map(D.bands.map(b=>[b.label,b.kind])).entries()].map(([lb,k])=>`<span style="--c:${k==='idle'?'color-mix(in srgb,var(--mut) 35%,transparent)':'color-mix(in srgb,var(--bad) 40%,transparent)'}">${esc(lb)}</span>`).join('');
+})();
+
+// Waste
+(function(){
+  const engSec=wTot.sec+OUTSEC;
+  $('wasteKpis').innerHTML=kp([
+   ['Tokens wasted',M(wTot.tokens),`${pct(wTot.tokens,A.tokens)} of all tokens`,'--c3'],
+   ['Cost wasted',usd(wTot.cost),`${pct(wTot.cost,A.cost)} of token spend · ${wTot.runs} runs`,'--bad'],
+   ['Engineering time wasted',hm(engSec),`<b data-eng="${engSec}"></b> at the hourly rate · rework${OUTSEC?` + ${hm(OUTSEC)} outage`:''}`,'--c4'],
+   ['Total cost of waste',`<span data-eng="${engSec}" data-add="${wTot.cost}"></span>`,`engineering time + ${usd(wTot.cost)} tokens`,'--warn']]);
+  const items=cats.filter(c=>c[2].cost>0),svg=$('waterfall'),W=700,H=200,L=10,B=34,Tp=14,n=items.length+2,gap=(W-L*2)/n,bw=gap*.66;
+  const y=v=>Tp+(1-v/A.cost)*(H-Tp-B);let s='',run=A.cost;
+  const bar=(i,top,bot,c,lbl,val)=>{const X=L+i*gap+(gap-bw)/2;s+=`<rect x="${X}" y="${y(top)}" width="${bw}" height="${Math.max(1.5,y(bot)-y(top))}" fill="${c}" rx="3"/><text x="${X+bw/2}" y="${y(top)-4}" text-anchor="middle" style="fill:var(--fg);font-weight:600">${val}</text>`;
+    lbl.split('|').forEach((t,j)=>s+=`<text x="${X+bw/2}" y="${H-B+13+j*11}" text-anchor="middle">${esc(t)}</text>`)};
+  bar(0,A.cost,0,'var(--c1)','Total|spend',usd(A.cost));
+  items.forEach((c,i)=>{bar(i+1,run,run-c[2].cost,c[3],c[1],'−'+usd(c[2].cost));run-=c[2].cost});
+  bar(n-1,run,0,'var(--ok)','Productive|spend',usd(run));
+  svg.innerHTML=s;
+  $('wasteTable').innerHTML=`<tr><th>Category</th><th class="num">runs</th><th class="num">tokens</th><th class="num">cost</th><th class="num">agent time</th><th class="num">eng. time $</th><th>model of wasted work</th></tr>`+
+   cats.map(([nm,,w,c,d,mdl])=>`<tr><td><b style="color:${c}">■</b> <b>${esc(nm)}</b><div class="sub" style="font-size:11px">${d}</div></td><td class="num">${w.runs}</td><td class="num">${M(w.tokens)}</td><td class="num">${usd(w.cost)}</td><td class="num">${hm(w.sec)}</td><td class="num" data-eng="${w.sec}"></td><td><span class="sub">${w.runs?mdl:'—'}</span></td></tr>`).join('')+
+   OUTB.map(b=>`<tr><td><b style="color:var(--mut)">■</b> <b>Outage stall</b><div class="sub" style="font-size:11px">${esc(b.label)}: no successful agent run from ${clk(b.a)} to ${clk(b.b)}. No tokens, but wall-clock engineering time.</div></td><td class="num">–</td><td class="num">0</td><td class="num">$0.00</td><td class="num">${hm((b.b-b.a)*60)}</td><td class="num" data-eng="${(b.b-b.a)*60}"></td><td><span class="sub">wall clock</span></td></tr>`).join('')+
+   `<tr><td><b>Total waste</b></td><td class="num">${wTot.runs}</td><td class="num">${M(wTot.tokens)}</td><td class="num"><b>${usd(wTot.cost)}</b></td><td class="num">${hm(engSec)}</td><td class="num"><b data-eng="${engSec}"></b></td><td></td></tr>`;
+  $('engCallout').innerHTML=engSec?`<b>Engineering view.</b> Every minute agents spend redoing rejected work, and every minute the pipeline stalls, is a minute the supervising engineer is held up. That is <b>${hm(engSec)}</b> = <b data-eng="${engSec}"></b> of engineering time at the hourly rate, <b id="engRatio" data-s="${engSec}" data-c="${wTot.cost}"></b> the ${usd(wTot.cost)} of wasted tokens. Lower-tier (Sonnet) rework alone holds up an engineer for ${hm(W4.sonnet.sec)} (<b data-eng="${W4.sonnet.sec}"></b>). Upper bound: some rework rounds ran in parallel across tickets.`:'<b>Engineering view.</b> No rework and no stalls: every stage passed its gate the first time.';
+  const sw=W4.sonnet,ow=W4.opus,per=(w)=>w.runs?w.cost/w.runs:0;
+  $('tierCallout').innerHTML=`<b>Lower → higher tier economics.</b> Sonnet rework cost <b>${usd(sw.cost)}</b> (${pct(sw.cost,D.sonnet.cost)} of all Sonnet spend, ${hm(sw.sec)} of agent time). Opus rework cost <b>${usd(ow.cost)}</b> for ${ow.runs} runs${per(ow)&&per(sw)?`: one Opus redo costs <b>${usd(per(ow))}</b> vs <b>${usd(per(sw))}</b> per Sonnet redo (${(per(ow)/per(sw)).toFixed(1)}×)`:''}. Average run: Sonnet ${usd(D.sonnet.runs?D.sonnet.cost/D.sonnet.runs:0,3)} vs Opus ${usd(D.opus.runs?D.opus.cost/D.opus.runs:0,3)}.`;
+  const sevC={blocking:'var(--bad)',major:'var(--warn)'};
+  $('escTable').innerHTML=D.prc.serious.length?`<tr><th>Severity</th><th>PR-check target</th><th>Opus critic lens</th><th>Finding</th></tr>`+D.prc.serious.map(f=>`<tr><td><span class="sev" style="background:${sevC[f.sev]}">${f.sev}</span></td><td>${esc(f.t)}</td><td>${esc(f.lens)}</td><td>${esc(f.title)}</td></tr>`).join(''):'';
+  const pc=D.byStage['pr-check'],bm=D.prc.sev.blocking+D.prc.sev.major;
+  $('escNote').innerHTML=pc&&D.prc.rounds?`The Opus critic panel ran ${D.prc.rounds} PR checks: ${D.prc.raised} findings raised, <b>${D.prc.upheld} upheld</b> (${D.prc.sev.blocking} blocking, ${D.prc.sev.major} major, ${D.prc.sev.minor} minor), every one of them after the Sonnet QE/code verifiers had already passed the ticket. The panel cost <b>${usd(pc.cost)}</b> (${M(pc.tokens)} tokens, ${pc.runs} runs)${D.prc.upheld?`: <b>${usd(pc.cost/D.prc.upheld)}</b> per upheld finding`:''}${bm?`, <b>${usd(pc.cost/bm)}</b> per blocking/major one`:''}.`:'No PR check has run for this epic yet.';
+  updEng();
+})();
+
+// Tickets
+(function(){
+  const mx=Math.max(...measured.map(s=>s.all.cost));
+  $('ticketTable').innerHTML=`<tr><th>Ticket</th><th>Status</th><th class="num">runs</th><th class="num">tokens</th><th>cost (opus | sonnet)</th><th class="num">$</th><th class="num">agent time</th><th class="num">rejections</th><th>CLI</th></tr>`+
+   measured.map(s=>{const r=rejOf(s);return `<tr><td><b>${s.k}</b><div class="sub" style="font-size:11px;max-width:260px">${esc(s.title)}</div></td><td><span class="pill">${s.status}</span></td><td class="num">${s.all.runs}</td><td class="num">${M(s.all.tokens)}</td><td style="width:22%"><div style="display:flex;height:9px;border-radius:4px;overflow:hidden;width:${s.all.cost/mx*100}%"><div style="flex:${s.opus.cost};background:var(--opus)"></div><div style="flex:${s.sonnet.cost};background:var(--sonnet)"></div></div></td><td class="num">${usd(s.all.cost)}</td><td class="num">${hm(s.all.sec)}</td><td class="num" style="color:${r>1?'var(--bad)':r?'var(--warn)':'var(--ok)'}">${r}</td><td><span class="pill">${Object.keys(s.cli).join('+')}</span></td></tr>`}).join('')+
+   D.stories.filter(s=>!s.all).map(s=>`<tr><td><b>${s.k}</b><div class="sub" style="font-size:11px;max-width:260px">${esc(s.title)}</div></td><td><span class="pill">${s.status}</span></td><td colspan="7" class="sub">${esc(s.note)}</td></tr>`).join('');
+  $('ticketNote').textContent=`Rejections = verifier rounds that did not pass (QE plan, QE automation, pair code/UI verifier). Tickets with two CLIs were interrupted by an outage and finished on the other CLI (${D.switchLabel}).`;
+})();
+
+// Heal: a story that failed or lost its CLI and still finished without human help.
+(function(){
+  const heals=measured.map(s=>{
+    const clis=Object.keys(s.cli),fails=s.runs.filter(r=>!r[4]);if(clis.length<2&&!fails.length)return null;
+    const lastCli=s.runs.reduce((a,r)=>r[0]>a[0]?r:a)[8];
+    const pivot=clis.length>1?Math.min(...s.runs.filter(r=>r[8]===lastCli).map(r=>r[0])):Math.max(...fails.map(r=>r[0]));
+    const hr=s.runs.filter(r=>r[0]>=pivot&&r[4]);
+    return {k:s.k,ok:s.status==='verified',cost:hr.reduce((a,r)=>a+r[6],0),tokens:hr.reduce((a,r)=>a+r[7],0),sec:hr.reduce((a,r)=>a+r[1],0),runs:hr.length,lost:s.waste.switch.cost+s.waste.failed.cost,cli:lastCli};
+  }).filter(Boolean),ok=heals.filter(h=>h.ok),n=ok.length,sum=k=>ok.reduce((a,h)=>a+h[k],0);
+  $('heal').innerHTML=n?kp([
+   ['Cost per successful heal',usd(sum('cost')/n),ok.slice(0,4).map(h=>`${h.k} ${usd(h.cost)}`).join(' · ')+(n>4?` · +${n-4} more`:''),'--c2'],
+   ['Tokens per successful heal',M(sum('tokens')/n),`${sum('runs')} runs after the pivot · ${n} heal${n>1?'s':''}`,'--c3'],
+   ['Agent time per heal',hm(sum('sec')/n),'pivot → QE verified','--c4'],
+   ['Spent before the failure',usd(heals.reduce((a,h)=>a+h.lost,0)),`work lost or redone on ${heals.length} ticket${heals.length>1?'s':''}`,'--bad']]):`<div class="sub">${heals.length?`${heals.length} ticket(s) failed or switched CLI but none is verified yet.`:'No heals needed: every ticket succeeded on its first CLI.'}</div>`;
+  $('healNote').textContent=`A "heal" = a ticket whose agent run failed, or whose CLI stopped answering, that the pipeline then finished and QE verified without human help${n?` (${ok.map(h=>h.k).join(', ')})`:''}. Cost counts the successful runs from the pivot (first run on the new CLI, or the last failure) onward.`;
+})();
+
+hero();
+$('foot').innerHTML=`Sources: <code>.agent-metrics/{token-usage,verifier-runs,verifier-denials,subtask-runs,pr-checks,precheck-failures}.jsonl</code> from ${D.sources.length} branch${D.sources.length===1?'':'es'} (${D.sources.map(b=>`<code>${esc(b)}</code>`).join(', ')}), de-duplicated by run id: ${A.runs} runs, ${D.first}–${D.last} ${D.tz} on ${D.date}; ${verified.length} of ${D.stories.length} tickets verified by QE. Costs are the <code>cost_usd</code> the pipeline logs per run. Human cost = pipeline run hours (first run → last telemetry) × rate. Idle = gaps of ${D.idleGapMin??30}+ minutes with no successful run; outage = such a gap after which the agent CLI changed. Generated ${D.generated} ${D.tz} by <code>pipeline dashboard</code>.`;
+</script>
+</body>
+</html>

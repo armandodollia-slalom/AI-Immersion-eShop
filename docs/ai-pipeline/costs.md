@@ -17,6 +17,54 @@ Each row shows the runs, input tokens (uncached), output tokens, cache reads, ca
 
 The notes under a report list the runs that reported no usage (timed out, crashed, or a custom agent command that wrote none), the tokens on models that have no price, and a reconciliation against the cost the agent CLI itself reported for the same runs (Claude Code reports one).
 
+## Dashboards
+
+`pipeline dashboard` turns the same records into two self-contained HTML pages: an **epic** dashboard (one page for the whole run) and a **story** dashboard (pick a story and see its runs). Both show:
+
+- **Total cost of the run:** agent token cost plus human cost. Human cost is pipeline run hours × the hourly rate ($220 by default). A slider changes the rate, and a toggle switches between wall-clock hours and hours with idle time excluded.
+- Tokens by type and the split by model and agent CLI.
+- A cumulative spend-and-tokens chart, with idle and outage bands.
+- **Waste from model hand-offs and rework**, with the engineering time lost at the hourly rate. Waste falls into four kinds:
+  - Sonnet rework rounds
+  - Opus rework rounds
+  - stages redone on another CLI after an outage
+  - failed or timed-out runs
+- What the Opus PR check caught after the Sonnet gates passed.
+- Per-ticket cost and rework.
+- **Cost per successful heal**: the cost, tokens and agent time to recover a ticket after the first CLI stopped answering.
+
+```bash
+node scripts/pipeline/pipeline.mjs dashboard --epic teststack-bug-findings             # both pages for an epic
+node scripts/pipeline/pipeline.mjs dashboard BUG-7 BUG-11                               # just these stories
+node scripts/pipeline/pipeline.mjs dashboard --epic teststack-bug-findings --publish    # and push them to GitHub Pages
+node scripts/pipeline/pipeline.mjs dashboard --epic <epic> --refs origin/a,origin/b --rate 180 --out <dir> --json
+```
+
+**Where the metrics come from**
+- `.agent-metrics/*.jsonl` is read from the checkout and from every branch of the epic (`bugfix/<epic>/*`, `epic/<epic>`), or from the branches you pass with `--refs`.
+- Records that appear on several branches are counted once.
+
+**Where the pages go**
+- Output is written to `artifacts/dashboards/<epic>/{epic,story}/index.html`, each with its `data.json`. The folder is gitignored.
+- The code lives in two places:
+  - The generator: `scripts/pipeline/lib/dashboard.mjs`.
+  - The templates: `scripts/pipeline/dashboard/{epic,story}.html`. Each template has a `/*__DATA__*/` placeholder that the generator fills.
+
+**Settings**
+
+They live in the `dashboard` block of `scripts/pipeline/config.json`:
+
+| Key | Meaning |
+| --- | --- |
+| `rate` | Human hourly rate (default 220). |
+| `timeZone`, `tzLabel` | Clock used on the charts. |
+| `idleGapMin` | A gap of this many minutes with no successful run becomes a band. If the agent CLI changed after the gap, the band is an outage; otherwise it is idle. |
+| `out` | Output folder. |
+| `afterRun` | Rebuild the pages when `implement run` finishes. On by default; a failure only logs. |
+| `publishAfterRun` | Also publish them after the run. |
+| `pages` | GitHub Pages repos per epic (`"*"` for any epic; `{slug}` is substituted). `--publish` pushes `index.html` and `data.json` to each repo's `main` branch and creates the repo with Pages enabled the first time. |
+| `runLog` | Optional header link per epic, for example the run-log PR. |
+
 ## Where the data lives
 
 `.agent-metrics/token-usage.jsonl`, committed with the story's other metrics. `merge=union` keeps every record across branches. There is one row per model per agent run:

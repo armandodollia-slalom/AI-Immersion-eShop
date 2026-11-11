@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Factory · Story-level dashboard</title>
+<style>
+:root{--fg:#e6e8ee;--mut:#8b93a7;--cd:#161a23;--cd2:#1c2130;--bd:#2a3040;--c1:#60a5fa;--c2:#34d399;--c3:#fbbf24;--c4:#f472b6;--c5:#a78bfa;--bad:#f87171;--ok:#4ade80;--warn:#f59e0b;--r:10px;--mono:ui-monospace,Menlo,Consolas,monospace;--opus:#a78bfa;--sonnet:#60a5fa}
+*{box-sizing:border-box}
+html{background:#0d1017;color-scheme:dark}
+body{margin:0;background:#0d1017;padding:16px 12px 28px;color:var(--fg);font-family:system-ui,"Segoe UI",sans-serif;font-size:13px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px}
+h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);margin:0 0 10px;font-weight:600}
+h3{font-size:16px;margin:0}
+.sub{color:var(--mut);font-size:12px}
+a{color:var(--c1)}
+code{font-family:var(--mono);font-size:11px}
+.box{background:var(--cd);border:1px solid var(--bd);border-radius:var(--r);padding:16px;margin-top:12px}
+.grid{display:grid;gap:10px}
+.k6{grid-template-columns:repeat(6,1fr)}.k4{grid-template-columns:repeat(4,1fr)}.two{grid-template-columns:1fr 1fr}
+@media(max-width:900px){.k6{grid-template-columns:repeat(3,1fr)}.two{grid-template-columns:1fr}}
+@media(max-width:560px){.k6,.k4{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--cd2);border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px;position:relative;overflow:hidden}
+.kpi b{display:block;font-size:19px;font-variant-numeric:tabular-nums;margin:2px 0}
+.kpi span{color:var(--mut);font-size:11px}
+.kpi i{position:absolute;left:0;top:0;bottom:0;width:3px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+label{font-size:11px;color:var(--mut)}
+input[type=range]{width:160px;accent-color:var(--c4);vertical-align:middle}
+.seg{display:inline-flex;border:1px solid var(--bd);border-radius:99px;overflow:hidden}
+.seg button{background:none;border:0;color:var(--mut);font:inherit;font-size:11px;padding:3px 10px;cursor:pointer}
+.seg button.on{background:var(--c4);color:#0b0d12;font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.tile{background:var(--cd2);border:1px solid var(--bd);border-radius:8px;padding:8px 9px;cursor:pointer;position:relative;transition:transform .12s,border-color .12s}
+.tile:hover{transform:translateY(-2px);border-color:var(--c1)}
+.tile.sel{border-color:var(--c4);box-shadow:0 0 0 1px var(--c4)}
+.tile .id{font-weight:700;font-size:13px}
+.tile .v{font-family:var(--mono);font-size:11px;color:var(--fg);margin-top:3px}
+.tile .s{font-size:10px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .dot{position:absolute;top:9px;right:9px;width:8px;height:8px;border-radius:50%}
+.tile .bar{height:4px;border-radius:2px;margin-top:6px;display:flex;overflow:hidden;background:var(--bd)}
+.tile.all{background:linear-gradient(135deg,#1f2440,#2a1d36)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:5px 6px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:11px;white-space:nowrap}
+th.s{cursor:pointer;user-select:none}th.s:hover{color:var(--fg)}
+.num{text-align:right;font-family:var(--mono);white-space:nowrap}
+tr.click{cursor:pointer}tr.click:hover td{background:#1f2533}
+.pill{font-size:10px;padding:1px 8px;border-radius:99px;border:1px solid var(--bd);color:var(--mut);white-space:nowrap;display:inline-block}
+.st{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:#0b0d12;white-space:nowrap}
+.sev{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;color:#0b0d12;white-space:nowrap}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--mut);margin-top:8px}
+.legend span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c);vertical-align:-1px}
+svg text{fill:var(--mut);font-size:10px;font-family:system-ui,"Segoe UI",sans-serif}
+.note{font-size:11px;color:var(--mut);margin-top:8px;line-height:1.45}
+.stack{display:flex;height:20px;border-radius:6px;overflow:hidden;margin:6px 0}
+.stack div{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0b0d12;white-space:nowrap;overflow:hidden}
+.callout{border-left:3px solid var(--c);padding:8px 10px;margin:8px 0;background:color-mix(in srgb,var(--c) 9%,transparent);border-radius:0 6px 6px 0;font-size:12px;line-height:1.45}
+.chain{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.chip{font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid var(--bd);background:var(--cd2);font-family:var(--mono)}
+.chip.ok{border-color:color-mix(in srgb,var(--ok) 60%,transparent);color:var(--ok)}
+.chip.no{border-color:color-mix(in srgb,var(--bad) 60%,transparent);color:var(--bad)}
+.arrow{color:var(--mut);font-size:11px}
+.lens{display:grid;grid-template-columns:80px 1fr 24px;gap:6px;align-items:center;font-size:11px;margin:3px 0}
+.lens .t{height:7px;border-radius:4px;background:var(--bd);overflow:hidden}.lens .t div{height:100%}
+.detail{font-size:11px;color:var(--mut);line-height:1.4}
+.empty{color:var(--mut);font-size:12px;padding:6px 0}
+.hero{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:center;text-align:center}
+.hero .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.hero .op{font-size:22px;color:var(--mut)}
+@media(max-width:640px){.hero{grid-template-columns:1fr}.hero .op{display:none}}
+#tip{position:fixed;pointer-events:none;background:#0b0d12;border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font-size:11px;display:none;z-index:9;max-width:280px;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="row">
+  <div>
+    <h1 id="title"></h1>
+    <div class="sub" id="subline"></div>
+  </div>
+  <div class="row" style="gap:12px">
+    <label>Rate <b id="rateLbl" style="color:var(--fg)"></b> <input type="range" id="rate" min="10" max="400" step="10" value="220"></label>
+    <div class="seg" id="hrsMode"><button data-m="wall" class="on">Wall-clock</button><button data-m="active">Exclude idle time</button></div>
+  </div>
+</div>
+
+<div class="box">
+  <div class="row"><h2 style="margin:0">Pick a story</h2><div class="legend" style="margin:0"><span style="--c:var(--ok)">verified by QE</span><span style="--c:var(--c3)">in QE</span><span style="--c:var(--mut)">blocked / not started</span></div></div>
+  <div class="tiles" id="tiles" style="margin-top:10px"></div>
+</div>
+
+<div id="view"></div>
+
+<div class="note" style="margin-top:14px" id="foot"></div>
+</div>
+<div id="tip"></div>
+
+<script>
+const D=/*__DATA__*/;
+const $=id=>document.getElementById(id);
+const usd=(v,d=2)=>'$'+(v||0).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const M=v=>v>=1e6?(v/1e6).toFixed(v>=1e7?1:2)+'M':v>=1e3?(v/1e3).toFixed(0)+'k':String(v||0);
+const hm=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${m}m`:`${m}m`};
+const clk=m=>{m=Math.round(m);return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const IDLE=D.bands.filter(b=>b.kind==='idle'),BANDC={idle:'#3a3f4d',outage:'#4a2a30'};
+const overlap=(a,b,s,e)=>Math.max(0,Math.min(b,e)-Math.max(a,s));
+const num=k=>+String(k).split('-').pop()||0;
+const issueLink=s=>s.issue&&D.repoUrl?`issue <a target="_blank" href="${D.repoUrl}/issues/${s.issue}">#${s.issue}</a>`:'';
+const bandLegend=()=>[...new Map(D.bands.map(b=>[b.label,b.kind])).entries()].map(([l,k])=>`<span style="--c:${BANDC[k]}">${esc(l)}</span>`).join('');
+function bands(x,t0,t1,top,h){let g='';D.bands.forEach(b=>{if(b.b>t0&&b.a<t1){const A=Math.max(b.a,t0),Z=Math.min(b.b,t1);g+=`<rect x="${x(A)}" y="${top}" width="${x(Z)-x(A)}" height="${h}" fill="${BANDC[b.kind]}" opacity=".7"><title>${esc(b.label)}</title></rect>`+(x(Z)-x(A)>50?`<text x="${(x(A)+x(Z))/2}" y="${top+12}" text-anchor="middle" style="fill:var(--fg)">${b.kind==='idle'?'idle':'outage'}</text>`:'')}});return g}
+const STC={verified:'var(--ok)','in-qe':'var(--c3)',implementing:'var(--c1)',blocked:'var(--mut)'};
+const STL={verified:'Verified by QE','in-qe':'In QE',implementing:'Implementing',blocked:'Blocked'};
+const STAGES=['plan','plan-verify','implement','implement-pair','implement-verify','review','automation','automation-verify','pr-check'];
+const SC={plan:'#38bdf8','plan-verify':'#7dd3fc',implement:'#a78bfa','implement-pair':'#c4b5fd','implement-verify':'#ddd6fe',review:'#fbbf24',automation:'#34d399','automation-verify':'#6ee7b7','pr-check':'#f472b6'};
+let rate=D.rate||220,mode='wall',sel=location.hash.slice(1)||'ALL',sortK='cost',sortD=-1;
+const tip=$('tip');
+document.addEventListener('mousemove',e=>{tip.style.left=Math.min(e.clientX+14,innerWidth-300)+'px';tip.style.top=(e.clientY+14)+'px'});
+function showTip(h){tip.innerHTML=h;tip.style.display='block'}function hideTip(){tip.style.display='none'}
+
+// derived metrics per story
+function calc(s){
+  if(!s.all)return null;
+  let min=s.end-s.start;
+  if(mode==='active')min-=IDLE.reduce((a,b)=>a+overlap(b.a,b.b,s.start,s.end),0);
+  const w=s.waste,wsec=w.sonnet.sec+w.opus.sec+w.switch.sec+w.failed.sec,wcost=w.sonnet.cost+w.opus.cost+w.switch.cost+w.failed.cost,wtok=w.sonnet.tokens+w.opus.tokens+w.switch.tokens+w.failed.tokens;
+  const hrs=min/60,human=hrs*rate,eng=wsec/3600*rate;
+  const rej=s.verifiers.filter(v=>!v.passed).length+s.subtasks.reduce((a,x)=>a+x.rounds.filter(r=>r.verdict!=='APPROVED').length,0);
+  const pcs=s.prcheck.length?s.prcheck[s.prcheck.length-1].score:null;
+  return {hrs,human,total:human+s.all.cost,wsec,wcost,wtok,eng,rej,pcs,rework:s.runs.filter(r=>r[5]>1).length};
+}
+
+function tiles(){
+  const mx=Math.max(...D.stories.filter(s=>s.all).map(s=>s.all.cost));
+  $('tiles').innerHTML=`<div class="tile all ${sel==='ALL'?'sel':''}" data-k="ALL"><div class="id">All stories</div><div class="v">${usd(D.total.cost)}</div><div class="s">${D.stories.filter(s=>s.all).length} measured · overview</div><div class="bar"><div style="width:${D.opus.cost/D.total.cost*100}%;background:var(--opus)"></div><div style="flex:1;background:var(--sonnet)"></div></div></div>`+
+  D.stories.map(s=>{const c=calc(s);return `<div class="tile ${sel===s.k?'sel':''}" data-k="${s.k}" title="${esc(s.title)}"><span class="dot" style="background:${STC[s.status]}"></span><div class="id">${s.k}</div>
+   <div class="v">${s.all?usd(s.all.cost)+' · '+M(s.all.tokens):'—'}</div><div class="s">${s.all?usd(c.human,0)+' human · '+c.rej+' rej':esc(s.svc)}</div>
+   <div class="bar">${s.all?`<div style="width:${s.opus.cost/mx*100}%;background:var(--opus)"></div><div style="width:${s.sonnet.cost/mx*100}%;background:var(--sonnet)"></div>`:''}</div></div>`}).join('');
+  $('tiles').querySelectorAll('.tile').forEach(t=>t.onclick=()=>{location.hash=t.dataset.k});
+}
+
+function overview(){
+  const ms=D.stories.filter(s=>s.all).map(s=>({s,c:calc(s)}));
+  const sum=k=>ms.reduce((a,x)=>a+k(x),0);
+  const humanSum=sum(x=>x.c.human),wcost=sum(x=>x.c.wcost),eng=sum(x=>x.c.eng),wtok=sum(x=>x.c.wtok);
+  const key={k:x=>num(x.s.k),tokens:x=>x.s.all.tokens,cost:x=>x.s.all.cost,hrs:x=>x.c.hrs,human:x=>x.c.human,total:x=>x.c.total,waste:x=>x.c.wcost,eng:x=>x.c.eng,rej:x=>x.c.rej,pcs:x=>x.c.pcs??-1,runs:x=>x.s.all.runs};
+  ms.sort((a,b)=>(key[sortK](a)-key[sortK](b))*sortD);
+  const mx=Math.max(...ms.map(x=>x.s.all.cost));
+  const th=(k,l,n)=>`<th class="s ${n?'num':''}" data-s="${k}">${l}${sortK===k?(sortD>0?' ▲':' ▼'):''}</th>`;
+  $('view').innerHTML=`
+  <div class="grid k6" style="margin-top:12px">${[
+   ['Stories measured',`${ms.length} / ${D.stories.length}`,`${D.stories.filter(s=>s.status==='verified').length} verified by QE · ${D.stories.filter(s=>s.status==='blocked').length} blocked`,'--ok'],
+   ['Agent tokens',M(D.total.tokens),`${D.total.runs} runs`,'--c3'],
+   ['Agent token cost',usd(D.total.cost),`${usd(D.total.cost/ms.length)} per story`,'--c1'],
+   ['Human cost (story hours)',usd(humanSum,0),`${sum(x=>x.c.hrs).toFixed(1)} story-hours × ${usd(rate,0)}`,'--c4'],
+   ['Waste (tokens)',usd(wcost),`${M(wtok)} tokens redone`,'--bad'],
+   ['Waste (engineering)',usd(eng,0),`${hm(sum(x=>x.c.wsec))} of rework time`,'--warn'],
+  ].map(([l,v,s,c])=>`<div class="kpi"><i style="background:var(${c})"></i><span>${l}</span><b>${v}</b><span>${s}</span></div>`).join('')}</div>
+
+  <div class="box">
+    <h2>Story map: token cost vs story hours (bubble = tokens, ring = rework rounds)</h2>
+    <svg id="scatter" viewBox="0 0 760 300" width="100%"></svg>
+    <div class="note">Click a bubble to open the story. Stories ran in parallel, so story-hours add up to more than the ${hm((D.endMin-D.startMin)*60)} run; human cost here is per story, as if one engineer owned each bug for its whole time in the pipeline.</div>
+  </div>
+
+  <div class="box">
+    <h2>All stories (click a column to sort, a row to open)</h2>
+    <div style="overflow-x:auto"><table id="ov"><tr>${th('k','Story')}<th>Status</th><th>Group PR</th>${th('runs','runs',1)}${th('tokens','tokens',1)}<th style="min-width:130px">token cost (opus | sonnet)</th>${th('cost','$',1)}${th('hrs','story h',1)}${th('human','human $',1)}${th('total','total $',1)}${th('waste','waste $',1)}${th('eng','eng. waste $',1)}${th('rej','rejections',1)}${th('pcs','PR-check',1)}</tr>
+    ${ms.map(({s,c})=>`<tr class="click" data-k="${s.k}"><td><b>${s.k}</b><div class="detail" style="max-width:240px">${esc(s.title)}</div></td><td><span class="st" style="background:${STC[s.status]}">${STL[s.status]}</span></td><td>${s.pr?'#'+s.pr:''}</td>
+     <td class="num">${s.all.runs}</td><td class="num">${M(s.all.tokens)}</td><td><div style="display:flex;height:9px;border-radius:4px;overflow:hidden;width:${s.all.cost/mx*100}%"><div style="flex:${s.opus.cost};background:var(--opus)"></div><div style="flex:${s.sonnet.cost};background:var(--sonnet)"></div></div></td>
+     <td class="num">${usd(s.all.cost)}</td><td class="num">${c.hrs.toFixed(2)}</td><td class="num">${usd(c.human,0)}</td><td class="num"><b>${usd(c.total,0)}</b></td><td class="num" style="color:${c.wcost>1?'var(--bad)':'inherit'}">${usd(c.wcost)}</td><td class="num">${usd(c.eng,0)}</td>
+     <td class="num" style="color:${c.rej>3?'var(--bad)':c.rej?'var(--warn)':'var(--ok)'}">${c.rej}</td><td class="num">${c.pcs==null?'<span class="sub">—</span>':`<span style="color:${c.pcs>=9?'var(--ok)':c.pcs>=7?'var(--warn)':'var(--bad)'}">${c.pcs}/10</span>`}</td></tr>`).join('')}
+    ${D.stories.filter(s=>!s.all).map(s=>`<tr class="click" data-k="${s.k}"><td><b>${s.k}</b><div class="detail">${esc(s.title)}</div></td><td><span class="st" style="background:${STC[s.status]}">${STL[s.status]}</span></td><td colspan="12" class="detail">${esc(s.note)}</td></tr>`).join('')}
+    </table></div>
+  </div>`;
+  $('ov').querySelectorAll('th.s').forEach(t=>t.onclick=()=>{const k=t.dataset.s;sortD=sortK===k?-sortD:-1;sortK=k;overview()});
+  $('ov').querySelectorAll('tr.click').forEach(t=>t.onclick=()=>{location.hash=t.dataset.k});
+  // scatter
+  const W=760,H=300,L=46,R=16,T=14,B=30,mxH=Math.max(1,Math.ceil(Math.max(...ms.map(x=>x.c.hrs)))),cs=Math.max(1,Math.ceil(mx/8)),mxC=Math.ceil(mx/cs)*cs,hs=Math.max(1,Math.ceil(mxH/10)),mxT=Math.max(...ms.map(x=>x.s.all.tokens));
+  const x=v=>L+v/mxH*(W-L-R),y=v=>T+(1-v/mxC)*(H-T-B);let g='';
+  for(let v=0;v<=mxC;v+=cs)g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--bd)"/><text x="${L-6}" y="${y(v)+3}" text-anchor="end">$${v}</text>`;
+  for(let v=0;v<=mxH;v+=hs)g+=`<text x="${x(v)}" y="${H-12}" text-anchor="middle">${v}h</text>`;
+  g+=`<text x="${W-R}" y="${H-1}" text-anchor="end">story hours in the pipeline (first run → last run)</text>`;
+  ms.slice().sort((a,b)=>b.s.all.tokens-a.s.all.tokens).forEach(({s,c})=>{const r=6+Math.sqrt(s.all.tokens/mxT)*18;
+   g+=`<g class="bub" data-k="${s.k}" style="cursor:pointer"><circle cx="${x(c.hrs)}" cy="${y(s.all.cost)}" r="${r}" fill="color-mix(in srgb,${s.opus.cost>s.sonnet.cost?'var(--opus)':'var(--sonnet)'} 55%,transparent)" stroke="${c.rework?'var(--bad)':'var(--bd)'}" stroke-width="${Math.min(1+c.rework*.7,5)}"/><text x="${x(c.hrs)}" y="${y(s.all.cost)+3}" text-anchor="middle" style="fill:var(--fg);font-weight:700">${num(s.k)}</text></g>`});
+  $('scatter').innerHTML=g;
+  $('scatter').querySelectorAll('.bub').forEach(b=>{const s=D.stories.find(z=>z.k===b.dataset.k),c=calc(s);
+   b.onmouseenter=()=>showTip(`<b>${s.k}</b> ${esc(s.title)}<br>${usd(s.all.cost)} tokens · ${M(s.all.tokens)} · ${c.hrs.toFixed(2)} h<br>human ${usd(c.human,0)} · waste ${usd(c.wcost)} + ${usd(c.eng,0)} eng · ${c.rework} rework runs`);b.onmouseleave=hideTip;b.onclick=()=>{hideTip();location.hash=s.k}});
+}
+
+function story(s){
+  if(!s.all){
+    $('view').innerHTML=`<div class="box"><div class="row"><div><h3>${s.k} · ${esc(s.title)}</h3><div class="sub">${[esc(s.svc),issueLink(s)].filter(Boolean).join(' · ')}</div></div><span class="st" style="background:${STC[s.status]}">${STL[s.status]}</span></div>
+    <div class="callout" style="--c:var(--mut);margin-top:12px"><b>No agent runs yet.</b> ${esc(s.note)}. No tokens were spent and no telemetry exists for this story in the pushed branches.</div></div>`;return;
+  }
+  const c=calc(s),w=s.waste,A=s.all,kp=(a)=>a.map(([l,v,t,cc])=>`<div class="kpi"><i style="background:var(${cc})"></i><span>${l}</span><b>${v}</b><span>${t}</span></div>`).join('');
+  const head=`<div class="box"><div class="row"><div><h3>${s.k} · ${esc(s.title)}</h3>
+   <div class="sub">${[esc(s.svc),issueLink(s),s.branch?`branch <code>${esc(s.branch)}</code>`:'',s.pr?`PR <a target="_blank" href="${s.prUrl}">#${s.pr}</a>`:'no PR yet',`in pipeline ${clk(s.start)}–${clk(s.end)} ${D.tz}`].filter(Boolean).join(' · ')}</div></div>
+   <span class="st" style="background:${STC[s.status]}">${STL[s.status]}</span></div></div>`;
+  const hp=c.human/c.total*100;
+  const hero=`<div class="box"><h2>Total cost of ${s.k} = agent tokens + human time</h2>
+   <div class="hero"><div><div class="sub">Human cost (story hours × rate)</div><div class="big" style="color:var(--c4)">${usd(c.human,0)}</div><div class="sub">${c.hrs.toFixed(2)} h (${clk(s.start)}→${clk(s.end)}${mode==='wall'?'':', minus idle time'}) × ${usd(rate,0)}</div></div>
+   <div class="op">+</div><div><div class="sub">Agent token cost (measured)</div><div class="big" style="color:var(--c1)">${usd(A.cost)}</div><div class="sub">${M(A.tokens)} tokens · ${A.runs} runs</div></div>
+   <div class="op">=</div><div><div class="sub">Total cost incurred</div><div class="big">${usd(c.total,0)}</div><div class="sub">${s.status==='verified'?'story verified by QE':STL[s.status]}</div></div></div>
+   <div class="stack" style="height:26px;margin-top:14px"><div style="width:${hp}%;background:var(--c4)">Human ${hp.toFixed(1)}%</div><div style="width:${100-hp}%;background:var(--c1)">${(100-hp).toFixed(1)}%</div></div>
+   <div class="note">Human time is <b>${(c.human/A.cost).toFixed(0)}×</b> this story's token bill. Agents did <b>${hm(A.sec)}</b> of compute for it, at <b>${usd(A.cost/A.tokens*1e6)}</b> per 1M tokens.</div></div>`;
+  const kpis=`<div class="grid k4" style="margin-top:12px">${kp([
+   ['Total tokens',M(A.tokens),`${A.runs} agent runs · ${hm(A.sec)} agent time`,'--c3'],
+   ['Total token cost',usd(A.cost),`${usd(A.cost/A.runs,3)} per run`,'--c1'],
+   ['Rework runs',String(c.rework),`${c.rej} verifier rejections`,'--warn'],
+   ['Wasted on rework',usd(c.wcost),`${(c.wcost/A.cost*100).toFixed(1)}% of spend · ${M(c.wtok)} tokens`,'--bad']])}</div>`;
+  const b=s.bd||{},parts=[['Cache read',b.cache_read||0,'var(--c2)'],['Cache write (5m)',b.cache_write_5m||0,'var(--c3)'],['Cache write (1h)',b.cache_write_1h||0,'var(--warn)'],['Output',b.output||0,'var(--c4)'],['Input (uncached)',b.input||0,'var(--c1)']],pt=parts.reduce((a,p)=>a+p[1],0)||1;
+  const row=(n,x,cc)=>x&&x.runs?`<tr><td><span style="color:${cc}">■</span> ${n}</td><td class="num">${x.runs}</td><td class="num">${M(x.tokens)}</td><td class="num">${usd(x.cost)}</td><td class="num">${usd(x.cost/x.runs,3)}</td><td class="num">${hm(x.sec)}</td></tr>`:'';
+  const tokens=`<div class="grid two"><div class="box"><h2>Where the tokens go</h2><div class="stack" style="height:26px">${parts.map(([n,v,cc])=>`<div title="${n}" style="width:${v/pt*100}%;background:${cc}">${v/pt>.08?(v/pt*100).toFixed(0)+'%':''}</div>`).join('')}</div>
+   <table><tr><th>Type</th><th class="num">tokens</th><th class="num">share</th></tr>${parts.map(([n,v,cc])=>`<tr><td><span style="color:${cc}">■</span> ${n}</td><td class="num">${v.toLocaleString()}</td><td class="num">${(v/pt*100).toFixed(1)}%</td></tr>`).join('')}</table></div>
+   <div class="box"><h2>Model &amp; CLI split</h2><table><tr><th></th><th class="num">runs</th><th class="num">tokens</th><th class="num">cost</th><th class="num">$/run</th><th class="num">agent time</th></tr>${row('Opus',s.opus,'var(--opus)')}${row('Sonnet',s.sonnet,'var(--sonnet)')}
+   <tr><td colspan="6" class="sub" style="padding-top:10px">By agent CLI</td></tr>${Object.entries(s.cli).map(([k,v],i)=>row(k,v,['var(--c3)','var(--c2)','var(--c1)','var(--warn)'][i%4])).join('')}</table>
+   <div class="stack" style="margin-top:12px">${STAGES.filter(k=>s.stages[k]).map(k=>`<div title="${k} ${usd(s.stages[k].cost)}" style="width:${s.stages[k].cost/A.cost*100}%;background:${SC[k]}">${s.stages[k].cost/A.cost>.12?k:''}</div>`).join('')}</div>
+   <div class="legend" style="margin-top:2px">${STAGES.filter(k=>s.stages[k]).map(k=>`<span style="--c:${SC[k]}">${k} ${usd(s.stages[k].cost)}</span>`).join('')}</div></div></div>`;
+  const burn=`<div class="box"><h2>Cumulative spend by model &amp; tokens over the story</h2><svg id="burn" width="100%"></svg>
+   <div class="legend"><span style="--c:var(--opus)">Opus $ (stacked)</span><span style="--c:var(--sonnet)">Sonnet $</span><span style="--c:var(--c3)">tokens (M, right axis)</span>${bandLegend()}</div></div>`;
+  const gantt=`<div class="box"><h2>Run timeline (each bar is one agent run; purple = Opus, blue = Sonnet, hatched = rework round, red = failed)</h2><svg id="gantt" width="100%"></svg></div>`;
+  const engSec=c.wsec,tw=c.wcost+c.eng;
+  const cats=[['Sonnet work redone','Sonnet|rework',w.sonnet,'var(--sonnet)','QE plan, QE automation or pair rounds redone after a verifier rejection'],['Opus work redone','Opus|rework',w.opus,'var(--opus)','Implementer rounds redone after the code or UI verifier rejected round 1'],[D.switchLabel+' redo',D.switchLabel+'|redo',w.switch,'var(--c3)','Stages repeated on another agent CLI after the first one stopped answering'],['Failed / timed-out runs','Failed|runs',w.failed,'var(--bad)','Runs that returned no result (outage answers, timeouts)']];
+  const waste=`<div class="box"><div class="row"><h2 style="margin:0">Waste from model hand-offs &amp; rework</h2><span class="pill">tokens · cost · engineering time thrown away</span></div>
+   <div class="grid k4" style="margin-top:12px">${kp([['Tokens wasted',M(c.wtok),`${(c.wtok/A.tokens*100).toFixed(1)}% of this story's tokens`,'--c3'],['Cost wasted',usd(c.wcost),`${(c.wcost/A.cost*100).toFixed(1)}% of token spend`,'--bad'],['Engineering time wasted',hm(engSec),`<b>${usd(c.eng,0)}</b> at ${usd(rate,0)}/h`,'--c4'],['Total cost of waste',usd(tw,0),`engineering + ${usd(c.wcost)} tokens`,'--warn']])}</div>
+   ${c.wcost||engSec?`<svg id="wf" viewBox="0 0 700 200" width="100%" style="margin-top:12px"></svg>`:''}
+   <table style="margin-top:6px"><tr><th>Category</th><th class="num">runs</th><th class="num">tokens</th><th class="num">token $</th><th class="num">time</th><th class="num">eng. $</th><th>model of wasted work</th></tr>
+   ${cats.map(([n,,x,cc,d])=>`<tr><td><b style="color:${cc}">■</b> <b>${n}</b><div class="detail">${d}</div></td><td class="num">${x.runs}</td><td class="num">${M(x.tokens)}</td><td class="num">${usd(x.cost)}</td><td class="num">${hm(x.sec)}</td><td class="num">${usd(x.sec/3600*rate,0)}</td><td class="detail">${x.runs?(n.startsWith('Sonnet')?'sonnet':n.startsWith('Opus')?'opus':'mixed'):'—'}</td></tr>`).join('')}
+   <tr><td><b>Total waste</b></td><td class="num">${cats.reduce((a,x)=>a+x[2].runs,0)}</td><td class="num">${M(c.wtok)}</td><td class="num"><b>${usd(c.wcost)}</b></td><td class="num">${hm(engSec)}</td><td class="num"><b>${usd(c.eng,0)}</b></td><td></td></tr></table>
+   <div class="callout" style="--c:var(--c4)"><b>Engineering view.</b> ${engSec?`Rework on ${s.k} held up an engineer for <b>${hm(engSec)}</b> = <b>${usd(c.eng,0)}</b> at ${usd(rate,0)}/h, ${c.wcost?`<b>${(c.eng/c.wcost).toFixed(0)}×</b> the ${usd(c.wcost)} of wasted tokens`:'with no token cost'}.`:`No rework on ${s.k}: every stage passed its gate the first time.`}</div></div>`;
+  const sevC={blocking:'var(--bad)',major:'var(--warn)',minor:'var(--mut)'};
+  const prc=`<div class="box"><h2>Escalated to the higher tier: Opus PR-check panel</h2>${s.prcheck.length?s.prcheck.map(p=>`<div style="margin-bottom:12px"><div class="row"><div><b>Target ${esc(p.target)}</b> · round ${p.round} · ${p.raised} raised, ${p.upheld.length} upheld</div><span class="st" style="background:${p.score>=9?'var(--ok)':p.score>=7?'var(--warn)':'var(--bad)'}">${p.score}/10</span></div>
+    <div class="grid two" style="margin-top:6px"><div>${Object.entries(p.lens||{}).map(([k,v])=>`<div class="lens"><span>${k}</span><div class="t"><div style="width:${v*10}%;background:${v>=9?'var(--ok)':v>=7?'var(--warn)':'var(--bad)'}"></div></div><span class="num">${v}</span></div>`).join('')}</div>
+    <div>${p.upheld.length?`<table>${p.upheld.map(u=>`<tr><td><span class="sev" style="background:${sevC[u.sev]}">${u.sev}</span></td><td class="detail">${u.lens} · ${esc(u.title)}</td></tr>`).join('')}</table>`:'<div class="empty">Nothing upheld.</div>'}</div></div></div>`).join('')+(s.stages['pr-check']?`<div class="note">The panel cost <b>${usd(s.stages['pr-check'].cost)}</b> (${M(s.stages['pr-check'].tokens)} tokens) for ${s.k}; every upheld finding was found after the Sonnet QE verifiers had passed the story.</div>`:''):`<div class="empty">No PR check recorded for ${s.k} (its group PR was checked under another ticket, or not yet).</div>`}</div>`;
+  const chain=s.verifiers.length?`<div class="chain">${s.verifiers.map((v,i)=>`${i?'<span class="arrow">→</span>':''}<span class="chip ${v.passed?'ok':'no'}" title="${v.gaps??0} gaps">${v.stage} r${v.round} · ${v.score}/10 ${v.passed?'✓':'✗'}</span>`).join('')}</div>`:'<div class="empty">No QE verifier rounds logged.</div>';
+  const subs=s.subtasks.map(x=>`<div style="margin-top:8px"><div class="sub">subtask <code>${esc(x.id)}</code> · implementer ${x.impl.cli}/${x.impl.model} · verifier ${x.ver.cli}/${x.ver.model} (${x.verify})</div><div class="chain" style="margin-top:4px">${x.rounds.map((r,i)=>`${i?'<span class="arrow">→</span>':''}<span class="chip ${r.verdict==='APPROVED'?'ok':'no'}">r${r.round} ${r.verdict==='APPROVED'?'APPROVED':'CHANGES'}${r.diag&&r.diag.errors?` · ${r.diag.errors} build errors`:''}</span>`).join('')}</div></div>`).join('');
+  const gates=`<div class="box"><h2>Quality gates</h2><div class="sub" style="margin-bottom:6px">QE plan &amp; automation verifier rounds</div>${chain}${subs?`<div class="sub" style="margin-top:12px">Implementation verifier pairs</div>${subs}`:''}</div>`;
+  const den=s.denials.length||s.precheck.length?`<div style="max-height:360px;overflow:auto"><table><tr><th>Stage</th><th>Category</th><th>Why it was rejected</th></tr>${s.precheck.map(p=>`<tr><td>${p.stage} r${p.round}</td><td><span class="pill">precheck</span></td><td class="detail">${esc((p.errors||[]).join(' · '))}</td></tr>`).join('')}${s.denials.map(d=>`<tr><td>${d.stage} r${d.round}<div class="detail">${esc(d.agent||'')}</div></td><td><span class="pill">${esc(d.cat||'')}</span></td><td class="detail">${d.case?`<code>${esc(d.case)}</code> `:''}${esc(d.detail)}</td></tr>`).join('')}</table></div>`:'<div class="empty">No verifier rejections.</div>';
+  const rej=`<div class="box"><h2>Rejection reasons (${s.denials.length+s.precheck.length})</h2>${den}</div>`;
+  // heal
+  const clis=Object.keys(s.cli),both=clis.length>1,fails=s.runs.filter(r=>!r[4]),lastCli=s.runs.length?s.runs.reduce((a,r)=>r[0]>a[0]?r:a)[8]:null;
+  let heal;
+  if(both||fails.length){
+    const pivot=both?Math.min(...s.runs.filter(r=>r[8]===lastCli).map(r=>r[0])):Math.max(...fails.map(r=>r[0]));
+    const hr=s.runs.filter(r=>r[0]>=pivot&&r[4]),hc=hr.reduce((a,r)=>a+r[6],0),ht=hr.reduce((a,r)=>a+r[7],0),hs=hr.reduce((a,r)=>a+r[1],0);
+    heal=`<div class="grid k4">${kp([['Cost of the successful heal',usd(hc),`${hr.length} runs after ${both?'switching to '+lastCli:'the last failure'} (${clk(pivot)})`,'--c2'],['Tokens to heal',M(ht),s.status==='verified'?'story then verified by QE':'still in progress','--c3'],['Agent time to heal',hm(hs),`+ ${usd(hs/3600*rate,0)} engineering time`,'--c4'],['Spent before the failure',usd(w.switch.cost+w.failed.cost),`${w.switch.runs+w.failed.runs} runs lost or redone`,'--bad']])}</div>
+     <div class="note">A heal = the pipeline recovered this story without human help after ${both?'its first agent CLI stopped answering and the run switched to '+lastCli:'a failed agent run'}.</div>`;
+  }else heal=`<div class="empty">No heal needed: every run for ${s.k} succeeded on its first CLI.</div>`;
+  const healBox=`<div class="box"><h2>Cost per successful heal</h2>${heal}</div>`;
+  const runs=`<div class="box"><h2>All runs (${s.runs.length})</h2><div style="max-height:320px;overflow:auto"><table><tr><th>Start</th><th>Stage</th><th>Agent</th><th>Model</th><th>CLI</th><th class="num">round</th><th class="num">time</th><th class="num">tokens</th><th class="num">cost</th><th></th></tr>
+   ${s.runs.map(r=>`<tr><td class="num">${clk(r[0])}</td><td><span style="color:${SC[r[2]]||'var(--fg)'}">■</span> ${r[2]}</td><td class="detail">${esc(r[9])}</td><td style="color:${r[3]==='opus'?'var(--opus)':'var(--sonnet)'}">${r[3]}</td><td>${r[8]}</td><td class="num" style="color:${r[5]>1?'var(--warn)':'inherit'}">${r[5]}</td><td class="num">${hm(r[1])}</td><td class="num">${M(r[7])}</td><td class="num">${usd(r[6],3)}</td><td>${r[4]?'':'<span class="sev" style="background:var(--bad)">failed</span>'}</td></tr>`).join('')}</table></div></div>`;
+  $('view').innerHTML=head+hero+kpis+tokens+burn+gantt+waste+prc+`<div class="grid two">${gates}${rej}</div>`+healBox+runs;
+  drawBurn(s);drawGantt(s);
+  if($('wf'))drawWf(s,cats);
+}
+
+function drawBurn(s){
+  const W=760,H=240,L=44,R=46,T=12,B=24,ev=s.runs.map(r=>[r[0]+r[1]/60,r]).sort((a,b)=>a[0]-b[0]);
+  const t0=Math.floor((s.start-3)/5)*5,t1=Math.ceil((s.end+3)/5)*5,maxC=Math.max(1,Math.ceil(s.all.cost)),maxT=Math.max(1,Math.ceil(s.all.tokens/1e6));
+  const x=t=>L+(t-t0)/(t1-t0)*(W-L-R),y=v=>T+(1-v/maxC)*(H-T-B),y2=v=>T+(1-v/maxT)*(H-T-B);
+  let g='';
+  g+=bands(x,t0,t1,T,H-T-B);
+  const st=maxC>8?2:maxC>4?1:0.5;
+  for(let v=0;v<=maxC+1e-9;v+=st)g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--bd)"/><text x="${L-5}" y="${y(v)+3}" text-anchor="end">$${v}</text>`;
+  const ts=maxT>10?5:maxT>4?2:1;for(let v=0;v<=maxT;v+=ts)g+=`<text x="${W-R+5}" y="${y2(v)+3}">${v}M</text>`;
+  const step=(t1-t0)>240?60:(t1-t0)>90?30:(t1-t0)>40?10:5;for(let t=Math.ceil(t0/step)*step;t<=t1;t+=step)g+=`<text x="${x(t)}" y="${H-7}" text-anchor="middle">${clk(t)}</text>`;
+  let o=0,so=0,tk=0;const pts=[[s.start,0,0,0]];ev.forEach(([t,r])=>{if(r[3]==='opus')o+=r[6];else so+=r[6];tk+=r[7];pts.push([t,o,so,tk/1e6])});
+  const path=f=>pts.map((p,i)=>(i?`${x(p[0])},${y(f(pts[i-1]))} L`:'')+`${x(p[0])},${y(f(p))}`).join(' L');
+  const last=pts[pts.length-1];
+  g+=`<path d="M${x(s.start)},${y(0)} L${path(p=>p[1]+p[2])} L${x(last[0])},${y(0)}Z" fill="color-mix(in srgb,var(--opus) 70%,transparent)"/>`;
+  g+=`<path d="M${x(s.start)},${y(0)} L${path(p=>p[2])} L${x(last[0])},${y(0)}Z" fill="color-mix(in srgb,var(--sonnet) 80%,transparent)"/>`;
+  g+=`<path d="M${pts.map(p=>`${x(p[0])},${y2(p[3])}`).join(' L')}" fill="none" stroke="var(--c3)" stroke-width="2"/>`;
+  g+=`<text x="${x(last[0])-4}" y="${y(last[1]+last[2])-6}" text-anchor="end" style="fill:var(--fg);font-weight:700">${usd(last[1]+last[2])}</text>`;
+  const svg=$('burn');svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML=g;
+}
+
+function drawWf(s,cats){
+  const W=700,H=200,L=10,B=34,T=16,c=calc(s),items=cats.filter(k=>k[2].cost>0),n=items.length+2,gap=(W-L*2)/n,bw=gap*.62;
+  const y=v=>T+(1-v/s.all.cost)*(H-T-B);let g='',run=s.all.cost;
+  const bar=(i,top,bot,col,lbl,val)=>{const X=L+i*gap+(gap-bw)/2;g+=`<rect x="${X}" y="${y(top)}" width="${bw}" height="${Math.max(1.5,y(bot)-y(top))}" fill="${col}" rx="3"/><text x="${X+bw/2}" y="${y(top)-4}" text-anchor="middle" style="fill:var(--fg);font-weight:600">${val}</text>`;lbl.split('|').forEach((t,j)=>g+=`<text x="${X+bw/2}" y="${H-B+13+j*11}" text-anchor="middle">${t}</text>`)};
+  bar(0,s.all.cost,0,'var(--c1)','Total|spend',usd(s.all.cost));
+  items.forEach((k,i)=>{bar(i+1,run,run-k[2].cost,k[3],k[1],'−'+usd(k[2].cost));run-=k[2].cost});
+  bar(n-1,run,0,'var(--ok)','Productive|spend',usd(run));
+  $('wf').innerHTML=g;
+}
+
+function drawGantt(s){
+  const lanes=STAGES.filter(k=>s.stages[k]),LH=24,L=110,R=14,T=8,B=24,W=900,H=T+lanes.length*LH+B;
+  const t0=Math.floor((s.start-4)/5)*5,t1=Math.ceil((s.end+4)/5)*5,x=t=>L+(t-t0)/(t1-t0)*(W-L-R);
+  let g=`<defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="transparent"/><line x1="0" y1="0" x2="0" y2="5" stroke="#0b0d12" stroke-width="2"/></pattern></defs>`;
+  g+=bands(x,t0,t1,T,lanes.length*LH);
+  lanes.forEach((k,i)=>g+=`<text x="${L-8}" y="${T+i*LH+LH/2+3}" text-anchor="end">${k}</text><line x1="${L}" x2="${W-R}" y1="${T+(i+1)*LH}" y2="${T+(i+1)*LH}" stroke="var(--bd)"/>`);
+  const step=(t1-t0)>240?60:(t1-t0)>90?30:(t1-t0)>40?10:5;
+  for(let t=Math.ceil(t0/step)*step;t<=t1;t+=step)g+=`<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${T+lanes.length*LH}" stroke="var(--bd)" stroke-dasharray="2 3"/><text x="${x(t)}" y="${H-4}" text-anchor="middle">${clk(t)}</text>`;
+  s.runs.forEach((r,j)=>{const i=lanes.indexOf(r[2]);if(i<0)return;const X=x(r[0]),Wd=Math.max(3,x(r[0]+r[1]/60)-X),Y=T+i*LH+4,h=LH-8,col=r[3]==='opus'?'var(--opus)':'var(--sonnet)';
+    g+=`<g class="rb" data-j="${j}"><rect x="${X}" y="${Y}" width="${Wd}" height="${h}" rx="2" fill="${col}" stroke="${r[4]?'none':'var(--bad)'}" stroke-width="2"/>${r[5]>1?`<rect x="${X}" y="${Y}" width="${Wd}" height="${h}" fill="url(#hatch)"/>`:''}</g>`});
+  const svg=$('gantt');svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML=g;
+  svg.querySelectorAll('.rb').forEach(e=>{const r=s.runs[+e.dataset.j];e.onmouseenter=()=>showTip(`<b>${r[2]}</b> · ${esc(r[9])}<br>${r[3]} on ${r[8]} · round ${r[5]}${r[4]?'':' · <span style="color:var(--bad)">failed</span>'}<br>${clk(r[0])} · ${hm(r[1])} · ${M(r[7])} tokens · ${usd(r[6],3)}`);e.onmouseleave=hideTip});
+}
+
+function render(){
+  $('rateLbl').textContent=usd(rate,0)+'/h';
+  sel=location.hash.slice(1)||'ALL';
+  tiles();
+  const s=D.stories.find(z=>z.k===sel);
+  if(s)story(s);else overview();
+}
+$('rate').addEventListener('input',e=>{rate=+e.target.value;render()});
+$('hrsMode').querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;$('hrsMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));render()});
+addEventListener('hashchange',()=>{render();scrollTo({top:document.querySelector('.tiles').getBoundingClientRect().top+scrollY-60,behavior:'smooth'})});
+render();
+document.title=`Agent Factory · ${D.title} · Story-level dashboard`;
+$('title').textContent=`Agent Factory · ${D.title} — Story-level dashboard`;
+$('subline').innerHTML=['One page per story: tokens, cost, human time, waste, rejections and PR-check results',...D.links.map(l=>`<a href="${esc(l.url)}" target="_blank">${esc(l.label)}</a>`),`times ${D.tz}`,`generated ${D.date} ${D.generated}`].join(' · ');
+$('foot').innerHTML=`Sources: <code>.agent-metrics/{token-usage,verifier-runs,verifier-denials,subtask-runs,implement-runs,pr-checks,precheck-failures}.jsonl</code> from ${D.sources.length} branch${D.sources.length===1?'':'es'} (${D.sources.map(b=>`<code>${esc(b)}</code>`).join(', ')}), de-duplicated by run id: ${D.total.runs} runs, ${D.first}–${D.last} ${D.tz}. Status "Verified by QE" = the QE automation verifier passed. Human cost = the story's time in the pipeline (start of its first run → end of its last run) × rate; stories ran in parallel. Idle time = gaps of ${D.idleGapMin??30}+ minutes with no successful agent run. Engineering waste = agent time spent on rework, CLI-switch redo and failed runs × rate. Link to one story with <code>#${D.stories[0]?.k??'KEY'}</code>. Generated by <code>pipeline dashboard</code>.`;
+</script>
+</body>
+</html>
