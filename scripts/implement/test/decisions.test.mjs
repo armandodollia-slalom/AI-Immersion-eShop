@@ -1,7 +1,7 @@
 // The decision log: record shapes, escaped-defect attribution by owns, and the labeling rules.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acceptanceCount, attributeEscaped, decisionRecord, formatDecisionReport, labelDecisions, planDecisionLog, planDecisions, roundRecord, storyOutcomeRecord, subtaskRunRecord, verdictDecisionLog } from '../lib/decisions.mjs';
+import { acceptanceCount, attributeEscaped, decisionRecord, formatDecisionReport, labelDecisions, planDecisionLog, planDecisions, prCheckDesignFindings, roundRecord, storyOutcomeRecord, subtaskRunRecord, verdictDecisionLog } from '../lib/decisions.mjs';
 import { decisionRecord as sharedRecord } from '../../pipeline/lib/decisions.mjs';
 import { validatePlan } from '../lib/plan.mjs';
 
@@ -29,7 +29,7 @@ test('a decision record carries the plan, its reasons and the story features', (
 
 test('subtask runs record counts, not finding text', () => {
   const round = roundRecord({ round: 1, verdict: 'CHANGES_REQUESTED', findings: [{ severity: 'blocking', category: 'correctness', issue: 'secret' }, { severity: 'minor', category: 'fit' }], diagnostics: { available: true, errors: [1], warnings: [1, 2] }, outOfOwns: ['x'], crossFindings: 1 });
-  assert.deepEqual(round, { round: 1, verdict: 'CHANGES_REQUESTED', findings: { 'blocking/correctness': 1, 'minor/fit': 1 }, diagnostics: { errors: 1, warnings: 2 }, outOfOwnsEdits: 1, crossSubtaskFindings: 1 });
+  assert.deepEqual(round, { round: 1, verdict: 'CHANGES_REQUESTED', findings: { 'blocking/correctness': 1, 'minor/fit': 1 }, designFindings: 0, diagnostics: { errors: 1, warnings: 2 }, outOfOwnsEdits: 1, crossSubtaskFindings: 1 });
   const r = subtaskRunRecord({ ts: 't', key: 'K', decisionId: 'd', subtaskId: 'api', maxRounds: 3, rounds: [round], approved: true });
   assert.equal(r.escalation, 'none');
   assert.equal(r.tokens, null);
@@ -110,4 +110,38 @@ test('subtask and story records carry tokens, cost and premium requests summed f
   assert.deepEqual([run.tokens, run.cost, run.premiumRequests], [10, 0.42, 16]);
   const story = storyOutcomeRecord({ ts: 't', key: 'DEMO-1', outcome: 'done', wallClockSec: 1, usage: null });
   assert.deepEqual([story.tokens, story.cost, story.premiumRequests], [null, null, null]);
+});
+
+test('design findings: counted per UI round, in the decision log with both screenshots, and set against the PR check', () => {
+  const findings = [
+    { severity: 'blocking', category: 'design', screenshot: '/a/actual-Main.png', mockup: '/a/mockup/Main.png', actual: '/a/actual-Main.png', issue: 'label says Save, mockup says Save draft' },
+    { severity: 'minor', category: 'design', screenshot: '/a/actual-Main.png', actual: '/a/actual-Main.png', mockup: '/a/mockup/Main.png', issue: 'tab spacing' },
+    { severity: 'blocking', category: 'acceptance', screenshot: '/a/x.png', issue: 'no total' },
+  ];
+  const r1 = roundRecord({ round: 1, verdict: 'CHANGES_REQUESTED', findings });
+  const r2 = roundRecord({ round: 2, verdict: 'APPROVED', findings: [] });
+  assert.deepEqual([r1.designFindings, r2.designFindings], [2, 0]);
+  const run = subtaskRunRecord({ key: 'DEMO-1', decisionId: 'd', subtaskId: 'web', rounds: [r1, r2], approved: true, verify: 'ui' });
+  assert.equal(run.designFindings, 2);
+
+  const entry = sharedRecord(verdictDecisionLog({ key: 'DEMO-1', decisionId: 'd', st: { id: 'web' }, round: 1, verdict: { verdict: 'CHANGES_REQUESTED', findings }, ui: true }));
+  assert.equal(entry.design_findings, 2);
+  assert.deepEqual([entry.items[0].mockup, entry.items[0].actual], ['/a/mockup/Main.png', '/a/actual-Main.png']);
+  assert.equal(entry.items[2].mockup, undefined, 'only design findings carry the mockup pair');
+
+  // The PR check: each upheld design finding once per check (repeats are the same finding); an epic check
+  // credits the ticket a finding names, else every ticket it covered.
+  const prChecks = [
+    { target: 'DEMO-1', story: 'DEMO-1', upheld: [{ id: 'design-1', lens: 'design', title: 'Wrong label' }, { id: 'style-1', lens: 'style', title: 'x' }] },
+    { target: 'DEMO-1', story: 'DEMO-1', upheld: [{ id: 'design-1', lens: 'design', title: 'Wrong label', repeat: true }] },
+    { target: 'epic-x', story: 'DEMO-1', stories: ['DEMO-1', 'DEMO-2'], upheld: [{ id: 'design-1', lens: 'design', title: 'DEMO-2 empty state missing' }, { id: 'design-2', lens: 'design', title: 'Journey breaks between pages' }] },
+  ];
+  assert.deepEqual(Object.fromEntries(prCheckDesignFindings(prChecks)), { 'DEMO-1': 2, 'DEMO-2': 2 });
+
+  const decisions = [{ story: 'DEMO-1', decisionId: 'd', accepted: true, mode: 'delegate', subtasks: [{ id: 'web', modelClass: 'medium', verify: 'ui' }] }];
+  const rows = labelDecisions({ decisions, runs: [{ ...run, actual: { files: 5, loc: 200 }, escalation: 'none', maxRounds: 3 }], outcomes: [], prChecks });
+  assert.deepEqual([rows[0].designFindings, rows[0].prCheckDesignFindings], [2, 2]);
+  const report = formatDecisionReport(rows);
+  assert.match(report, /Design e\/pr/);
+  assert.match(report, /design findings caught early \(UI verifier rounds\): 2 +at PR check \(upheld\): 2/);
 });

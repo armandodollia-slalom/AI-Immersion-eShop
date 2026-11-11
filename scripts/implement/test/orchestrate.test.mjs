@@ -326,6 +326,86 @@ test('ui subtasks lease one stack slot for the whole pair, rebuild only changes 
   assert.equal(fs.readFileSync(path.join(env.repo, 'src/WebApp/Page.razor'), 'utf8'), 'v2', "the verifier's edit was discarded");
 });
 
+test('ui subtasks see the mockups; the verifier compares renders with the app every round and design findings reach the implementer with both screenshots', async () => {
+  const story = '# DEMO-1: [FE - WebApp] - Coupon page\n\n## Acceptance Criteria\n\n- it works\n';
+  const env = makeRepo(story);
+  seedTicket(env.repo, { key: 'DEMO-1', slug: 'DEMO-1-thing', text: story, mockups: { 'DEMO-1-coupon/README.md': '# Screens\n', 'DEMO-1-coupon/Main.dc.html': '<x-dc></x-dc>' } });
+  const mockDir = path.join(env.repo, '.agent-state', 'board', 'DEMO-1', 'mockups', 'DEMO-1-coupon');
+  const stack = { leaseUntil: async () => ({ ok: true, slot: 1, webappUrl: 'http://localhost:5111' }), teststack: async () => ({ status: 0, stdout: '', stderr: '' }), release: async () => {}, renew: async () => true };
+  const renders = [];
+  const renderMockups = async (o) => {
+    renders.push(o);
+    fs.mkdirSync(o.outDir, { recursive: true });
+    const png = path.join(o.outDir, 'DEMO-1-coupon__Main.png');
+    fs.writeFileSync(png, 'png');
+    return { ok: true, sha: 'abc', cached: renders.length > 1, entries: [{ kind: 'screen', source: path.join(mockDir, 'Main.dc.html'), screen: 'Main.dc.html', title: 'Coupon', state: 'default', png }] };
+  };
+  const agents = fakeAgents({
+    implementer: [async () => plan([sub('web', ['src/WebApp/**'], { verify: 'ui' })])],
+    'pair-implementer': [
+      async (o) => (write(o.cwd, 'src/WebApp/Page.razor', 'v1'), result({ status: 'done', reason: 'ok', mockupScreens: ['Main.dc.html (default)'] })),
+      writeIn('src/WebApp/Page.razor', 'v2'),
+    ],
+    'pair-ui-verifier': [
+      async (o) => {
+        const dir = /Save every screenshot under (\S+?) \(/.exec(o.task)[1];
+        const mockup = /- Main\.dc\.html \(Coupon\), state default: (\S+)/.exec(o.task)[1];
+        fs.writeFileSync(path.join(dir, 'actual-Main.png'), 'png');
+        return result({ verdict: 'CHANGES_REQUESTED', summary: 'label differs', findings: [{ severity: 'blocking', category: 'design', file: 'src/WebApp/Page.razor', mockup, actual: path.join(dir, 'actual-Main.png'), issue: 'button says Apply, mockup says Apply coupon', fix: 'use the mockup copy' }] });
+      },
+      async () => approve(),
+    ],
+  });
+  const ctx = context(env, makeConfig(env.repo), agents, { stack });
+  ctx.deps.renderMockups = renderMockups;
+  const r = await orchestrate(ctx);
+  assert.ok(r.ok, JSON.stringify(r));
+
+  const planner = agents.calls.find((c) => c.name === 'implementer');
+  assert.match(planner.task, /### Mockups/);
+  assert.ok(planner.task.includes(path.join(mockDir, 'Main.dc.html')), 'the planner gets the absolute mockup files');
+  assert.match(planner.task, /name the mockup screens and states it builds in its acceptance criteria/);
+  const [first, second] = agents.calls.filter((c) => c.name === 'pair-implementer');
+  assert.ok(first.task.includes(path.join(mockDir, 'README.md')) && first.task.includes(path.join(mockDir, 'Main.dc.html')));
+  assert.match(first.task, /Match them: layout, copy, labels, states/);
+  assert.match(first.task, /"mockupScreens"/);
+  assert.equal(first.extraEnv.PIPELINE_STORY_SOURCES.split(path.delimiter).at(-1), 'DEMO-1', "the story's own ticket is handed to every agent");
+
+  const v = agents.calls.find((c) => c.name === 'pair-ui-verifier');
+  assert.match(v.task, /### Mockups: compare the app with the design/);
+  assert.match(v.task, /The implementer says it built: Main\.dc\.html \(default\)/);
+  assert.match(v.task, /"category": "design"/);
+  assert.match(v.task, /node scripts\/implement\/mockups\.mjs diff/);
+
+  // Rendered once per round into the round's mockup/ folder, from one cache.
+  assert.deepEqual(renders.map((o) => path.relative(env.repo, o.outDir)), [path.join('artifacts/pairs/DEMO-1/web/round-1/mockup'), path.join('artifacts/pairs/DEMO-1/web/round-2/mockup')]);
+  assert.equal(new Set(renders.map((o) => o.cacheDir)).size, 1);
+  assert.deepEqual(renders[0].files.map((f) => path.basename(f)).sort(), ['Main.dc.html', 'README.md']);
+
+  // The design finding goes to the next round with the mockup render and the app screenshot.
+  assert.match(second.task, /\[design\] src\/WebApp\/Page\.razor button says Apply/);
+  assert.match(second.task, /Mockup: .*round-1\/mockup\/DEMO-1-coupon__Main\.png/);
+  assert.match(second.task, /Actual: .*round-1\/actual-Main\.png/);
+  assert.match(second.task, /Renders of the mockup screens the UI verifier compared with last round:\n- .*DEMO-1-coupon__Main\.png/);
+  assert.doesNotMatch(second.task, /Screenshots the UI verifier took[^\n]*\n- [^\n]*mockup\n/, 'the mockup folder is not a screenshot');
+
+  const run = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0];
+  assert.deepEqual(run.rounds.map((x) => x.designFindings), [1, 0]);
+  assert.equal(run.designFindings, 1);
+  const verdicts = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl')).filter((d) => d.stage === 'implement-verify');
+  assert.deepEqual(verdicts.map((d) => d.design_findings), [1, 0]);
+  assert.match(verdicts[0].items[0].mockup, /DEMO-1-coupon__Main\.png$/);
+});
+
+test('code subtasks and non-UI stories get no mockups', async () => {
+  const env = makeRepo();
+  seedTicket(env.repo, { key: 'DEMO-1', slug: 'DEMO-1-thing', text: '# DEMO-1: [BE - Catalog.API] - Thing\n', mockups: { 'DEMO-1-x/Main.dc.html': '<x-dc></x-dc>' } });
+  const agents = fakeAgents({ implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])])], 'pair-implementer': [writeIn('src/Catalog.API/A.cs', 'x')], 'pair-verifier': [async () => approve()] });
+  const r = await orchestrate(context(env, makeConfig(env.repo), agents));
+  assert.ok(r.ok, JSON.stringify(r));
+  for (const c of agents.calls) assert.doesNotMatch(c.task, /### Mockups/, c.name);
+});
+
 test('verify "ui" is rejected for a non-UI story', async () => {
   const env = makeRepo();
   const agents = fakeAgents({ implementer: [async () => plan([sub('web', ['src/WebApp/**'], { verify: 'ui' })])] });

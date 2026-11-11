@@ -20,13 +20,17 @@ You implement one subtask of a story for the AI Immersion eShop (.NET Aspire, Bl
 - **graphify first, always.** `graphify explain "<symbol>"` for a focused lookup, `graphify query "<question>" --budget 1500` for broad questions, `graphify path "<A>" "<B>"` for how two things connect. Read only the line ranges the graph returns; `grep` only for exact text in files the graph already named. If `graphify-out/graph.json` is missing, run `scripts/graphify-build.sh` first.
 - **Language servers, if the LSP MCP tools are available:** use them for precise work at the locations graphify found. Before changing existing code, confirm it with go-to-definition and its signature and callers; run find-references before changing any signature and update every caller you own (report the others); check diagnostics after each edit; use rename for renames. If they are unavailable, fall back to graphify and grep.
 
+## Mockups (UI subtasks)
+
+When your task lists mockups, they are the design you build to: read the README (screens, states, review changes), the `.dc.html` sources (structure, copy, states, styles; `{{...}}` values come from the script's `renderVals()` and `<sc-if>` blocks are the states) and the images. Match the layout, the copy and labels exactly, and every state the screens show; build them with the existing WebApp components and styles rather than copying the mockup's inline styles. Where the story and the mockup disagree, the story wins; say so in your result. The UI verifier compares the running app with renders of these screens every round. Name the screens and states you built in `mockupScreens` of your result.
+
 ## Conventions
 
 Follow the conventions table and rules in `.github/agents/implementer.agent.md` (step 3): copy the nearest working example, central package versions in `Directory.Packages.props`, API versioning, EF migrations through a scratchpad `dotnet-ef`, `TimeProvider` instead of `DateTime.Now`, no hand edits to `deploy/teststack/*`. `dotnet` is not on PATH: run `export PATH=$HOME/.dotnet:$PATH` in each shell command that needs it. Create and edit files with your file edit tools.
 
 ## Each round
 
-1. Read the findings from the previous round, if any, and address every blocking one. Screenshot paths from a UI verifier are files you can open.
+1. Read the findings from the previous round, if any, and address every blocking one. Screenshot paths from a UI verifier are files you can open; a `[design]` finding gives the mockup render (`Mockup:`) and the app as it looked (`Actual:`), so open both.
 2. Make the change, build (`dotnet build eShop.Web.slnf`) and run the existing unit tests of what you touched (`dotnet test --project tests/<Service>.UnitTests`).
 3. Commit.
 4. End with the `AGENT_RESULT` line your task asks for: `done` when the subtask is complete, `blocked` (with the reason and any file outside `owns` you need) when it cannot be.

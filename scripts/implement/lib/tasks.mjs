@@ -46,7 +46,24 @@ export const planSchema = `{
 }`;
 
 
-export function planTask({ key, storyFile, worktree, uiStory, limits, errors = null }) {
+// The mockup block of a builder's task: the files, and what matching them means.
+const mockupBlock = (mockups, { plan = false } = {}) =>
+  mockups
+    ? [
+        '',
+        '### Mockups',
+        '',
+        `The design this story must match (absolute paths; ${plan ? 'read' : 'open'} the README for the screens and review changes, the \`.dc.html\` sources for structure, copy and states, and the images):`,
+        '',
+        mockups,
+        '',
+        plan
+          ? 'Give every subtask that builds UI `verify: "ui"`, and name the mockup screens and states it builds in its acceptance criteria (for example "matches Editor.dc.html, validation state"), so its implementer and verifier hold it to them.'
+          : 'Match them: layout, copy, labels, states. Where the mockup and the story disagree, the story wins; say so in your reason. The UI verifier compares the running app with renders of these screens every round.',
+      ]
+    : [];
+
+export function planTask({ key, storyFile, worktree, uiStory, limits, errors = null, mockups = null }) {
   const lines = [
     `Plan story ${key}: ${path.relative(worktree, storyFile)}`,
     '',
@@ -63,6 +80,7 @@ export function planTask({ key, storyFile, worktree, uiStory, limits, errors = n
     `- verify "ui" makes a verifier drive the running app and take screenshots. ${uiStory ? 'This IS a UI story: use verify "ui" for subtasks that change pages or components.' : 'This is NOT a UI story (no [FE] tag, no WebApp/WebAppComponents/Blazor in the title, no .razor file named): use verify "code" only and uiStory false.'}`,
     '- Tests are not yours (QE writes them later); do not plan test subtasks.',
     '- The reason, expectation and confidence fields are required and short. They go to the decision log (to learn which plans work), never to the verifiers. In self mode give `modeReason`, `features`, and for the one subtask entry the same reason/expectation fields.',
+    ...mockupBlock(mockups, { plan: true }),
     '',
     'If an Open Question or a missing blocker makes the story unimplementable, end with `AGENT_RESULT: {"status": "blocked", "reason": "<one sentence>"}` instead.',
     '',
@@ -74,7 +92,8 @@ export function planTask({ key, storyFile, worktree, uiStory, limits, errors = n
   return lines.join('\n');
 }
 
-export function pairImplementerTask({ key, storyFile, st, worktree, branch, base, round, maxRounds, findings, screenshots, diagnostics, self = false }) {
+export function pairImplementerTask({ key, storyFile, st, worktree, branch, base, round, maxRounds, findings, screenshots, diagnostics, self = false, mockups = null, mockupRenders = [] }) {
+  const ui = st.verify === 'ui' && Boolean(mockups);
   const lines = [
     `Implement subtask "${st.id}" of story ${key} (story file: ${path.relative(worktree, storyFile)}; read it for context only).`,
     '',
@@ -92,18 +111,26 @@ export function pairImplementerTask({ key, storyFile, st, worktree, branch, base
     '- Never push, reset, checkout, switch, rebase or touch worktrees. Do not run `pipeline start` or `pipeline done`. Do not spawn subagents.',
     '- Do not write tests, teststack scenarios or Playwright specs; QE does that.',
     '- Run the fast checks your agent file lists (build, existing unit tests of what you touched) before you finish; the harness runs them again and a fresh verifier reviews your diff.',
+    ...(ui ? mockupBlock(mockups) : []),
   ];
+  if (ui && mockupRenders?.length) lines.push('', 'Renders of the mockup screens the UI verifier compared with last round:', ...mockupRenders.map((s) => `- ${s}`));
   if (findings?.length) {
     lines.push('', `### Findings from round ${round - 1} (address every blocking one)`, '', formatFindings(findings));
   }
   if (screenshots?.length) lines.push('', 'Screenshots the UI verifier took (open them to see what it saw):', ...screenshots.map((s) => `- ${s}`));
   if (diagnostics) lines.push('', '### Language server diagnostics on your changed files (last round)', '', diagnostics);
-  lines.push('', 'End your reply with exactly one line:', 'AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>"}');
+  lines.push(
+    '',
+    'End your reply with exactly one line:',
+    ui
+      ? 'AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>", "mockupScreens": ["<each mockup screen and state you built, for example Editor.dc.html (validation state)>"]}'
+      : 'AGENT_RESULT: {"status": "done" | "blocked", "reason": "<one sentence>"}',
+  );
   return lines.join('\n');
 }
 
 const verdictLine = (ui) =>
-  `AGENT_RESULT: {"verdict": "APPROVED" | "CHANGES_REQUESTED", "summary": "<one or two sentences>", "findings": [{"severity": "blocking" | "minor", "file": "<path>", "line": <number or null>, ${ui ? '"screenshot": "<absolute path of the screenshot that shows it>", ' : ''}"issue": "<what is wrong>", "fix": "<what to change>"}]}`;
+  `AGENT_RESULT: {"verdict": "APPROVED" | "CHANGES_REQUESTED", "summary": "<one or two sentences>", "findings": [{"severity": "blocking" | "minor", ${ui ? '"category": "acceptance" | "correctness" | "layout" | "contract" | "stack" | "design", ' : ''}"file": "<path>", "line": <number or null>, ${ui ? '"screenshot": "<absolute path of the screenshot that shows it>", "mockup": "<design findings: absolute path of the mockup render>", "actual": "<design findings: absolute path of your app screenshot>", "diff": "<optional: pixel diff image>", ' : ''}"issue": "<what is wrong>", "fix": "<what to change>"}]}`;
 
 export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics }) {
   return [
@@ -132,7 +159,21 @@ export function codeVerifierTask({ key, st, round, maxRounds, diff, checks, diag
   ].join('\n');
 }
 
-export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, webappUrl, screenshotsDir, worktree }) {
+// The design comparison part of the UI verifier's task: the mockup renders and how to compare.
+function designBlock({ mockups, renders, screenshotsDir, implementerScreens }) {
+  if (!mockups) return [];
+  const lines = ['', '### Mockups: compare the app with the design', '', 'Mockup files (absolute paths; the README names the screens and the review changes):', '', mockups, ''];
+  if (renders?.ok && renders.entries.length) lines.push(`Renders of every mockup screen and state, made by the harness this round (${renders.cached ? 'reused from an earlier render of the same files' : 'fresh'}):`, '', renders.text, '');
+  else lines.push(`The harness could not render the mockups${renders?.error ? ` (${renders.error})` : ''}; read the \`.dc.html\` sources instead.`, '');
+  if (implementerScreens?.length) lines.push(`The implementer says it built: ${implementerScreens.join('; ')}.`, '');
+  lines.push(
+    "For every mockup screen and state this subtask builds (its goal and acceptance criteria say which; leave screens of other subtasks alone), screenshot the app at the matching page and state with the same viewport width, and save it as `actual-<screen>[--<state>].png` in the screenshots directory. Compare it with the render: layout and order of sections, copy and labels (exact text), states (empty, error, validation, confirmation) and the components used. Ignore fonts, sample data and pixel-level spacing.",
+    `Each difference is a finding with \`"category": "design"\` and both screenshots: \`"mockup"\` (the render) and \`"actual"\` (yours; also put it in \`"screenshot"\`). Blocking when copy, a label, a state or the layout differs; minor for cosmetic drift. Optional supporting evidence: \`node scripts/implement/mockups.mjs diff <mockup.png> <actual.png> ${screenshotsDir}/diff-<name>.png\` writes a pixel diff (\`"diff"\`); never raise or dismiss a finding on the diff alone.`,
+  );
+  return lines;
+}
+
+export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagnostics, webappUrl, screenshotsDir, worktree, mockups = null, renders = null, implementerScreens = null }) {
   return [
     `Verify subtask "${st.id}" of story ${key} in the running app, round ${round} of ${maxRounds}. You have a fresh context.`,
     '',
@@ -153,6 +194,8 @@ export function uiVerifierTask({ key, st, round, maxRounds, diff, checks, diagno
     '### Diff against the story branch',
     '',
     fence(diff, 'diff'),
+    '',
+    ...designBlock({ mockups, renders, screenshotsDir, implementerScreens }),
     '',
     'Check every acceptance criterion in the browser (see your agent file for how to drive Playwright). Each blocking finding must reference the screenshot that shows it, and the source file and line you believe is responsible when you can tell.',
     '',
