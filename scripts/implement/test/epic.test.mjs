@@ -400,6 +400,36 @@ test('bug epic: tickets whose verified tests went stale through later tickets ar
   assert.equal(r.epic.outcome, 'qe-reverify-failed');
 });
 
+test('bug epic: a merge into the group is not blocked by metrics an earlier agent left uncommitted in the group worktree', async () => {
+  const env = makeRepo({ bugs: true });
+  // As in the repo: metrics logs are append-only and merge as a union.
+  write(env.repo, '.gitattributes', '.agent-metrics/*.jsonl merge=union\n');
+  git(env.repo, 'add', '-A');
+  git(env.repo, 'commit', '-qm', 'union merges for metrics');
+  const worker = fakeWorker();
+  const metrics = '.agent-metrics/token-usage.jsonl';
+  const appendTo = (dir, line) => fs.appendFileSync(path.join(dir, metrics), `${line}\n`);
+  const startWorker = async (config, s) => {
+    const r = await worker.startWorker(config, s);
+    // Every ticket records its usage on its branch, like the real worker.
+    fs.mkdirSync(path.join(s.worktree, '.agent-metrics'), { recursive: true });
+    appendTo(s.worktree, `{"story":"${s.key}"}`);
+    git(s.worktree, 'add', '-A');
+    git(s.worktree, 'commit', '-qm', `${s.key}: Record implement metrics`);
+    // A conflict-resolving agent ran in the group worktree and left its record uncommitted there.
+    if (s.key === 'BUG-2') {
+      const unitWt = git(env.repo, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9)).find((p) => p.endsWith('--cart'));
+      appendTo(unitWt, '{"story":"BUG-1","step":"merge into bugfix/shop/cart"}');
+    }
+    return r;
+  };
+  const note = { stories: [], prGroups: [{ id: 'cart', tickets: ['BUG-1', 'BUG-2'] }, { id: 'auth', tickets: ['BUG-3'] }] };
+  const f = fakeDeps(note, { startWorker });
+  const r = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+  assert.deepEqual(Object.fromEntries(r.results.map((x) => [x.key, x.outcome])), { 'BUG-1': 'done', 'BUG-2': 'done', 'BUG-3': 'done' });
+  assert.deepEqual(f.prs.map((p) => p.branch).sort(), ['bugfix/shop/auth', 'bugfix/shop/cart']);
+});
+
 test('bug epic: a stacked group gets the tickets of the groups below it synced before its PR check and push', async () => {
   const env = makeRepo({ bugs: true });
   const worker = fakeWorker({ notes: true });

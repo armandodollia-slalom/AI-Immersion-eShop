@@ -199,6 +199,9 @@ export async function mergeStory(env, story) {
   const lock = path.join(epicsDir(config), `${epic.key}--${env.unit.id}.merge.lock`);
   while (!acquireLock(lock)) await sleep(1000);
   try {
+    // Agents that ran in the unit worktree (an earlier conflict resolution) leave their usage and decision
+    // records uncommitted there, and git refuses to merge over them.
+    commitAll(worktree, `${env.unit?.id ?? branch}: Record metrics`, [wtConfig.metricsDir]);
     const r = git(worktree, ['merge', '--no-ff', '--no-edit', '-m', `${story.key}: Merge into ${branch}`, story.branch], { env: commitEnv });
     if (r.status === 0) return { ok: true, sha: headSha(worktree) };
     const files = unmergedFiles(worktree);
