@@ -6,10 +6,10 @@ plan-sha: 2a948dfeaa2d
 verified-score: 9
 verified-at: "2026-11-11T14:46:31.750Z"
 verified-by: qe-plan@c3934e11/456099fb
-automation-sha: ffe117160864
+automation-sha: cc357b899faa
 automation-plan-sha: 2a948dfeaa2d
-automation-score: 9
-automation-verified-at: "2026-11-11T14:54:39.149Z"
+automation-score: 10
+automation-verified-at: "2026-11-11T17:00:46.838Z"
 ---
 # Test plan: BUG-19 Unknown brand or type ids on create or update return 500
 
