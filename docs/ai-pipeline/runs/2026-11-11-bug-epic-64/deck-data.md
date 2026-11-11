@@ -17,7 +17,7 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | Agent runs | 235 |
 | Token cost (list price) | $52.48 (implement $20.98; PR checks $12.70) |
 | Copilot premium requests | 930 at 08:27, then the monthly quota ran out (~08:55) |
-| Pipeline defects found and fixed | 13 (D1-D13) |
+| Pipeline defects found and fixed | 14 (D1-D14) |
 | Cache hit rate | 88% |
 
 ## Lane counts over time

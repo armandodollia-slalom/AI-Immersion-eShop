@@ -309,3 +309,24 @@ the models it requests, not the CLI's internal calls. The operator pinned the
 background model to sonnet for this run (`ANTHROPIC_DEFAULT_HAIKU_MODEL`) so
 only allowed models run. A follow-up could set it in `cliInvocation` from the
 policy for every Claude run.
+
+## D14: resumed group tickets re-ran their implementer next to their QE
+
+- **Symptom:** after the 10:18 restart, BUG-12 and BUG-14 (review approved,
+  QE running detached) re-ran the opus implementer instead of "resuming after
+  the approved review". BUG-14's harness commit swept in QE's unfinished files
+  and failed the pre-commit lint (`CHARSET` on a QE-written test), so BUG-14
+  ended `error` and its group lost its PR for this run.
+- **Root cause:** the resume check compared `implChanges(wt).hash` with the
+  review's `approvedHash`. The review hook runs with `PIPELINE_BASE_REF` set to
+  the story's base (the group branch); the worker's worktree config used the
+  default `origin/main`. For a ticket stacked on a group branch, the group's
+  earlier tickets are in the `origin/main` diff, so the hashes never matched.
+  Stand-alone stories (base `origin/main`) were not affected, which is why
+  BUG-6's resume at 06:02 worked.
+- **Fix:** `approvedOnDisk(wt, prior, base)` hashes against the story's own
+  base. Test in `batch.test.mjs` with a real stacked repo; `implement.md`
+  "Interrupted runs". Commit `3161049`.
+- **Impact:** one extra opus implementer run per resumed group ticket on every
+  restart, plus BUG-14 failing (recoverable) and running an implementer
+  concurrently with QE in the same worktree.
