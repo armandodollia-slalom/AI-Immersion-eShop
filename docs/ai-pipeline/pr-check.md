@@ -135,7 +135,7 @@ The judge and critics run on the largest models. Defaults are in `scripts/pr-che
 | Defender | `opus` | `claude-sonnet-5.5` (a different model from the critics, so the debate isn't one model arguing with itself) |
 | Style critic | `sonnet` | `claude-sonnet-5.5` |
 
-Every model must be allowed by `agent.allowedModels` in `scripts/pipeline/config.json` (currently `opus` and `sonnet`, or the CLI id one of them maps to in `agent.modelIds`; Codex has no ids, so a PR check on Codex is refused); see [qe.md](qe.md#models). Override one role with `PR_CHECK_MODEL_<ROLE>`, for example `PR_CHECK_MODEL_JUDGE=sonnet`.
+Every model must be allowed by `agent.allowedModels` in `scripts/pipeline/config.json` (currently `opus`, `sonnet` and `sol`, or the CLI id one of them maps to in `agent.modelIds`; Codex has no ids, so a PR check on Codex is refused); see [qe.md](qe.md#models). Override one role with `PR_CHECK_MODEL_<ROLE>`, for example `PR_CHECK_MODEL_JUDGE=sonnet`.
 
 ## Files
 
@@ -149,7 +149,7 @@ Every round is appended to `.agent-metrics/pr-checks.jsonl`, which `metrics` and
 
 ## How agents improve
 
-The PR check feeds the shared lessons process (`node scripts/qe/qe.mjs lessons`, weekly in `qe-lessons.yml`, see [qe](qe.md#auto-improvement)). From `pr-checks.jsonl` it learns:
+The PR check feeds the shared lessons process (`node scripts/qe/qe.mjs lessons`, run by hand or from `qe-lessons.yml`, see [qe](qe.md#auto-improvement)). From `pr-checks.jsonl` it learns:
 
 | Lessons file | Learns from | Category |
 | --- | --- | --- |

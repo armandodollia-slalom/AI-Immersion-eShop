@@ -26,23 +26,26 @@ Part of the [AI development pipeline](README.md). Every agent is defined once in
 
 Read-only agents are enforced per CLI: Claude Code tool lists in `scripts/agents-claude.json`, Copilot `--deny-tool` flags and Codex's `read-only` sandbox in `scripts/pipeline/lib/agents.mjs`.
 
+Under `implement run`, the `implementer` is the orchestrator: it plans the story (and, in epic delivery, the epic), takes over or rewrites a subtask a pair could not finish, resolves merge conflicts and integrates the merged subtasks, ending each of these runs with the result its task asks for (for example the plan JSON). See [implement](implement.md#what-happens).
+
 ## Models
 
-Unset models use the agent CLI's default.
+Every model must be in the [allowlist](models.md). Unset models use `agent.models.default` (`sonnet`).
 
 | Setting | Agents |
 | --- | --- |
 | `agent.models.default` in `scripts/pipeline/config.json` | every agent without a more specific setting |
-| `agent.models.implementer` in `scripts/implement/config.json` | `implementer` |
+| `agent.models.implementer` in `scripts/implement/config.json` | `implementer` (the orchestrator) |
+| `implement.roles.<role>.modelClass` and `modelClasses` in `scripts/implement/config.json` | the orchestrator (`large`), `pair-verifier` (`medium`), `pair-ui-verifier` (`large`); `pair-implementer` uses the class (or `model` alias) the plan gives its subtask. Classes map to `sonnet` (small, medium) and `opus` (large); see [implement](implement.md#config) |
 | `agent.models.reviewer` in `scripts/review/config.json` | `architecture-reviewer` |
-| `agent.models.verifier`, `agent.models.audit` in `scripts/qe/config.json` | QE verifiers; the stricter calibration auditor |
+| `agent.models.plan`, `agent.models.automation`, `agent.models.verifier`, `agent.models.audit` in `scripts/qe/config.json` | `qe-plan`, `qe-automation` (`sonnet`), the QE verifiers; the stricter calibration auditor |
 | `prCheck.models.<cli>.<role>` in `scripts/pr-check/config.json`, or `PR_CHECK_MODEL_<ROLE>` | PR check critics, defender, judge and fixer (see [pr-check.md](pr-check.md#models)) |
 
 `<ROLE>` is `JUDGE`, `ACCEPTANCE`, `FLOW`, `DESIGN`, `STYLE`, `VIDEO`, `DEFENDER` or `FIXER`. To override the judge for the current terminal session:
 
 | macOS (zsh, bash) | Windows (PowerShell) |
 | --- | --- |
-| `export PR_CHECK_MODEL_JUDGE=claude-opus-5.5` | `$env:PR_CHECK_MODEL_JUDGE = 'claude-opus-5.5'` |
+| `export PR_CHECK_MODEL_JUDGE=opus` | `$env:PR_CHECK_MODEL_JUDGE = 'opus'` |
 
 ## Lessons
 

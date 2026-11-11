@@ -7,6 +7,9 @@ Part of the [AI development pipeline](README.md). Every agent loop has a limit. 
 | What | Where |
 | --- | --- |
 | Batch progress and outcome per story | `node scripts/pipeline/pipeline.mjs implement status [KEY]` (main checkout) |
+| A failed story's outcome, reason and findings | its card in the board's Failed lane (the comment `board fail` posts), or `.agent-state/implement/<KEY>.json` (main checkout) |
+| Epic runs (plan, foundation, merged, failed and skipped stories, PRs) | `implement status`; `.agent-state/implement/epics/<epic>.json` and the design note `<epic>.note.md` |
+| Subtask worktrees a failed story kept | `implement status` lists them; `implement cleanup [KEY]` removes them |
 | Per-story stage state (review rounds, QE status, PR check score) | `node scripts/pipeline/pipeline.mjs status KEY`, run inside the story's worktree |
 | Escalation notes | `.agent-state/escalations/<KEY>-<stage>.md` (in the worktree for `implement run`) |
 | Runner logs | `.agent-state/logs/implement-<KEY>-*.log` (main checkout) |
@@ -20,7 +23,7 @@ Escalations are written for the `review`, `plan`, `automation` and `pr-check` st
 ```mermaid
 flowchart TD
   O[Outcome or escalation] --> B{Which one?}
-  B -->|blocked| B1[Answer the open question in the story,<br/>or merge the blocker]
+  B -->|blocked| B1[Answer the open question in the story's issue,<br/>or merge the blocker]
   B -->|no-changes| N1[Check the log: already implemented,<br/>or the story is too vague]
   B -->|review-escalated / unresolved| R1[Read the findings; fix by hand<br/>or decide the architecture question]
   B -->|qe-product-bug| P1{Is the test right?}
@@ -41,12 +44,17 @@ flowchart TD
 
 | Outcome | What happened | What to do |
 | --- | --- | --- |
-| `blocked` | The implementer stopped on a design-changing Open Question or an unimplemented blocker, or the blockers' branches conflict | Answer the question in the story (commit it), merge the blocker, or resolve the conflict in the worktree. Re-run the story |
-| `no-changes` | The implementer changed no implementation files | Check the runner log. If the feature already exists, add `## Implementation Notes` to the story by hand; if the story is too vague, sharpen it |
+| `blocked` | The implementer stopped on a design-changing Open Question or an unimplemented blocker, or the blockers' branches conflict. In epic delivery a rejected or blocked epic plan, or a failed foundation, ends every story of the epic `blocked` | Answer the question in the story's issue on the board, merge the blocker, or resolve the conflict in the worktree. Re-run the story (or the epic) |
+| `plan-rejected` | The orchestrator's plan broke the rules twice, or needed more than `maxSubtasks` (4) subtasks | Read the plan errors in the findings. A story too big for four subtasks must be split into smaller stories |
+| `pair-exhausted` | A subtask was not approved after `maxPairRounds` (3) rounds and one escalation | Read the verifier findings on the Failed card. The subtask worktree is kept for debugging (`implement cleanup` removes it). Sharpen the acceptance criteria, or fix by hand and re-run |
+| `merge-conflict` | The orchestrator could not resolve a merge conflict (a subtask into the story branch, or a story into the epic or group branch) | Resolve it in the worktree named in the reason, then re-run |
+| `model-policy` | A model the plan needs, or a role's CLI, is not allowed by the [model policy](models.md) | Fix `modelClasses`, `implement.roles` or the agent CLI (`npm run models:check`), then re-run |
+| `limit-agent-runs`, `limit-wall-clock` | The story hit `maxAgentRunsPerStory` (20) or `storyWallClockSec` (3 h) | Usually a story that is too big or too vague: split or sharpen it, then re-run |
+| `no-changes` | The implementer changed no implementation files | Check the runner log. If the feature already exists, add `## Implementation Notes` to the story's issue by hand; if the story is too vague, sharpen it |
 | `review-escalated` | No approval within `review.maxRounds` (5) | Read `<KEY>-review.md`. Either fix the code yourself in the worktree, or settle the disagreement (a story change, or a policy pack exception under `architecture-policy/exceptions/`). Then re-run |
 | `unresolved` | Still not approved after `maxImplementerRuns` (8) implementer runs | Same as `review-escalated` |
 | `qe-product-bug` | The tests contradict the code after `maxBugFixCycles` (2) fix cycles | Read `<KEY>-automation.md`. If the test matches the story, the code is wrong: fix it and finish again. If the story was ambiguous, fix the story and re-plan |
-| `qe-escalated` | The plan or tests didn't reach 10/10 in 5 rounds | Read `<KEY>-plan.md` or `<KEY>-automation.md`. Gaps that repeat usually point to an ambiguous story |
+| `qe-escalated` | The plan or tests didn't reach the required score (`loops.requiredScore`, 9/10) in 5 rounds | Read `<KEY>-plan.md` or `<KEY>-automation.md`. Gaps that repeat usually point to an ambiguous story |
 | `qe-blocked-on-plan` | The plan could not be verified, so no tests were written | Same as a `plan` escalation |
 | `qe-crashed`, `qe-timed-out`, `error` | A process died or ran past its timeout (`qeTimeoutSec`, `implementerTimeoutSec`) | Read the log, fix the cause (agent CLI not signed in, Docker not running, a hung test), then re-run |
 | PR check escalated | `hook.maxRuns` (3) failing checks, or the loop stalled | Read the report. Fix the upheld findings, or record why a finding is out of scope in the PR description |
@@ -54,7 +62,8 @@ flowchart TD
 
 ## Re-running
 
-- **A whole story:** `node scripts/pipeline/pipeline.mjs implement run <KEY>`. It reuses the existing worktree and branch, calls `pipeline start` (which resets the review rounds and PR check runs) and continues from the code already on the branch. Add `--force` if the story file you pass already has `## Implementation Notes`.
+- **A whole story:** `node scripts/pipeline/pipeline.mjs implement run <KEY>`. It reuses the existing worktree and branch, calls `pipeline start` (which resets the review rounds and PR check runs) and continues from the code already on the branch. Add `--force` if the story already has `## Implementation Notes` or its card is in Pending Review or Done, and `--takeover` if another machine holds its card. A story of an epic whose epic run is not finished joins the epic branch again (`--standalone` gives it its own branch and PR).
+- **A whole epic:** `implement run --epic <EPIC>` again reuses the epic plan and the epic branch; `implement resume` continues an interrupted run.
 - **Only the tests:** from the worktree, `node scripts/qe/qe.mjs plan KEY` and `node scripts/qe/qe.mjs automate KEY` (add `--background` to detach).
 - **Only the review:** `node scripts/review/review.mjs run KEY` runs one round and prints it.
 - **Interactively:** open an agent session in the worktree, run `node scripts/pipeline/pipeline.mjs start KEY`, make the fix, then `node scripts/pipeline/pipeline.mjs done`. The Stop hook runs review, QE and the PR check again.
@@ -65,13 +74,15 @@ These commands are the same in Terminal on macOS and in PowerShell on Windows. T
 
 ## Cleaning up
 
-`implement run` never deletes worktrees. Once a story's branch is merged or abandoned, run these from the main checkout (same commands on macOS and Windows; git accepts forward slashes in PowerShell too):
+`implement run` never deletes story, epic or bug-group worktrees (it removes subtask worktrees once they are merged; `implement cleanup` removes the ones a failed story kept). Once a branch is merged or abandoned, run these from the main checkout (same commands on macOS and Windows; git accepts forward slashes in PowerShell too):
 
 ```bash
 git worktree list
 git worktree remove ../<repo>-worktrees/<key>
 git branch -D feat/<key>-<title>
 ```
+
+Epic delivery uses `../<repo>-worktrees/epic-<slug>` on `epic/<slug>`, and a bug epic `../<repo>-worktrees/bugfix-<slug>--<group>` on `bugfix/<slug>/<group>`.
 
 If `git worktree remove` fails on Windows because a file is in use, close any editor, terminal or `dotnet` process still running in that folder, then try again.
 
