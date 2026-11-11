@@ -1,4 +1,5 @@
-import { execFileSync } from 'child_process';
+/// <reference types="node" />
+import { execFileSync } from 'node:child_process';
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { test, expect } from '../fixtures';
 import { DOCKER, loadScenario } from './scenario';
