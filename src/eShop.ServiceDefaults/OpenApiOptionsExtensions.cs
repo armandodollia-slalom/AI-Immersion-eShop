@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Json.Nodes;
 using Asp.Versioning.ApiExplorer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
@@ -6,7 +7,6 @@ using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
 using Microsoft.OpenApi;
-using System.Text.Json.Nodes;
 
 namespace eShop.ServiceDefaults;
 
@@ -146,7 +146,7 @@ internal static class OpenApiOptionsExtensions
         {
             // Add an example for the API version parameter and remove the default value
             var apiVersionParameter = operation.Parameters?.FirstOrDefault(p => p.Name == "api-version");
-            if (apiVersionParameter?.Schema is OpenApiSchema { Default: { }} targetSchema)
+            if (apiVersionParameter?.Schema is OpenApiSchema { Default: { } } targetSchema)
             {
                 targetSchema.Examples = [targetSchema.Default];
                 targetSchema.Default = null;

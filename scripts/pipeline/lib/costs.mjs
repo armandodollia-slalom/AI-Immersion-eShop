@@ -21,6 +21,13 @@ export function summarize(rows) {
   let cliComputed = 0;
   const cliRuns = new Set();
   let unpricedTokens = 0;
+  // Copilot meters premium requests and AI credits (nano AIU; 1e11 nano AIU = $1, which matches the
+  // API list price we compute), so its own figures are kept next to ours.
+  let premium = 0;
+  let nanoAiu = 0;
+  let nanoComputed = 0;
+  const premiumRuns = new Set();
+  const nanoRuns = new Set();
   const runs = new Set();
   const unmeasured = new Set();
   const cacheHitRuns = new Set();
@@ -45,6 +52,15 @@ export function summarize(rows) {
       cost += r.cost_usd;
       m.costUsd += r.cost_usd;
     }
+    if (r.premium_requests != null) {
+      premium += r.premium_requests;
+      premiumRuns.add(r.run_id);
+    }
+    if (r.nano_aiu != null) {
+      nanoAiu += r.nano_aiu;
+      nanoComputed += r.cost_usd ?? 0;
+      nanoRuns.add(r.run_id);
+    }
     if (r.cli_cost_usd != null) {
       cliCost += r.cli_cost_usd;
       cliComputed += r.cost_usd ?? 0;
@@ -62,9 +78,13 @@ export function summarize(rows) {
     cliCostUsd: cliRuns.size ? round(cliCost, 6) : null,
     cliCheck: cliRuns.size ? { runs: cliRuns.size, computedUsd: round(cliComputed, 6), reportedUsd: round(cliCost, 6) } : null,
     unpricedTokens,
+    premiumRequests: premiumRuns.size ? round(premium, 3) : null,
+    copilotCheck: nanoRuns.size ? { runs: nanoRuns.size, meteredUsd: round(nanoAiu / NANO_AIU_PER_USD, 6), computedUsd: round(nanoComputed, 6) } : null,
     models: Object.fromEntries(Object.entries(models).map(([k, v]) => [k, { tokens: v.tokens, costUsd: round(v.costUsd, 6) }])),
   };
 }
+
+export const NANO_AIU_PER_USD = 1e11;
 
 const round = (n, digits) => Math.round(n * 10 ** digits) / 10 ** digits;
 
@@ -139,6 +159,9 @@ function notes(total) {
   if (total.unpricedTokens) out.push(`${tok(total.unpricedTokens)} token(s) are on models without a price in scripts/pipeline/pricing.json and are not in the cost.`);
   const c = total.cliCheck;
   if (c) out.push(`Check: ${c.runs} run(s) also report a cost from the agent CLI: ${usd(c.reportedUsd)} reported, ${usd(c.computedUsd)} computed from pricing.json.`);
+  if (total.premiumRequests != null) out.push(`Copilot premium requests: ${total.premiumRequests} (what a Copilot plan bills against its monthly allowance).`);
+  const p = total.copilotCheck;
+  if (p) out.push(`Copilot metering: ${p.runs} run(s) report AI credits worth ${usd(p.meteredUsd)}; ${usd(p.computedUsd)} computed from pricing.json.`);
   return out;
 }
 

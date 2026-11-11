@@ -3,5 +3,7 @@
 # cache, no LLM calls). Nothing is staged or committed. Never blocks git.
 root="$(git rev-parse --show-toplevel)" || exit 0
 command -v graphify >/dev/null 2>&1 || exit 0
+# A build already running (or a git command it ran) must not start another one.
+[ -n "${GRAPHIFY_BUILDING:-}" ] && exit 0
 ( "$root/scripts/graphify-build.sh" >/dev/null 2>&1 & ) >/dev/null 2>&1
 exit 0

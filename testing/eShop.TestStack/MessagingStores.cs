@@ -1,4 +1,4 @@
-using RabbitMQ.Client;
+﻿using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
 using StackExchange.Redis;
 

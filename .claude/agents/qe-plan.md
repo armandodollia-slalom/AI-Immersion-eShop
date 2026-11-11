@@ -36,6 +36,10 @@ priority: P1
 
 # TC-PROMO-3-07: Expired coupon is reported as Invalid/Expired and not applied
 
+## Why
+
+- Why this case exists: the requirement or risk it protects, why it is a separate case, and why this layer and data. One to three sentences.
+
 ## Preconditions
 
 - Exact data that must exist (ids, prices, dates, users, statuses).
@@ -50,8 +54,9 @@ priority: P1
 ```
 
 - `type` is `happy` or `sad`. Sad cases also set `sad-path` to one of the values listed in the task.
-- `layer` is `functional` (API/service level against real dependencies) or `e2e` (through the WebApp UI on the test stack). Choose the cheapest layer that exercises the requirement end to end.
+- `layer` is `unit` (in-process, no running services, for example the AppHost resource model in `tests/eShop.AppHost.UnitTests`), `functional` (API/service level against real dependencies) or `e2e` (through the WebApp UI on the test stack). Choose the cheapest layer that exercises the requirement end to end, and the layer the story's Test scope names when it has one.
 - `covers` names the story section, rule, field or algorithm step the case checks, so a reviewer can trace every requirement.
+- `## Why` records your reasoning for the case. It goes into the pipeline's decision log, which is used to improve the agents, the story template and the docs, so be specific: name the requirement, the risk if it broke, and why you chose this layer over a cheaper one.
 
 ## Coverage rules
 
@@ -60,6 +65,9 @@ priority: P1
 - One behavior per case. Split cases instead of chaining many assertions about unrelated behavior.
 - Expected results must be concrete and observable. Never write "works correctly", "handles gracefully" or "appropriate error".
 - Do not invent requirements. If the story is ambiguous, write the case for the most literal reading and record the ambiguity under an `## Open questions` section in `_index.md`.
+- If the story has a **Test scope** section, follow it: put each area at the layer it names, and write no cases for what it marks out of scope.
+- Write sad paths only where the story states or directly implies the expected outcome. Behavior the story leaves undefined (for example concurrency, outages, exact error bodies) goes under `## Open questions`, never into a case's expected result.
+- Prefer fewer, sharper cases: one case per distinct observable behavior, with one exact command or request per step and no alternatives ("X or Y").
 - Use the seeded test-stack users and data where they fit (`testing/scenarios/default`, users alice and bob); describe any extra data the scenario must contain.
 
 ## Updating a plan
@@ -70,8 +78,10 @@ When the task says `update`, edit the existing files in place. Keep ids stable f
 
 Before you finish, re-read the story line by line and confirm each requirement maps to a case. End your final message with one line:
 
-`AGENT_RESULT: {"status": "done", "cases": <number of case files>}`
+`AGENT_RESULT: {"status": "done", "cases": <number of case files>, "summary": "<how you split the story into cases, in one or two sentences>", "excluded": [{"item": "<requirement, path or behavior you wrote no case for>", "why": "<out of scope per Test scope, undefined by the story (see Open questions), covered by another case, …>"}]}`
+
+List every deliberate omission in `excluded`, including the open questions. These reasons are logged with the plan.
 
 ## Lessons
 
-If `.github/agents/lessons/qe-plan.md` exists, read it before you start and follow every rule in it. They come from earlier verifier denials. (When the QE pipeline runs this agent it already includes them.)
+If `.github/agents/lessons/qe-plan.md` exists, read it before you start and follow every rule in it. They come from earlier reviews, verifier denials and test failures. (When the pipeline runs this agent it already includes them.)

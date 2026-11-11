@@ -223,6 +223,52 @@ export function recordUsage(config, fields) {
   }
 }
 
+// Sums usage records (one agent run, or many) for callers that attribute cost themselves, such as the
+// implement harness's subtask records. Unmeasured or unpriced records leave their part null-safe:
+// `costUsd` is null only when nothing was priced; `unpriced` counts measured records without a price.
+export function summarizeUsage(records = []) {
+  const sum = { runs: 0, measured: 0, unpriced: 0, tokens: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0 }, costUsd: null, premiumRequests: null, nanoAiu: null };
+  const runs = new Set();
+  const add = (field, value) => {
+    if (value == null) return;
+    sum[field] = Math.round(((sum[field] ?? 0) + value) * 1e6) / 1e6;
+  };
+  for (const r of records) {
+    runs.add(r.run_id ?? r);
+    if (!r.measured) continue;
+    sum.measured++;
+    const t = r.tokens ?? {};
+    const write = (t.cache_write_5m ?? 0) + (t.cache_write_1h ?? 0);
+    sum.tokens.input += t.input ?? 0;
+    sum.tokens.output += t.output ?? 0;
+    sum.tokens.cache_read += t.cache_read ?? 0;
+    sum.tokens.cache_write += write;
+    sum.tokens.total += (t.input ?? 0) + (t.output ?? 0) + (t.cache_read ?? 0) + write;
+    if (r.cost_usd == null) sum.unpriced++;
+    add('costUsd', r.cost_usd);
+    add('premiumRequests', r.premium_requests);
+    add('nanoAiu', r.nano_aiu);
+  }
+  sum.runs = runs.size;
+  return sum;
+}
+
+// Adds two summaries (from summarizeUsage); either may be null.
+export function addUsage(a, b) {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  const plus = (x, y) => (x == null && y == null ? null : Math.round(((x ?? 0) + (y ?? 0)) * 1e6) / 1e6);
+  return {
+    runs: a.runs + b.runs,
+    measured: a.measured + b.measured,
+    unpriced: a.unpriced + b.unpriced,
+    tokens: Object.fromEntries(Object.keys(a.tokens).map((k) => [k, (a.tokens[k] ?? 0) + (b.tokens[k] ?? 0)])),
+    costUsd: plus(a.costUsd, b.costUsd),
+    premiumRequests: plus(a.premiumRequests, b.premiumRequests),
+    nanoAiu: plus(a.nanoAiu, b.nanoAiu),
+  };
+}
+
 export const loadUsage = (config) => readJsonl(metricsFile(config, USAGE_FILE));
 
 export function readUsageFile(file) {

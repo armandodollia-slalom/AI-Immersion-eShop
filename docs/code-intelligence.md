@@ -32,7 +32,7 @@ agent CLI ──stdio──> scripts/lsp/mcp.mjs ──unix socket──> lspd (
 | Language | Server | Version | Installed by |
 | :- | :- | :- | :- |
 | C# (`.cs`) | `roslyn-language-server` (Roslyn, the server behind the VS Code C# extension) | 5.13.0-1.26514.10 | `.config/dotnet-tools.json` (local tool) |
-| TypeScript / JavaScript (`.ts .tsx .mts .cts .js .jsx .mjs .cjs`) | `typescript-language-server` + `typescript` | 5.3.0 + 5.9.3 | `package.json` devDependencies |
+| TypeScript / JavaScript (`.ts .tsx .mts .cts .js .jsx .mjs .cjs`) | `typescript-language-server` + `typescript` | 5.3.0 + 6.0 (`~6.0.0`, shared with ESLint) | `package.json` devDependencies |
 | bash (`.sh .bash`) | `bash-language-server` | 5.8.1 | `package.json` |
 | JSON, CSS, HTML | `vscode-langservers-extracted` | 4.10.0 | `package.json` |
 | YAML | `yaml-language-server` | 1.25.0 | `package.json` |
@@ -164,5 +164,7 @@ machine-wide (6 x ~0.8 GB). Warm load of the full solution takes about 10 s; a f
 - Bogus "type or namespace not found" errors: the project was not restored; `dotnet restore eShop.Web.slnf`, then
   `lspd.mjs stop` and start again.
 - MCP server fails to start: `node scripts/lsp/mcp.mjs < /dev/null` prints the reason; usually `npm ci` is missing.
+- YAML server exits during initialization with `Cannot find module 'ajv/dist/core'`: ESLint's `ajv@6` got hoisted over the
+  `ajv@8` the YAML server needs. `package.json` pins `ajv@^8` as a dev dependency for this; keep it when updating ESLint.
 - Everything at once: `node scripts/lsp/lspd.mjs stop-all`.
 - Tests: `node --test scripts/lsp/test/*.test.mjs` (also part of `npm run test:pipeline`).

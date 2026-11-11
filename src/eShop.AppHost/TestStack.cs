@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using Aspire.Hosting.Docker;
 using Aspire.Hosting.Publishing;
 using Microsoft.Extensions.Configuration;

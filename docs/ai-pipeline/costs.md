@@ -44,6 +44,12 @@ All runs go through `runAgent` and `runAgentAsync` in `scripts/pipeline/lib/agen
 
 Recording usage never fails a run. A model with no price is recorded with `cost_usd: null`, and a warning names it.
 
+Every run's result also carries a summary of what it recorded (`usage`: tokens, `costUsd`, `premiumRequests`, `nanoAiu`; `summarizeUsage` in `usage.mjs`). The implement harness adds these up per subtask and per story, so `subtask-runs.jsonl` and `decision-outcomes.jsonl` carry `tokens`, `cost` and `premiumRequests` next to the decisions they paid for, and `implement-runs.jsonl` carries the story total (`tokens`, `cost_usd`, `premium_requests`).
+
+## Copilot billing
+
+Copilot plans bill **premium requests** (a per-model multiplier per request: Sonnet 5.5 is 1, Opus 5.5 is 15), and Copilot meters usage in AI credits (`totalNanoAiu` in its usage file; 1e11 nano AIU is $1). Both are recorded on every Copilot run (`premium_requests`, `nano_aiu`). The cost reports add a note with the premium requests and the AI-credit dollars next to the cost computed from `pricing.json`; a live check showed the two dollar figures agree to the last digit, so the list-price cost is accurate for Copilot runs too.
+
 ## Prices
 
 The prices are in `scripts/pipeline/pricing.json`, in USD per million tokens. Each model has a list of entries, and each run is priced with the last entry whose `effective` date is on or before the day it ran (`null` means since launch). When a price changes, **append** a new entry with its `effective` date and never edit past ones, so older runs keep the price they were charged at. Model ids are normalized, so `claude-haiku-5-5` and `claude-haiku-4-5-20251001` match `claude-haiku-5.5` and `claude-haiku-4.5`. A model with a `longContext` tier is charged that tier when the average prompt per request is above `aboveInputTokens`. Claude Code doesn't report request counts, so a Claude run is treated as one request, which overestimates the tier on long multi-turn runs.
@@ -51,5 +57,5 @@ The prices are in `scripts/pipeline/pricing.json`, in USD per million tokens. Ea
 ## Not covered
 
 - Interactive sessions where a developer implements a story in their own Claude Code or Copilot session are not recorded; only the runs the pipeline starts are. A follow-up could read the session transcript from the Stop hook.
-- The Codex path is untested against a live CLI.
+- The Codex path is untested against a live CLI (and the model policy refuses Codex today: it has no allowed model ids).
 - A run killed on timeout usually has no usage to read, so it shows as unmeasured.

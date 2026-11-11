@@ -5,12 +5,26 @@
   "agentsDir": ".github/agents",
   "lessonsDir": ".github/agents/lessons",
   "baseRef": "origin/main",
+  "storyGuard": {
+    "folders": ["product-research"]
+  },
   "agent": {
     "cli": "claude",
+    "allowedModels": ["opus", "sonnet"],
+    "modelIds": {
+      "claude": { "opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5" },
+      "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5" }
+    },
+    "strictModels": true,
     "models": {
-      "default": null
+      "default": "sonnet"
     },
     "resultParseRetries": 1
+  },
+  "recovery": {
+    "maxAttempts": 3,
+    "backoffSec": 60,
+    "startingGraceSec": 120
   },
   "implExclude": [
     "tests",

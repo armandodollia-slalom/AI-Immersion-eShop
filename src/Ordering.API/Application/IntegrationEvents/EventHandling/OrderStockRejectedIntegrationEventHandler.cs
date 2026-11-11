@@ -1,4 +1,5 @@
 ﻿namespace eShop.Ordering.API.Application.IntegrationEvents.EventHandling;
+
 public class OrderStockRejectedIntegrationEventHandler(
     IMediator mediator,
     ILogger<OrderStockRejectedIntegrationEventHandler> logger) : IIntegrationEventHandler<OrderStockRejectedIntegrationEvent>

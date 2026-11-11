@@ -115,17 +115,19 @@ test('verdicts are strict: blocking findings need a file (code) or a screenshot 
   assert.equal(parseVerdict('nothing'), null);
 });
 
-test('model classes resolve per CLI through the model policy; a role can use another CLI', () => {
-  const config = { agent: { cli: 'claude', cmd: null, models: {} }, modelClasses: { claude: { small: 'claude-sonnet-5-5', medium: 'claude-sonnet-5-5', large: 'claude-opus-5-5', bad: 'gpt-4' }, copilot: { large: 'claude-opus-5.5' } }, implement: { roles: { orchestrator: { modelClass: 'large' }, verifier: { cli: 'codex', modelClass: 'medium' }, uiVerifier: { cli: 'copilot', modelClass: 'large' } } } };
-  assert.equal(resolveModel(config, 'pairImplementer', 'small'), 'claude-sonnet-5-5');
-  assert.equal(resolveModel(config, 'pairImplementer', 'large'), 'claude-opus-5-5');
-  assert.equal(resolveModel(config, 'pairImplementer', 'unknown'), 'claude-sonnet-5-5', 'no mapping: the provider default');
-  assert.throws(() => resolveModel(config, 'pairImplementer', 'bad'), /not allowed for claude/);
-  assert.throws(() => resolveModel(config, 'verifier', 'medium'), /no allowed models configured for codex/);
-  assert.equal(resolveModelForRole(config, 'uiVerifier'), 'claude-opus-5.5', 'the UI verifier runs on copilot');
-  assert.equal(resolveModel({ ...config, agent: { cli: 'claude', cmd: 'x' } }, 'pairImplementer', 'small'), null, 'a custom command picks its own model');
-  assert.equal(resolveModelForRole(config, 'orchestrator'), 'claude-opus-5-5');
-  assert.equal(resolveModelForRole({ ...config, agent: { ...config.agent, models: { implementer: 'claude-sonnet-5-5' } } }, 'orchestrator'), 'claude-sonnet-5-5', 'agent.models.implementer pins it');
+test('model classes map to allowed aliases, checked for the role\'s CLI; a role can use another CLI', () => {
+  const agent = { cli: 'claude', cmd: null, models: {}, strictModels: true, allowedModels: ['opus', 'sonnet'], modelIds: { claude: { opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5' }, copilot: { opus: 'claude-opus-5.5', sonnet: 'claude-sonnet-5.5' } } };
+  const config = { agent, modelClasses: { small: 'sonnet', medium: 'sonnet', large: 'opus', bad: 'haiku' }, implement: { roles: { orchestrator: { modelClass: 'large' }, verifier: { cli: 'codex', modelClass: 'medium' }, uiVerifier: { cli: 'copilot', modelClass: 'large' } } } };
+  assert.equal(resolveModel(config, 'pairImplementer', 'small'), 'sonnet');
+  assert.equal(resolveModel(config, 'pairImplementer', 'large'), 'opus');
+  assert.equal(resolveModel(config, 'pairImplementer', 'unknown'), null, 'no mapping and no default: the CLI default');
+  assert.throws(() => resolveModel(config, 'pairImplementer', 'bad'), /Model "haiku" is not allowed/);
+  assert.throws(() => resolveModel(config, 'verifier', 'medium'), /no id for agent CLI "codex"/, 'codex has no allowed model ids');
+  assert.equal(resolveModelForRole(config, 'uiVerifier'), 'opus', 'the UI verifier runs on copilot, which has an opus id');
+  assert.equal(resolveModel({ ...config, agent: { ...agent, cmd: 'x' } }, 'verifier', 'medium'), 'sonnet', 'a custom command gets the alias unchecked against a CLI');
+  assert.equal(resolveModelForRole(config, 'orchestrator'), 'opus');
+  assert.equal(resolveModelForRole({ ...config, agent: { ...agent, models: { implementer: 'sonnet' } } }, 'orchestrator'), 'sonnet', 'agent.models.implementer pins it');
+  assert.throws(() => resolveModelForRole({ ...config, agent: { ...agent, models: { implementer: 'gpt-4' } } }, 'orchestrator'), /not allowed/);
 });
 
 test('a rewritten subtask keeps its id and must not overlap the others', () => {

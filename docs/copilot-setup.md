@@ -69,7 +69,7 @@ copilot
 
 Follow the device-code prompts in your browser. When asked, trust the repository folder so Copilot can read the project instructions.
 
-Copilot automatically loads this repository's custom instructions ([`.github/copilot-instructions.md`](../.github/copilot-instructions.md) and [`AGENTS.md`](../AGENTS.md)) and the project skills in [`.github/skills`](../.github/skills) (Aspire, Playwright, dotnet-inspect).
+Copilot automatically loads this repository's custom instructions ([`.github/copilot-instructions.md`](../.github/copilot-instructions.md) and [`AGENTS.md`](../AGENTS.md)) and the project skills in [`.github/skills`](../.github/skills) (Aspire, Playwright, dotnet-inspect, feature demo video).
 
 To update later, run `copilot update` (or `winget upgrade GitHub.Copilot` / `brew upgrade --cask copilot-cli`).
 
@@ -98,7 +98,7 @@ Notes:
 
 ## 3. Enable graphify for Copilot
 
-This repository uses a [graphify](https://github.com/safishamsi/graphify) knowledge graph in `graphify-out/`. The graph is built locally with `scripts/graphify-build.sh`, which needs no API key. It combines a fresh code (AST) pass with the shared LLM extraction of docs and images committed in `graphify-out/cache/semantic/`. Everything else in `graphify-out/` is gitignored. After changing docs or images, run `scripts/graphify-build.sh --extract` (uses the `claude` CLI) and commit the new files in `graphify-out/cache/semantic/`; they are content-addressed, so they never conflict. The Copilot instructions tell the agent to run `graphify query` before reading source files. For that to work, the `graphify` command must be on your `PATH` and the graphify Copilot skill must be installed.
+This repository uses a [graphify](https://github.com/safishamsi/graphify) knowledge graph in `graphify-out/`. The graph is built locally with `scripts/graphify-build.sh`, which needs no API key. It combines a fresh code (AST) pass with the shared LLM extraction of docs and images committed in `graphify-out/cache/semantic/`. Everything else in `graphify-out/` is gitignored. After changing docs or images, run `scripts/graphify-build.sh --extract` (uses the `claude` CLI) and commit the new files in `graphify-out/cache/semantic/` (`git add $(git ls-files --others --exclude-standard graphify-out/cache/semantic)`); they are content-addressed, so they never conflict. Builds keep cache entries for older doc versions, so other branches can reuse them. The weekly `graphify cache prune` workflow (`scripts/graphify-build.sh --prune`) opens a pull request that removes entries no branch or open pull request needs. Without the `claude` CLI, run `scripts/graphify-build.sh`: your local graph covers the changed docs from code only, and someone with the CLI runs `--extract` later to share them. The Copilot instructions tell the agent to run `graphify query` before reading source files. For that to work, the `graphify` command must be on your `PATH` and the graphify Copilot skill must be installed.
 
 ### Windows
 
@@ -142,7 +142,7 @@ If `graphify` isn't found after a `pip install --user`, add `$(python3 -m site -
 ### What this does
 
 - `graphify install --platform copilot` copies the graphify skill to `~/.copilot/skills/graphify` (Windows: `%USERPROFILE%\.copilot\skills\graphify`), so `/graphify` works in Copilot.
-- `core.hooksPath .githooks` enables post-commit, post-merge, post-checkout and post-rewrite hooks that run `scripts/graphify-build.sh` in the background to keep your local graph fresh. Nothing is staged or committed, so the graph never causes merge conflicts. The hooks skip quietly if `graphify` isn't on `PATH`.
+- `core.hooksPath .githooks` enables post-commit, post-merge, post-checkout and post-rewrite hooks that run `scripts/graphify-build.sh` in the background to keep your local graph fresh. Nothing is staged or committed, so the graph never causes merge conflicts. The hooks skip quietly if `graphify` isn't on `PATH`. A pre-commit hook also keeps graphify's pruning of `graphify-out/cache/semantic/` out of commits, since other branches still use those entries.
 - Build the graph once after cloning with `scripts/graphify-build.sh` (Windows: `bash scripts/graphify-build.sh` from Git Bash).
 
 **Restart T3 Code** (and any open terminals) after changing `PATH` so the Copilot agent inherits it.

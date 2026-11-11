@@ -8,6 +8,7 @@ import { dispatchGitHook, dispatchSessionStart, dispatchStop, dispatchText, load
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { nowIso } from './lib/util.mjs';
 
 const CMD = 'node scripts/pipeline/pipeline.mjs';
@@ -18,10 +19,16 @@ Implementation agent
   start <story>                 set the story you are working on (resets its review)
   done [story]                  mark the line of work complete; the stages run when your turn ends
   status [story]                state of every stage for a story
+  resume [story] [--force]      continue every stage's runs that died (crash, kill, reboot): implement
+                                batches, review rounds, QE plan/automation, PR checks. Each restarts in
+                                the background from its last saved round; --force also restarts runs
+                                escalated after crashing repeatedly
 
 Pipeline
-  implement run <dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+  implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
                                 implement every story given, each on its own worktree and branch
+  implement resume [--parallel N] [--pr]
+                                continue the last implement run that did not finish
   implement status [story]      progress of the latest implement run
   implement cleanup [story...]  remove subtask worktrees a failed run left behind
   implement decisions [--story KEY] [--json]
@@ -34,7 +41,7 @@ Pipeline
                                 ticket, stage, model and month
 
 Hooks (called by agent tool configs and .githooks)
-  hook stop | hook session-start [--nested]
+  hook stop | hook session-start [--nested] | hook pre-tool
   git-hook post-commit | post-merge | pre-push`;
 
 async function main() {
@@ -50,7 +57,9 @@ async function main() {
   switch (command) {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
-      return runStage(config, stage, process.argv.slice(3), { inherit: true }).status;
+      const args = process.argv.slice(3);
+      if (args[0] && !['run', 'resume', 'story', 'status', 'cleanup', 'decisions', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      return runStage(config, stage, args, { inherit: true }).status;
     }
 
     case 'start': {
@@ -79,6 +88,13 @@ async function main() {
       }
       const escalations = listEscalations(config);
       if (escalations.length) console.log(`\nEscalations: ${escalations.join(', ')}`);
+      return 0;
+    }
+
+    case 'resume': {
+      // Each stage restarts its interrupted runs in the background, so this returns right away.
+      const args = [...(positional[0] ? [requireStory(config, positional[0]).key] : []), ...(flags.force ? ['--force'] : []), '--background'];
+      for (const { stage, stdout } of dispatchText(config, stages, 'commands', 'resume', args)) console.log(`[${stage}]\n${stdout.trimEnd()}`);
       return 0;
     }
 
@@ -113,8 +129,15 @@ async function main() {
     }
 
     case 'hook': {
-      if (isDisabled()) return 0;
       const event = positional[0];
+      // The story guard also binds the agents the pipeline starts (PIPELINE_CHILD); only PIPELINE_DISABLE lifts it.
+      if (event === 'pre-tool') {
+        if (process.env.PIPELINE_DISABLE === '1') return 0;
+        const reason = storyGuard(config, readPayload());
+        if (reason) process.stdout.write(JSON.stringify(denyOutput(reason)));
+        return 0;
+      }
+      if (isDisabled()) return 0;
       const payload = readPayload();
       if (event === 'stop') {
         const output = dispatchStop(config, stages, payload);

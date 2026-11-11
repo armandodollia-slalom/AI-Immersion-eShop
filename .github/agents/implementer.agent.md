@@ -13,6 +13,8 @@ You often run in your own git worktree while other implementers work on other st
 
 The caller gives you a story ID (`PROMO-3`) or a path. Resolve it to `product-research/stories/{ID}-*.md`. If no file matches, stop and say so.
 
+That story file is the only thing in `product-research/` you may open. Other stories, epics and mockups are off limits unless they sit inside the folder handed to `pipeline implement run`; a PreToolUse hook (the story guard) denies the rest. Work from the story text, the codebase and `docs/`.
+
 ## Two ways you run
 
 - **Interactive** (a person, or a Claude Code session using you as a subagent): you implement the whole story yourself, following steps 1 to 7 below. You cannot spawn subagents there, and you do not need to.
@@ -43,7 +45,7 @@ The caller gives you a story ID (`PROMO-3`) or a path. Resolve it to `product-re
 1. Read the story fully: User Story, Inputs, Outputs, Acceptance Criteria, Technical Notes, Related Stories, Open Questions.
 2. **Blocked by:** for each blocking story, check whether its code exists (graphify query for its new types/endpoints). If a blocker is not implemented, stop and report which one — do not stub around it unless the caller said to.
 3. **Open Questions:** if one changes the design (API shape, auth, data model), stop and return the question with a recommended answer. If it is minor, pick the conservative option, and record the decision in the story (step 6).
-4. Read the matching epic section in `product-research/epic-*.md` and any mockup under `product-research/mockups/{ID}-*/README.md` (FE stories).
+4. Do not read epics, mockups or other stories unless they are inside the folder handed to the pipeline. If the story is unclear without them, record the question in the story (step 6) rather than looking elsewhere.
 5. Read the relevant parts of `docs/architecture/` (`services.md`, `event-flows.md`, `infrastructure.md`) so new code fits the existing patterns.
 6. **graphify first, always.** Every code lookup starts with graphify, not just the first one:
    - "Where is X / how does X work" → `graphify explain "<symbol or concept>"` (cheapest, most focused). It wants an exact label like `MigrateDbContextExtensions.AddMigration()`; on a miss it lists close matches with file and line, which is often all you need. Use `graphify query "<question>" --budget 1500` only for broad questions, and `graphify path "<A>" "<B>"` for how two things connect.
@@ -53,6 +55,7 @@ The caller gives you a story ID (`PROMO-3`) or a path. Resolve it to `product-re
    - Put these rules in any subagent prompt that explores code.
    - **Language servers, if the LSP MCP tools are available:** graphify stays the entry point (where to look, how things connect). Use the LSP tools for precise work at the locations graphify found: go-to-definition and signatures to confirm existing code before you change it, find-references before changing any signature (update every caller), diagnostics after each edit, and rename for safe renames. If they are unavailable, fall back to graphify and grep.
 7. Verify every file/line reference in the story's Technical Notes against the code. Stories can be wrong; the code wins. Note any mismatch in your report.
+8. If `.github/agents/lessons/implementer.md` exists, read it and follow every rule in it. They come from mistakes that architecture reviews and PR checks blocked in earlier stories.
 
 ## 3. Implement
 
@@ -105,7 +108,7 @@ Don't run functional tests, `teststack up/load` or Playwright. If a check fails,
 Then:
 - `graphify update .` (code changed).
 - Don't run `scripts/graphify-build.sh --extract` from a worktree: the cache folder is keyed by checkout path, so it duplicates the shared cache and re-extracts unrelated docs at API cost. List changed `.md` files in the report; the main checkout extracts after merge. Never commit anything in `graphify-out/`.
-- Run markdownlint on changed markdown (`npx markdownlint-cli <files>`), since CI lints every `**/*.md`.
+- Run `npm run lint` (ESLint, `dotnet format --verify-no-changes`, markdownlint) and fix what it reports (`npm run lint:fix` auto-fixes most), since CI runs the same checks.
 
 ## 6. Close out the story
 
@@ -135,3 +138,9 @@ Return, in this order:
 4. Commands run and their results, including any existing tests you updated and why.
 5. **For `qe-automation`:** what to test per acceptance criterion — entry points (endpoints, methods, pages), edge cases and error paths you handled, events published or consumed, and scenario data the flow needs (users, catalog items, promotions).
 6. Story mismatches, decisions made, out-of-scope bugs noticed, and follow-ups.
+
+End the message with one line the pipeline parses:
+
+```text
+AGENT_RESULT: {"status": "done" | "blocked" | "needs-input", "summary": "<one line>", "reason": "<why, when not done>"}
+```

@@ -5,14 +5,16 @@ import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { loadState } from '../pipeline/lib/state.mjs';
 import { activeStory, listStories } from '../pipeline/lib/stories.mjs';
 import { setLogTag } from '../pipeline/lib/util.mjs';
-import { architectureReview, hookStop, resetReview, reviewMetrics, sessionContext } from './lib/review.mjs';
+import { hookStop, resetReview, resumeReview, reviewMetrics, reviewRound, sessionContext } from './lib/review.mjs';
 
 setLogTag('review');
 
 const USAGE = `Usage: node scripts/review/review.mjs <command> [options]
 
-  run [story]                   run one architecture review round now and print the verdict
+  run [story]                   run one architecture review round now (policy pack, then reviewer) and print the verdict
   status [story]
+  resume [story] [--force]      report review rounds cut short by a crash (the next Stop reruns them);
+                                --force clears a review that crashed too often so it runs again
   metrics [--json] [--since <iso-date>]
 
 Hooks (called by scripts/pipeline/pipeline.mjs)
@@ -30,7 +32,7 @@ async function main() {
   switch (command) {
     case 'run': {
       const story = requireStory(config, positional[0], { fallbackActive: true });
-      console.log(JSON.stringify(architectureReview(config, story, loadState(config, story.key).review.rounds + 1), null, 2));
+      console.log(JSON.stringify(reviewRound(config, story, loadState(config, story.key).review.rounds + 1), null, 2));
       return 0;
     }
 
@@ -41,6 +43,13 @@ async function main() {
         console.log(`${story.key.padEnd(10)} review=${review.lastVerdict ?? '-'}${review.rounds ? ` (round ${review.rounds})` : ''}${review.approvedHash ? ` approved=${review.approvedHash}` : ''}`);
         if (positional.length && review.lastReason) console.log(`\nLast review:\n${review.lastReason}`);
       }
+      return 0;
+    }
+
+    case 'resume': {
+      const stories = positional.length ? positional.map((a) => requireStory(config, a)) : listStories(config);
+      const lines = stories.map((story) => resumeReview(config, story, { force: Boolean(flags.force) })).filter(Boolean);
+      console.log(lines.join('\n') || 'No interrupted architecture reviews.');
       return 0;
     }
 

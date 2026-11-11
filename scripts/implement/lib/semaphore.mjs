@@ -24,7 +24,7 @@ function tryTake(dir, max, label) {
       fs.writeFileSync(file, body, { flag: 'wx' });
       return { file, token };
     } catch {
-      let holder = null;
+      let holder;
       try {
         holder = JSON.parse(fs.readFileSync(file, 'utf8'));
       } catch {

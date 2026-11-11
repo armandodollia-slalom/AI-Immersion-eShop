@@ -5,21 +5,9 @@
     }
   },
   "modelClasses": {
-    "claude": {
-      "small": "claude-sonnet-5-5",
-      "medium": "claude-sonnet-5-5",
-      "large": "claude-opus-5-5"
-    },
-    "copilot": {
-      "small": "claude-sonnet-5.5",
-      "medium": "claude-sonnet-5.5",
-      "large": "claude-opus-5.5"
-    },
-    "codex": {
-      "small": null,
-      "medium": null,
-      "large": null
-    }
+    "small": "sonnet",
+    "medium": "sonnet",
+    "large": "opus"
   },
   "implement": {
     "worktreeDir": "../{repo}-worktrees",
@@ -30,6 +18,8 @@
     "maxBugFixCycles": 2,
     "qeTimeoutSec": 14400,
     "qePollSec": 5,
+    "maxWorkerRetries": 2,
+    "retryDelaySec": 30,
     "orchestrate": true,
     "maxSubtasks": 4,
     "selfModeMaxFiles": 6,

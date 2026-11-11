@@ -1,3 +1,4 @@
+import { DECISIONS_FILE } from '../../pipeline/lib/decisions.mjs';
 import { readJsonl } from '../../pipeline/lib/util.mjs';
 import { PRODUCER, VERIFIER, metricsFile } from './verify.mjs';
 
@@ -7,6 +8,9 @@ export function loadMetrics(config) {
     denials: readJsonl(metricsFile(config, 'verifier-denials.jsonl')),
     prechecks: readJsonl(metricsFile(config, 'precheck-failures.jsonl')),
     calibration: readJsonl(metricsFile(config, 'calibration.jsonl')),
+    reviews: readJsonl(metricsFile(config, 'arch-reviews.jsonl')),
+    prChecks: readJsonl(metricsFile(config, 'pr-checks.jsonl')),
+    decisions: readJsonl(metricsFile(config, DECISIONS_FILE)),
   };
 }
 

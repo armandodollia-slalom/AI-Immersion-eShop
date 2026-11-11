@@ -7,8 +7,8 @@ import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runAgent } from '../lib/agents.mjs';
 import { loadConfig } from '../lib/config.mjs';
-import { epicReport, formatStory, overviewReport, storyReport } from '../lib/costs.mjs';
-import { costOf, loadUsage, normalizeModel, parseClaudeJson, parseCodexJsonl, parseCopilotUsage, priceFor, usageRecords } from '../lib/usage.mjs';
+import { epicReport, formatStory, overviewReport, storyReport, summarize } from '../lib/costs.mjs';
+import { addUsage, costOf, loadUsage, normalizeModel, parseClaudeJson, parseCodexJsonl, parseCopilotUsage, priceFor, summarizeUsage, usageRecords } from '../lib/usage.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -116,5 +116,27 @@ describe('runAgent records usage', () => {
     assert.equal(result.output.trim(), 'done');
     const [rec] = loadUsage(config);
     assert.deepEqual([rec.story, rec.stage, rec.round, rec.model, rec.measured, rec.cost_usd], ['DEMO-9', 'implement', 2, 'claude-haiku-5.5', true, 0.005]);
+    assert.deepEqual([result.usage.runs, result.usage.tokens.total, result.usage.costUsd], [1, 50000, 0.005], 'the run result carries what it recorded');
+  });
+});
+
+describe('usage summaries', () => {
+  const rec = (run, model, tokens, cost, extra = {}) => ({ run_id: run, model, measured: true, tokens: { input: tokens, output: 10, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 }, cost_usd: cost, premium_requests: null, nano_aiu: null, ...extra });
+  it('summarizeUsage sums tokens, cost and Copilot premium requests; addUsage adds summaries', () => {
+    const a = summarizeUsage([rec('r1', 'claude-sonnet-5.5', 100, 0.25, { premium_requests: 1, nano_aiu: 25e9 }), rec('r1', 'claude-opus-5.5', 50, null)]);
+    assert.deepEqual([a.runs, a.measured, a.unpriced, a.tokens.total, a.costUsd, a.premiumRequests, a.nanoAiu], [1, 2, 1, 170, 0.25, 1, 25e9]);
+    const none = summarizeUsage([{ run_id: 'r2', measured: false }]);
+    assert.deepEqual([none.runs, none.costUsd, none.premiumRequests], [1, null, null]);
+    const both = addUsage(a, summarizeUsage([rec('r3', 'claude-opus-5.5', 30, 0.5, { premium_requests: 15 })]));
+    assert.deepEqual([both.runs, both.tokens.total, both.costUsd, both.premiumRequests], [2, 210, 0.75, 16]);
+    assert.equal(addUsage(null, a), a);
+  });
+  it('cost reports note Copilot premium requests and its metered AI credits next to the computed cost', () => {
+    const s = summarize([{ ...rec('r1', 'claude-opus-5.5', 4, 0.141466, { premium_requests: 15, nano_aiu: 14146600000 }), ts: '2026-11-10' }]);
+    assert.equal(s.premiumRequests, 15);
+    assert.deepEqual(s.copilotCheck, { runs: 1, meteredUsd: 0.141466, computedUsd: 0.141466 });
+    const text = formatStory({ story: 'TEST-1', epic: null, stages: [{ stage: 'implement-verify', ...s }], total: s });
+    assert.match(text, /Copilot premium requests: 15/);
+    assert.match(text, /AI credits worth \$0\.14; \$0\.14 computed/);
   });
 });

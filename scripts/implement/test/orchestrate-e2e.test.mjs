@@ -38,7 +38,7 @@ before(() => {
   repo = path.join(tmp, 'shop');
   incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/board', 'scripts/models']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check', 'scripts/board', 'scripts/models']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -95,9 +95,10 @@ test('implement run (orchestrated): plan, pairs, merges, integration, review loo
   assert.ok(!fs.existsSync(`${wt}--catalog`) && !fs.existsSync(`${wt}--basket`), 'subtask worktrees removed');
 
   const metrics = path.join(wt, '.agent-metrics');
-  const decision = jsonl(path.join(metrics, 'orchestrator-decisions.jsonl'))[0];
-  assert.equal(decision.accepted, true);
+  const decision = jsonl(path.join(metrics, 'decisions.jsonl')).find((d) => d.stage === 'implement-plan');
+  assert.equal(decision.decision, 'plan-written');
   assert.equal(decision.features.acceptanceCriteria, 2);
+  decision.decisionId = decision.decision_id;
   const runs = jsonl(path.join(metrics, 'subtask-runs.jsonl'));
   assert.deepEqual(runs.map((r) => [r.subtaskId, r.approved, r.decisionId === decision.decisionId]), [['catalog', true, true], ['basket', true, true]]);
   const outcomes = jsonl(path.join(metrics, 'decision-outcomes.jsonl'));
@@ -115,6 +116,6 @@ test('implement run (orchestrated): plan, pairs, merges, integration, review loo
 
   fs.cpSync(metrics, path.join(repo, '.agent-metrics'), { recursive: true });
   const report = pipeline(['implement', 'decisions', '--story', 'DEMO-1', '--json']);
-  const rows = JSON.parse(report.stdout);
+  assert.equal(report.status, 0, report.stderr); const rows = JSON.parse(report.stdout);
   assert.deepEqual(rows.map((r) => [r.subtaskId, r.labels]), [['catalog', ['over-provisioned']], ['basket', ['over-provisioned', 'weak-verification']]]);
 });

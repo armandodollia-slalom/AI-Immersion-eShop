@@ -1,4 +1,4 @@
-using eShop.EventBus.Abstractions;
+﻿using eShop.EventBus.Abstractions;
 using eShop.PaymentProcessor;
 using eShop.PaymentProcessor.IntegrationEvents.EventHandling;
 using eShop.PaymentProcessor.IntegrationEvents.Events;

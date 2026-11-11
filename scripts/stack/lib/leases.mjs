@@ -57,7 +57,7 @@ function readLease(home, slot, now) {
   try {
     return JSON.parse(text);
   } catch {
-    let ageMs = 0;
+    let ageMs;
     try { ageMs = now - fs.statSync(file).mtimeMs; } catch { return null; }
     return { slot, unreadable: true, ageMs };
   }
@@ -77,7 +77,7 @@ async function withMutex(home, fn, { timeoutMs = 30_000 } = {}) {
       try {
         if (Date.now() - fs.statSync(dir).mtimeMs > MUTEX_STALE_MS) fs.rmSync(dir, { recursive: true, force: true });
       } catch { /* removed by its holder meanwhile */ }
-      if (Date.now() > deadline) throw new Error(`timed out waiting for the lease mutex ${dir}`);
+      if (Date.now() > deadline) throw new Error(`timed out waiting for the lease mutex ${dir}`, { cause: error });
       await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 50));
     }
   }

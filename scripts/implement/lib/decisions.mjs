@@ -1,10 +1,16 @@
-// Decision log of the orchestrated implement flow: what the orchestrator decided (plan attempts), how
-// each subtask went, and what happened afterwards (escaped defects, the story's outcome, late outcomes
-// such as human commits before merge). Three append-only files under .agent-metrics/, joined by
-// `decisionId` (one per accepted plan) and `subtaskId`. Builders, attribution and labeling are pure.
+// Decision log of the orchestrated implement flow. The decisions themselves (each plan attempt, each
+// escalation, each pair verdict) go to the pipeline's shared decision log (.agent-metrics/decisions.jsonl,
+// scripts/pipeline/lib/decisions.mjs), which the factory retro reads; their outcomes (how each subtask
+// went, escaped defects, the story's outcome, late outcomes such as human commits before merge) are
+// metrics in subtask-runs.jsonl and decision-outcomes.jsonl. Everything joins on `decisionId` (one per
+// accepted plan; `decision_id` in decisions.jsonl) and `subtaskId`. Builders, attribution and labeling
+// are pure.
+import { DECISIONS_FILE as SHARED_DECISIONS_FILE } from '../../pipeline/lib/decisions.mjs';
 import { matchesAny } from './plan.mjs';
 
-export const DECISIONS_FILE = 'orchestrator-decisions.jsonl';
+export const DECISIONS_FILE = SHARED_DECISIONS_FILE;
+export const PLAN_STAGE = 'implement-plan';
+export const VERIFY_STAGE = 'implement-verify';
 export const SUBTASK_RUNS_FILE = 'subtask-runs.jsonl';
 export const OUTCOMES_FILE = 'decision-outcomes.jsonl';
 
@@ -57,6 +63,57 @@ export function decisionRecord({ ts, key, decisionId, attempt, accepted, errors 
   };
 }
 
+// A plan attempt (from decisionRecord) as a shared decision-log entry: decision plan-written,
+// plan-rejected or blocked; items are the subtasks with the orchestrator's reasons for each choice.
+export function planDecisionLog(rec, { blocked = false } = {}) {
+  return {
+    stage: PLAN_STAGE,
+    story: rec.story,
+    round: rec.attempt,
+    agent: 'implementer',
+    agentVer: rec.orchestrator.promptVersion,
+    subject: 'implementer',
+    decision: blocked ? 'blocked' : rec.accepted ? 'plan-written' : 'plan-rejected',
+    reason: rec.accepted ? [rec.modeReason, rec.splitReason].filter(Boolean).join(' / ') || null : rec.rejectionReasons.join('; ') || null,
+    decision_id: rec.decisionId,
+    mode: rec.mode,
+    mode_reason: rec.modeReason,
+    split_reason: rec.splitReason,
+    rejection_reasons: rec.rejectionReasons,
+    orchestrator: { cli: rec.orchestrator.cli, model: rec.orchestrator.model },
+    features: rec.features,
+    items: rec.subtasks.map((st) => ({ ...st, reason: st.modelReason ?? null })),
+  };
+}
+
+// A pair round's verdict as a shared decision-log entry. Findings from the harness's own checks (scope,
+// build, diagnostics) are included with their category, so the retro sees every reason a round failed.
+export function verdictDecisionLog({ key, decisionId, st, round, verdict, verifier = null, ui = false }) {
+  return {
+    stage: VERIFY_STAGE,
+    story: key,
+    round,
+    agent: ui ? 'pair-ui-verifier' : 'pair-verifier',
+    agentVer: verifier?.version ?? null,
+    subject: 'pair-implementer',
+    decision: verdict.verdict === 'APPROVED' ? 'approved' : 'changes-requested',
+    reason: verdict.summary ?? null,
+    decision_id: decisionId,
+    subtask: st.id,
+    items: (verdict.findings ?? []).map((f) => ({ severity: f.severity ?? null, category: f.category ?? null, file: f.file ?? null, line: f.line ?? null, screenshot: f.screenshot ?? null, reason: f.issue ?? f.detail ?? null, fix: f.fix ?? null })),
+  };
+}
+
+// Plan entries of the shared decision log in the shape labelDecisions works on (older records written
+// to orchestrator-decisions.jsonl by earlier versions already have it).
+export const planDecisions = (decisions) =>
+  decisions
+    .filter((d) => d.stage === undefined || d.stage === PLAN_STAGE)
+    .filter((d) => d.decision === undefined || ['plan-written', 'plan-rejected', 'blocked'].includes(d.decision))
+    .map((d) => (d.stage === PLAN_STAGE ? { story: d.story, decisionId: d.decision_id ?? null, accepted: d.decision === 'plan-written', mode: d.mode ?? null, subtasks: d.items ?? [] } : d));
+
+const usageOf = (u) => ({ tokens: u?.tokens?.total ?? null, cost: u?.costUsd ?? null, premiumRequests: u?.premiumRequests ?? null });
+
 const bySeverityCategory = (findings) => {
   const out = {};
   for (const f of findings ?? []) {
@@ -97,8 +154,7 @@ export function subtaskRunRecord(r) {
     mergeConflictFiles: r.mergeConflictFiles ?? [],
     expected: { files: r.expected?.files ?? null, loc: r.expected?.loc ?? null },
     actual: { files: r.actual?.files ?? null, loc: r.actual?.loc ?? null },
-    tokens: r.tokens ?? null,
-    cost: r.cost ?? null,
+    ...(r.usage !== undefined ? usageOf(r.usage) : { tokens: r.tokens ?? null, cost: r.cost ?? null, premiumRequests: r.premiumRequests ?? null }),
     wallClockSec: r.wallClockSec ?? null,
     agentRuns: r.agentRuns ?? 0,
     leaseWaitSec: r.leaseWaitSec ?? 0,
@@ -129,8 +185,7 @@ export const storyOutcomeRecord = (r) => ({
   mode: r.mode ?? null,
   outcome: r.outcome,
   reason: r.reason ?? null,
-  tokens: r.tokens ?? null,
-  cost: r.cost ?? null,
+  ...(r.usage !== undefined ? usageOf(r.usage) : { tokens: r.tokens ?? null, cost: r.cost ?? null, premiumRequests: r.premiumRequests ?? null }),
   wallClockSec: r.wallClockSec,
   agentRuns: r.agentRuns ?? null,
   reviewBlocks: r.reviewBlocks ?? 0,
@@ -152,7 +207,7 @@ export const DEFAULT_THRESHOLDS = { smallDiffLoc: 60, tinySubtaskLoc: 40, tinySu
 export function labelDecisions({ decisions = [], runs = [], outcomes = [] }, thresholds = {}) {
   const t = { ...DEFAULT_THRESHOLDS, ...thresholds };
   const rows = [];
-  for (const d of decisions.filter((x) => x.accepted && x.decisionId)) {
+  for (const d of planDecisions(decisions).filter((x) => x.accepted && x.decisionId)) {
     const dRuns = runs.filter((r) => r.decisionId === d.decisionId);
     const escaped = outcomes.filter((o) => o.type === 'escaped' && o.decisionId === d.decisionId);
     const story = outcomes.find((o) => o.type === 'story' && o.decisionId === d.decisionId);

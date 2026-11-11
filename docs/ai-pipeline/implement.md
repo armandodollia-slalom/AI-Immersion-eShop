@@ -7,8 +7,10 @@ node scripts/pipeline/pipeline.mjs implement run product-research/stories --dry-
 node scripts/pipeline/pipeline.mjs implement run path/to/stories               # one story at a time
 node scripts/pipeline/pipeline.mjs implement run path/to/stories --parallel 3 --pr
 node scripts/pipeline/pipeline.mjs implement run product-research/stories/PROMO-3-cart-pricing-evaluation-api.md
+node scripts/pipeline/pipeline.mjs implement PROMO-3                              # a story key, from storiesDir
 node scripts/pipeline/pipeline.mjs implement status                            # live progress, from another terminal
 node scripts/pipeline/pipeline.mjs implement cleanup [KEY]                     # remove subtask worktrees a failed run kept
+node scripts/pipeline/pipeline.mjs implement resume                            # continue a run that was interrupted
 node scripts/pipeline/pipeline.mjs implement metrics
 node scripts/pipeline/pipeline.mjs implement decisions [--story KEY] [--json]  # how the orchestrator's choices turned out
 ```
@@ -150,6 +152,18 @@ Each story's log is under `.agent-state/logs/implement-<KEY>-*.log` in the main 
 
 Hard stops are recorded (`limit_hit` in `implement-runs.jsonl`, `limitHit` in the decision log).
 
+## Interrupted runs
+
+Each run saves its story list and options to `.agent-state/implement/batch.json`, and each story's progress to `.agent-state/implement/<KEY>.json`. If the machine crashes or the runner is killed, `implement status` and the next agent session say so. `pipeline resume` restarts the batch in the background (log in `.agent-state/logs/`), and `implement resume` (or the same `implement run` again) continues it in the foreground:
+
+- stories that finished `done` and still have their branch are kept, and their dependents still stack on them (`--force` redoes them);
+- stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there, the runner goes straight to the tests; otherwise the implementer continues from the work on the branch, and the review keeps its round count;
+- the rest run as usual.
+
+A QE run that dies while the runner waits is resumed by the QE stage's own [recovery](qe.md#crash-recovery). A worker that fails with `error` or `qe-not-started` is retried `maxWorkerRetries` times in the same run.
+
+An orchestrated story that is resumed does not plan again. Subtasks approved before the crash were already merged into the story branch; the runner removes the subtask worktrees and branches the interrupted run left (stopping their language servers), and the orchestrator continues the story itself from what is on the branch, like a single implementer, before the review and QE. Stack slot leases need no cleanup: a lease whose owner process died is stale and reclaimed by the next `lease`. `implement status` lists leftover subtask worktrees, and `implement cleanup [KEY]` removes them by hand.
+
 ## Config
 
 `scripts/implement/config.json` (on top of `scripts/pipeline/config.json`):
@@ -165,10 +179,13 @@ Hard stops are recorded (`limit_hit` in `implement-runs.jsonl`, `limitHit` in th
 | `implement.maxBugFixCycles` | 2 | Times QE-found bugs go back to the orchestrator |
 | `implement.qeTimeoutSec` | 14400 | How long to wait for QE |
 | the limits above | | See [Limits](#limits) |
+| `implement.maxWorkerRetries` | 2 | Retries of a story whose worker failed (`error`, `qe-not-started`), resuming in its worktree |
+| `implement.retryDelaySec` | 30 | Wait before a retry, times the attempt number |
 | `implement.selfModeMaxFiles` | 6 | Guidance for the planner: self mode up to about this many files |
 | `implement.roles.<role>.cli` | `null` (the pipeline's CLI) | Run a role on another CLI. Roles: `orchestrator`, `pairImplementer`, `verifier`, `uiVerifier`. `PIPELINE_VERIFIER_CLI` sets both verifiers |
 | `implement.roles.<role>.modelClass` | orchestrator `large`, verifier `medium`, uiVerifier `large` | Fixed by the harness; pair implementers use the planner's class |
-| `modelClasses.<cli>.<class>` | claude: small and medium `claude-sonnet-5-5`, large `claude-opus-5-5`; copilot and codex `null` | Model per class and CLI; `null` is the CLI's default. `agent.models.implementer` pins the orchestrator's model. All choices go through `resolveModelForRole()` in `lib/plan.mjs` and the [model policy](models.md) (`scripts/models`), which rejects models it does not allow and disabled CLIs (Codex today) when the plan is accepted |
+| `modelClasses.<class>` | small and medium `sonnet`, large `opus` | Model alias per class (from `agent.allowedModels`). `agent.models.implementer` pins the orchestrator's model. All choices go through `resolveModelForRole()` in `lib/plan.mjs`, which checks the alias for the role's CLI with the pipeline's one model check (`resolveModel` in `scripts/pipeline/lib/agents.mjs`, see [models](models.md)) when the plan is accepted, so a disallowed model or a CLI without allowed ids (Codex today) fails the plan, not a pair |
+| `agent.models.implementer` | `null` (the orchestrator's class) | Model alias for the orchestrator or single implementer |
 | `implement.prepareCmd` | `dotnet restore eShop.Web.slnf` | Run in each new subtask worktree (failure is logged, not fatal) |
 | `implement.checks` | `dotnet build eShop.Web.slnf` | Commands whose output verifiers get; a failure fails the round |
 | `implement.unitTests` | `tests/{service}.UnitTests`, `dotnet test --project {project}` | Run for each `src/<service>/` with changes, when that project exists |
@@ -180,13 +197,14 @@ The agent CLI is the pipeline's (`PIPELINE_AGENT_CLI`, Claude Code by default). 
 
 ## Decision log
 
-Three append-only files in `.agent-metrics/` (committed with the story, `merge=union`), joined by `decisionId` (one UUID per accepted plan) and `subtaskId`:
+The orchestrator's decisions go to the pipeline's shared decision log, `.agent-metrics/decisions.jsonl` (`scripts/pipeline/lib/decisions.mjs`), where every stage records why its agents decided what they did and which the weekly [factory retro](qe.md#decision-log) reads (section `implement` of its digest). Their outcomes are metrics in two more files. All are append-only in `.agent-metrics/` (committed with the story, `merge=union`) and join on `decisionId` (one UUID per accepted plan, `decision_id` in `decisions.jsonl`) and `subtaskId`. A separate decisions file is not needed: the shared log's records take any extra structured fields, so a plan's reasons and expectations fit in it as they are.
 
 | File | One record per | Fields |
 | --- | --- | --- |
-| `orchestrator-decisions.jsonl` | plan attempt, accepted or rejected | `ts`, `story`, `decisionId` (null when rejected), `attempt`, `accepted`, `rejectionReasons`, `orchestrator` {`cli`, `model`, `promptVersion`}, `mode`, `modeReason`, `splitReason`, `features` {`services`, `acceptanceCriteria`, `uiStory`, `estimatedSize`}, `subtasks` [{`id`, `goal`, `owns`, `dependsOn`, `modelClass`, `modelReason`, `verify`, `verifyReason`, `expectedFiles`, `expectedLoc`, `confidence`, `alternatives`}] |
-| `subtask-runs.jsonl` | subtask, when it ends (after its merge) | `decisionId`, `subtaskId`, `implementer` and `verifier` {`cli`, `model`, `promptVersion`}, `modelClass`, `verify`, `maxRounds`, `rounds` [{`round`, `verdict`, `findings` (counts by `severity/category`), `diagnostics` {`errors`, `warnings`}, `outOfOwnsEdits`, `crossSubtaskFindings`}], `approved`, `escalation` (`none`, `rewrite`, `takeover`), `filesNeededOutsideOwns`, `mergeConflictFiles`, `expected` and `actual` {`files`, `loc`}, `tokens`, `cost` (null: the CLIs' text output does not report them), `wallClockSec`, `agentRuns`, `leaseWaitSec`, `lspCalls`, `signatureChangesWithoutReferences` |
-| `decision-outcomes.jsonl` | event | `type: "escaped"`: a story-level review finding or a file changed by a QE bug fix, credited to the subtask whose `owns` matches (`subtaskId` null when none does), with `source` (`arch-review`, `qe`) and the findings/files. `type: "story"`: the story's `outcome`, `reason`, `wallClockSec`, `agentRuns`, `reviewBlocks`, `bugFixCycles`, `limitHit`, `lspCalls`, `signatureChangesWithoutReferences`. `type: "late"` (written by `board pick` when the card reaches Done, in the main checkout, uncommitted): `prMerged`, `humanCommits` and `humanLines` (PR commits not reachable from the head the pipeline finished on), `humanAuthors`, `bugStories` (BUG-* stories that name the key), `reverts` (null: a hook for a later revert detector) |
+| `decisions.jsonl`, stage `implement-plan` | plan attempt (decision `plan-written`, `plan-rejected` or `blocked`) and escalation (`escalation-rewrite`, `escalation-takeover`, `gave-up`) | the shared fields (`ts`, `stage`, `story`, `round` = attempt, `agent`, `agent_ver`, `subject`, `decision`, `reason`), plus for plans `decision_id` (null when rejected), `mode`, `mode_reason`, `split_reason`, `rejection_reasons`, `orchestrator` {`cli`, `model`}, `features` {`services`, `acceptanceCriteria`, `uiStory`, `estimatedSize`} and `items` = the subtasks [{`id`, `goal`, `owns`, `dependsOn`, `modelClass`, `modelReason`, `verify`, `verifyReason`, `expectedFiles`, `expectedLoc`, `confidence`, `alternatives`}]; for escalations `decision_id`, `subtask`, `pair_outcome` and the findings that led to it |
+| `decisions.jsonl`, stage `implement-verify` | pair round with a verdict | `agent` (`pair-verifier` or `pair-ui-verifier`), `subject: pair-implementer`, `decision` (`approved`, `changes-requested`), `reason`, `decision_id`, `subtask`, `items` = the findings (the verifier's and the harness's own scope, build and diagnostics findings) with `severity`, `category`, `file`, `line`, `screenshot`, `reason`, `fix` |
+| `subtask-runs.jsonl` | subtask, when it ends (after its merge) | `decisionId`, `subtaskId`, `implementer` and `verifier` {`cli`, `model`, `promptVersion`}, `modelClass`, `verify`, `maxRounds`, `rounds` [{`round`, `verdict`, `findings` (counts by `severity/category`), `diagnostics` {`errors`, `warnings`}, `outOfOwnsEdits`, `crossSubtaskFindings`}], `approved`, `escalation` (`none`, `rewrite`, `takeover`), `filesNeededOutsideOwns`, `mergeConflictFiles`, `expected` and `actual` {`files`, `loc`}, `tokens`, `cost` (USD) and `premiumRequests`, summed from the subtask's agent runs ([costs](costs.md)), `wallClockSec`, `agentRuns`, `leaseWaitSec`, `lspCalls`, `signatureChangesWithoutReferences` |
+| `decision-outcomes.jsonl` | event | `type: "escaped"`: a story-level review finding or a file changed by a QE bug fix, credited to the subtask whose `owns` matches (`subtaskId` null when none does), with `source` (`arch-review`, `qe`) and the findings/files. `type: "story"`: the story's `outcome`, `reason`, `tokens`, `cost`, `premiumRequests` (every agent run of the orchestrated flow), `wallClockSec`, `agentRuns`, `reviewBlocks`, `bugFixCycles`, `limitHit`, `lspCalls`, `signatureChangesWithoutReferences`. `type: "late"` (written by `board pick` when the card reaches Done, in the main checkout, uncommitted): `prMerged`, `humanCommits` and `humanLines` (PR commits not reachable from the head the pipeline finished on), `humanAuthors`, `bugStories` (BUG-* stories that name the key), `reverts` (null: a hook for a later revert detector) |
 
 `implement decisions [--story KEY] [--json]` joins them and labels each subtask (thresholds in `implement.decisions`):
 
@@ -202,4 +220,6 @@ Caveats: compare decisions only between stories with similar `features` (service
 
 ## Not automatic
 
-Merging stories to `product-research/stories` does not start implementation: post-commit and post-merge only write test plans. Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI logged in.
+Adding or merging stories to `product-research/stories` starts nothing: no implementation and no test plans (unless you opted in with `git config qe.autoPlan true`). Run `implement run` yourself, or from a scheduled job or CI runner that has an agent CLI logged in.
+
+The agents only see the stories you pass to `implement run`: the [story guard](README.md#story-guard) denies them every other story, epic and mockup in `product-research/`. Pass a folder to let them read everything in it (for example an epic folder with its stories), or single story files to keep them to those.

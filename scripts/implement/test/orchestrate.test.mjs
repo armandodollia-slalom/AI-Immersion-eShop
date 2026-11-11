@@ -133,15 +133,19 @@ test('delegate: pairs run at most 2 at a time, dependents branch after their dep
   const plannerCall = agents.calls[0];
   assert.deepEqual([plannerCall.name, plannerCall.mode, plannerCall.noSubagents], ['implementer', 'read', true]);
   const pairCall = agents.calls.find((c) => c.name === 'pair-implementer');
-  assert.deepEqual([pairCall.mode, pairCall.noSubagents, pairCall.model], ['implement', true, 'claude-sonnet-5-5']);
+  assert.deepEqual([pairCall.mode, pairCall.noSubagents, pairCall.model], ['implement', true, 'sonnet'], 'the harness passes the class alias; runAgent maps it to the CLI id');
   const verifierCall = agents.calls.find((c) => c.name === 'pair-verifier');
   assert.equal(verifierCall.mode, 'read');
   assert.doesNotMatch(verifierCall.task, /modelReason|normal work|confidence/, 'reasoning never reaches verifiers');
   assert.match(verifierCall.task, /### Diff against the story branch[\s\S]*\+\/\/ (api|basket)/);
 
-  const decisions = readJsonl(path.join(env.repo, '.agent-metrics/orchestrator-decisions.jsonl'));
-  assert.equal(decisions.length, 1);
-  assert.equal(decisions[0].decisionId, ctx.decisionId);
+  const decisions = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl'));
+  const plans = decisions.filter((d) => d.stage === 'implement-plan');
+  assert.equal(plans.length, 1);
+  assert.deepEqual([plans[0].decision, plans[0].decision_id, plans[0].agent, plans[0].items.length], ['plan-written', ctx.decisionId, 'implementer', 3]);
+  assert.ok(plans[0].items.every((i) => i.modelReason && i.verifyReason), 'the reasons behind each subtask choice are in the shared decision log');
+  const verdicts = decisions.filter((d) => d.stage === 'implement-verify');
+  assert.deepEqual(verdicts.map((d) => [d.subtask, d.decision, d.decision_id === ctx.decisionId]).sort(), [['api', 'approved', true], ['basket', 'approved', true], ['web', 'approved', true]]);
   const runs = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'));
   assert.deepEqual(runs.map((x) => x.subtaskId).sort(), ['api', 'basket', 'web']);
   assert.ok(runs.every((x) => x.approved && x.rounds.length === 1 && x.decisionId === ctx.decisionId && x.actual.files === 1));
@@ -157,7 +161,7 @@ test('changes requested go verbatim to the next round, then approval', async () 
   const r = await orchestrate(context(env, makeConfig(env.repo), agents));
   assert.ok(r.ok);
   const second = agents.calls.filter((c) => c.name === 'pair-implementer')[1];
-  assert.match(second.task, /Findings from round 1[\s\S]*src\/Catalog\.API\/Api\.cs:3 the owner check is missing\n   Fix: do it/);
+  assert.match(second.task, /Findings from round 1[\s\S]*src\/Catalog\.API\/Api\.cs:3 the owner check is missing\n {3}Fix: do it/);
   assert.match(second.task, /Round 2 of at most 3/);
 });
 
@@ -249,8 +253,9 @@ test('a plan that breaks the rules is sent back once, then the story fails; too 
   assert.deepEqual([r.ok, r.outcome], [false, 'plan-rejected']);
   assert.equal(bad.calls.length, 2);
   assert.match(bad.calls[1].task, /previous plan was rejected[\s\S]*both own files/);
-  const decisions = readJsonl(path.join(env.repo, '.agent-metrics/orchestrator-decisions.jsonl'));
-  assert.deepEqual(decisions.map((d) => [d.attempt, d.accepted, d.decisionId]), [[1, false, null], [2, false, null]]);
+  const decisions = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl')).filter((d) => d.stage === 'implement-plan');
+  assert.deepEqual(decisions.map((d) => [d.round, d.decision, d.decision_id]), [[1, 'plan-rejected', null], [2, 'plan-rejected', null]]);
+  assert.match(decisions[0].reason, /both own files/);
 
   const env2 = makeRepo();
   const big = fakeAgents({ implementer: [async () => plan(['a', 'b', 'c', 'd', 'e'].map((id) => sub(id, [`src/${id}/**`])))] });
@@ -306,7 +311,7 @@ test('ui subtasks lease one stack slot for the whole pair, rebuild only changes 
   assert.ok(r.ok, JSON.stringify(r));
   const v = agents.calls.find((c) => c.name === 'pair-ui-verifier');
   assert.equal(v.mode, 'verify');
-  assert.equal(v.model, 'claude-opus-5-5', 'the UI verifier is large, fixed by the harness');
+  assert.equal(v.model, 'opus', 'the UI verifier is large, fixed by the harness');
   assert.match(v.task, /running at http:\/\/localhost:5333/);
   const second = agents.calls.filter((c) => c.name === 'pair-implementer')[1];
   assert.match(second.task, /Screenshot: .*artifacts\/pairs\/DEMO-1\/web\/round-1\/cart\.png/);
@@ -337,7 +342,7 @@ test('self mode: the orchestrator implements in the story worktree and a verifie
   const r = await orchestrate(context(env, makeConfig(env.repo), agents));
   assert.deepEqual([r.ok, r.mode], [true, 'self']);
   const impl = agents.calls[1];
-  assert.deepEqual([impl.name, impl.mode, impl.cwd, impl.model], ['implementer', 'implement', env.repo, 'claude-opus-5-5']);
+  assert.deepEqual([impl.name, impl.mode, impl.cwd, impl.model], ['implementer', 'implement', env.repo, 'opus']);
   assert.match(sh(env.repo, 'log', '-1', '--format=%s'), /DEMO-1: self \(round 1\)/);
 });
 

@@ -1,18 +1,26 @@
 // How agent CLIs are invoked: modes, subagents, per-call CLI, and the model policy.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cliInvocation } from '../lib/agents.mjs';
+import { cliInvocation, resolveModel } from '../lib/agents.mjs';
+import { loadConfig } from '../lib/config.mjs';
 
 const config = (cli = 'claude', cmd = null) => ({ agent: { cli, cmd, models: { default: null } } });
+const config0 = config;
 const flag = (args, name) => args[args.indexOf(name) + 1];
 
-test('models go through the policy: aliases resolve, disallowed models and disabled CLIs throw', () => {
-  assert.equal(flag(cliInvocation(config(), { prompt: 'p', mode: 'read', model: 'opus' }).args, '--model'), 'claude-opus-5-5');
-  assert.equal(flag(cliInvocation(config(), { prompt: 'p', mode: 'read', model: null }).args, '--model'), 'claude-sonnet-5-5', 'no model: the policy default');
-  assert.throws(() => cliInvocation(config(), { prompt: 'p', mode: 'read', model: 'claude-haiku-4-5' }), /not allowed for claude/);
-  assert.throws(() => cliInvocation(config('codex'), { prompt: 'p', mode: 'read', model: null }), /no allowed models configured for codex/);
-  assert.throws(() => cliInvocation(config(), { prompt: 'p', mode: 'read', model: null, cli: 'codex' }), /codex/, 'a per-call CLI is checked too');
-  assert.deepEqual(cliInvocation(config('claude', 'my-agent'), { prompt: 'p', mode: 'read', model: 'anything' }).args, ['-c', 'my-agent'], 'a custom command is not policed');
+test('the checked-in policy: opus and sonnet only, pinned ids, codex refused, default sonnet', () => {
+  const config = loadConfig();
+  const forCli = (cli) => ({ agent: { ...config.agent, cli, cmd: null } });
+  assert.deepEqual(config.agent.allowedModels, ['opus', 'sonnet']);
+  assert.equal(resolveModel(forCli('claude'), 'opus'), 'claude-opus-5-5');
+  assert.equal(resolveModel(forCli('claude'), null), 'claude-sonnet-5-5', 'no model: agent.models.default under strictModels');
+  assert.equal(resolveModel(forCli('copilot'), 'sonnet'), 'claude-sonnet-5.5');
+  assert.equal(resolveModel(forCli('copilot'), 'claude-opus-5.5'), 'claude-opus-5.5', 'a CLI id an allowed alias maps to');
+  assert.throws(() => resolveModel(forCli('claude'), 'haiku'), /not allowed/);
+  assert.throws(() => resolveModel(forCli('copilot'), 'auto'), /not allowed/);
+  assert.throws(() => resolveModel(forCli('codex'), 'sonnet'), /no id for agent CLI "codex"/);
+  assert.throws(() => resolveModel(forCli('claude'), 'opus', 'codex'), /codex/, 'a per-call CLI is checked too');
+  assert.deepEqual(cliInvocation(config0('claude', 'my-agent'), { prompt: 'p', mode: 'read', model: 'anything' }).args, ['-c', 'my-agent'], 'a custom command picks its own model');
 });
 
 test('claude modes: implement and read can forbid subagents; verify has a shell but no edits', () => {
@@ -36,15 +44,8 @@ test('claude modes: implement and read can forbid subagents; verify has a shell 
 
 test('codex gets the lsp server inline (untrusted worktrees), read-only modes without mutating tools', () => {
   const codexConfig = { agent: { cli: 'codex', cmd: null, models: {} } };
-  // The model policy disables codex today; check the argument shape with the policy bypassed.
-  const args = (mode) => {
-    try {
-      return cliInvocation(codexConfig, { prompt: 'p', mode, model: null, cwd: '/repo/wt' }).args;
-    } catch {
-      return null;
-    }
-  };
-  if (args('read') === null) return; // provider disabled by policy: nothing to check
+  // cliInvocation builds the command for an already-resolved model; the policy (resolveModel) refuses codex today.
+  const args = (mode) => cliInvocation(codexConfig, { prompt: 'p', mode, model: null, cwd: '/repo/wt' }).args;
   assert.ok(args('read').includes('mcp_servers.lsp.args=["/repo/wt/scripts/lsp/mcp.mjs"]'));
   assert.ok(args('read').some((a) => a.startsWith('mcp_servers.lsp.disabled_tools=')));
   assert.ok(!args('implement').some((a) => a.startsWith('mcp_servers.lsp.disabled_tools=')));

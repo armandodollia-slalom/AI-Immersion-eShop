@@ -11,10 +11,22 @@ const prompt = fs.readFileSync(0, 'utf8');
 const agent = process.env.PIPELINE_AGENT_NAME;
 const script = JSON.parse(fs.readFileSync(process.env.PIPELINE_FAKE_SCRIPT, 'utf8'));
 const counterFile = `${process.env.PIPELINE_FAKE_SCRIPT}.calls.json`;
+// Agents can run in parallel (the PR check's critics), so the shared counter update is locked.
+const lock = `${counterFile}.lock`;
+for (let i = 0; ; i++) {
+  try {
+    fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
+    break;
+  } catch {
+    if (i > 2000) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
+}
 const calls = fs.existsSync(counterFile) ? JSON.parse(fs.readFileSync(counterFile, 'utf8')) : {};
 const n = calls[agent] ?? 0;
 calls[agent] = n + 1;
 fs.writeFileSync(counterFile, JSON.stringify(calls));
+fs.rmSync(lock, { force: true });
 fs.appendFileSync(`${process.env.PIPELINE_FAKE_SCRIPT}.prompts.log`, `\n=== ${agent} #${n + 1} (child=${process.env.PIPELINE_CHILD}) ===\n${prompt}\n`);
 
 const steps = script[agent] ?? [];
@@ -36,7 +48,7 @@ if (step.writePlan) {
     const sad = c.type === 'sad' ? '\nsad-path: validation' : '';
     fs.writeFileSync(
       path.join(dir, `${ids[i]}-case.md`),
-      `---\nid: ${ids[i]}\ntitle: ${c.title}\ntype: ${c.type}${sad}\nlayer: functional\ncovers: ["Rule, part 1"]\n---\n\n# ${ids[i]}: ${c.title}\n\n## Preconditions\n\n- data\n\n## Steps\n\n1. call\n\n## Expected result\n\n- ${c.expected ?? '200'}\n`,
+      `---\nid: ${ids[i]}\ntitle: ${c.title}\ntype: ${c.type}${sad}\nlayer: functional\ncovers: ["Rule, part 1"]\n---\n\n# ${ids[i]}: ${c.title}\n\n## Why\n\n- ${c.why ?? 'covers the rule'}\n\n## Preconditions\n\n- data\n\n## Steps\n\n1. call\n\n## Expected result\n\n- ${c.expected ?? '200'}\n`,
     );
   });
 }
@@ -56,11 +68,9 @@ if (step.writeImpl) {
   fs.writeFileSync(step.writeImpl, `// fixed ${n}\n`);
 }
 
-if (step.writeFiles) {
-  for (const [file, text] of Object.entries(step.writeFiles)) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, text);
-  }
+for (const [file, content] of Object.entries(step.writeFiles ?? {})) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
 }
 
 if (step.screenshot) {
@@ -69,6 +79,14 @@ if (step.screenshot) {
 }
 
 if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+
+// Simulates a crash of the QE runner that called this agent: SIGKILL, so nothing gets cleaned up.
+if (step.killRunner) {
+  const state = JSON.parse(fs.readFileSync(`.agent-state/stories/${field('Story')}.json`, 'utf8'));
+  process.kill(state[step.killRunner].pid, 'SIGKILL');
+}
+// The same for a run that records its pid in a JSON file (a manual PR check's progress.json).
+if (step.killPidIn) process.kill(JSON.parse(fs.readFileSync(step.killPidIn, 'utf8')).pid, 'SIGKILL');
 
 process.stdout.write(`Working...\n${step.result ? `AGENT_RESULT: ${JSON.stringify(step.result)}\n` : ''}`);
 process.exit(step.exit ?? 0);

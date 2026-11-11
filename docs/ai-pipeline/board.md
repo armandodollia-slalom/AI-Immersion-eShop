@@ -52,7 +52,7 @@ When a story reaches Pending Review, the issue gets a comment with the PR link a
 Every `product-research/epic-*.md` file gets an issue (label `epic`, title from its heading) and a card. Each story becomes a sub-issue of the epic its **Part of** line links to. The project's views, in tab order:
 
 | View | Shows |
-|---|---|
+| --- | --- |
 | Epics (default) | Epic cards only, with each one's sub-issue progress. Open an epic to see its stories and click through to them |
 | Stories by epic | Story cards, one swimlane per epic (grouped by the built-in Parent issue field) |
 | Stories | Story cards, no swimlanes |

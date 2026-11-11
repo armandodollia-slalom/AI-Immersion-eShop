@@ -1,7 +1,7 @@
 // Pure logic of the orchestrated implement flow: the orchestrator's plan (parsing and validation), the
 // `owns` globs (matching, overlap, scope enforcement), dependency order, verifier verdicts and model
 // classes. No I/O, so all of it is unit tested.
-import { resolveModel as resolveModels } from '../../models/lib/models.mjs';
+import { resolveModel as resolvePipelineModel } from '../../pipeline/lib/agents.mjs';
 import { extractResult } from '../../pipeline/lib/util.mjs';
 
 export const MODEL_CLASSES = ['small', 'medium', 'large'];
@@ -76,6 +76,7 @@ function alternatives(glob) {
     expand(`${s.slice(0, i)}\u0000/${s.slice(i + 3)}`);
   };
   for (const b of base) expand(b);
+  // eslint-disable-next-line no-control-regex -- \u0000 marks an expanded `**/` above
   return out.map((s) => s.replace(/\u0000/g, '**'));
 }
 
@@ -322,22 +323,27 @@ export function ownsOverlaps(subtasks) {
 // The CLI a role runs on: `implement.roles.<role>.cli`, else the pipeline's agent CLI.
 export const roleCli = (config, role) => config.implement?.roles?.[role]?.cli || config.agent.cli;
 
-// The model for a model class on the role's CLI; null means the CLI's default.
+// The model alias for a model class (`modelClasses` in scripts/implement/config.json maps small, medium
+// and large to aliases from agent.allowedModels). It is checked against the role's CLI here, through the
+// pipeline's one model check (resolveModel in scripts/pipeline/lib/agents.mjs), so a plan that needs a
+// model the CLI may not run (a disallowed alias, or Codex, which has no allowed model ids) fails at plan
+// validation instead of halfway through the story. runAgent maps the alias to the CLI's own id.
 export function resolveModel(config, role, modelClass) {
-  if (config.agent.cmd) return null;
-  const cli = roleCli(config, role);
-  // Through the model policy: a model outside it, or a disabled provider (codex), throws here.
-  return resolveModels(cli, config.modelClasses?.[cli]?.[modelClass] ?? null);
+  const alias = config.modelClasses?.[modelClass] ?? config.agent.models?.default ?? null;
+  if (!config.agent.cmd) resolvePipelineModel(config, alias, roleCli(config, role));
+  return alias;
 }
 
 // THE place the implement harness picks a model for an agent run: every orchestrator, pair and verifier
 // run goes through here. The orchestrator uses `agent.models.implementer` when set, else its role's
 // model class; other roles use the class they are given (planner's choice, or the verifier's fixed one).
-// A model policy (allowed models per provider) plugs in here.
 export function resolveModelForRole(config, role, modelClass = null) {
   if (role === 'orchestrator') {
     const pinned = config.agent.models?.implementer;
-    if (pinned && !config.agent.cmd) return resolveModels(roleCli(config, role), pinned);
+    if (pinned) {
+      if (!config.agent.cmd) resolvePipelineModel(config, pinned, roleCli(config, role));
+      return pinned;
+    }
     return resolveModel(config, role, config.implement?.roles?.orchestrator?.modelClass ?? 'large');
   }
   return resolveModel(config, role, modelClass ?? config.implement?.roles?.[role]?.modelClass ?? 'medium');

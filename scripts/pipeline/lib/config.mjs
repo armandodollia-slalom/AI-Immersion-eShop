@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run } from './util.mjs';
@@ -27,6 +28,16 @@ export function deepMerge(base, extra) {
 
 const readConfig = (file) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {});
 
+// Hooks and background runs don't load the user's shell profile, so tools installed per user
+// (the .NET SDK in ~/.dotnet by scripts/setup.sh) are often missing from PATH. Add them once.
+export function ensureToolPath(env = process.env) {
+  const dirs = (env.PATH ?? '').split(path.delimiter);
+  const onPath = (exe) => dirs.some((d) => d && fs.existsSync(path.join(d, exe)));
+  if (onPath(process.platform === 'win32' ? 'dotnet.exe' : 'dotnet')) return;
+  const extra = [env.DOTNET_ROOT, path.join(os.homedir(), '.dotnet')].filter((d) => d && fs.existsSync(d));
+  if (extra.length) env.PATH = [...extra, path.join(os.homedir(), '.dotnet', 'tools'), env.PATH].join(path.delimiter);
+}
+
 const cache = new Map();
 
 // Shared settings come from scripts/pipeline/config.json; a stage's scripts/<stage>/config.json is
@@ -34,6 +45,7 @@ const cache = new Map();
 export function loadConfig(stage = null, root = repoRoot()) {
   const cacheKey = `${root}\0${stage ?? ''}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
+  ensureToolPath();
   let config = readConfig(path.join(PIPELINE_DIR, 'config.json'));
   if (stage) config = deepMerge(config, readConfig(path.join(SCRIPTS_DIR, stage, 'config.json')));
   config.root = root;
@@ -42,6 +54,13 @@ export function loadConfig(stage = null, root = repoRoot()) {
   config.agent.cmd = process.env.PIPELINE_AGENT_CMD || null;
   config.baseRef = process.env.PIPELINE_BASE_REF || config.baseRef;
   config.abs = (rel) => path.join(root, rel);
+  // Fail on a mistyped model at load time, not halfway through a run.
+  const allowed = config.agent.allowedModels ?? [];
+  for (const [role, alias] of Object.entries(config.agent.models ?? {})) {
+    if (alias && !allowed.includes(alias)) {
+      throw new Error(`agent.models.${role} is "${alias}", which is not in agent.allowedModels (${allowed.join(', ')}).`);
+    }
+  }
   cache.set(cacheKey, config);
   return config;
 }

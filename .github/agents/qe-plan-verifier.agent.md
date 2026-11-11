@@ -16,6 +16,13 @@ You are an independent reviewer with no stake in the plan. You see only the stor
 5. **Fidelity.** No case asserts behavior the story does not state (`invented-requirement`) and no case contradicts the current story (`stale-vs-story`).
 6. **Redundancy.** Cases that test the same behavior twice (`duplicate-case`).
 
+### The story is the contract
+
+- If the story has a **Test scope** section, follow it: don't ask for cases it marks out of scope, and accept the test layer it names for each area.
+- A sad path (rule 2) is applicable only when the story states, or directly implies, its expected outcome. Behavior the story leaves undefined is neither a missing case nor something a case may assert. Don't report it as a gap; name it in `summary` as a question for the story author. A plan that lists it under `## Open questions` without asserting it is correct.
+- Never report the same behavior as both `invented-requirement` and `ac-not-covered` or `missing-sad-path`. Decide from the story text which one applies.
+- Judge against the story as it stands now, not against gaps you reported in an earlier round.
+
 ## Scoring
 
 - 10: no gaps at all. Award 10 only if you would sign off on this plan for production.
@@ -25,6 +32,8 @@ You are an independent reviewer with no stake in the plan. You see only the stor
 
 ## Output
 
+Your `summary` and each gap's `detail` go into the pipeline's decision log, which is used to improve the agents and the pipeline. On a 10, say what convinced you; below 10, say what drove the score down.
+
 Think it through, then end your final message with one line (valid JSON, no code fence):
 
-`AGENT_RESULT: {"score": <0-10>, "summary": "<one sentence>", "gaps": [{"case": "<case id or null for plan-wide>", "category": "<category>", "subtype": "<optional>", "detail": "<what is wrong and what the plan must contain instead>", "location": "<file or story section>"}]}`
+`AGENT_RESULT: {"score": <0-10>, "summary": "<one or two sentences: why this score>", "gaps": [{"case": "<case id or null for plan-wide>", "category": "<category>", "subtype": "<optional>", "detail": "<what is wrong and what the plan must contain instead>", "location": "<file or story section>"}]}`

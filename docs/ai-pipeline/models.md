@@ -1,55 +1,54 @@
 # Model allowlist
 
-The pipeline only calls the models this project allows. The policy lives in `scripts/models/config.json`, per agent CLI (provider), and `scripts/models/models.mjs` shows what the CLIs on your machine can serve, resolves model names and checks every model configured elsewhere in the repo.
+The pipeline only calls the models this project allows. The policy is `agent.allowedModels` and `agent.modelIds` in `scripts/pipeline/config.json`, and every agent run checks its model through one function, `resolveModel` in `scripts/pipeline/lib/agents.mjs`, before its CLI starts. `scripts/models/models.mjs` shows the policy per agent CLI, what the CLIs on your machine can serve, resolves model names and checks every model configured elsewhere in the repo; it resolves through the same function, so it never disagrees with a run.
 
 Current policy: **Claude Opus 5.5 and Claude Sonnet 5.5 only**, Sonnet 5.5 by default.
 
-| Provider (CLI) | Allowed ids | Default |
+```json
+"agent": {
+  "allowedModels": ["opus", "sonnet"],
+  "modelIds": {
+    "claude": { "opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5" },
+    "copilot": { "opus": "claude-opus-5.5", "sonnet": "claude-sonnet-5.5" }
+  },
+  "strictModels": true,
+  "models": { "default": "sonnet" }
+}
+```
+
+| Agent CLI | Allowed ids | Default |
 | --- | --- | --- |
 | `claude` (Claude Code) | `claude-opus-5-5`, `claude-sonnet-5-5` | `claude-sonnet-5-5` |
 | `copilot` (GitHub Copilot CLI) | `claude-opus-5.5`, `claude-sonnet-5.5` | `claude-sonnet-5.5` |
 | `codex` (OpenAI Codex CLI) | none | none |
 
-Each provider uses its CLI's own spelling: Claude Code writes versions with dashes, Copilot CLI with dots.
-
-**Codex is disabled.** Codex only serves OpenAI models, so under this policy its allowed list is empty. Any run that would use it (`PIPELINE_AGENT_CLI=codex`, `agent.cli: "codex"`, an implement role with `"cli": "codex"`) fails before the CLI starts with `no allowed models configured for codex`. To enable it, add OpenAI model ids to `providers.codex.allowed` (the policy then no longer says "Opus and Sonnet only").
+- **Aliases.** Configs and stages name models by alias (`opus`, `sonnet`); `modelIds` maps each alias to each CLI's own id. Claude Code spells versions with dashes, Copilot CLI with dots. The ids pin the version: Claude Code's own `opus` alias would follow the newest Opus, so the policy names `claude-opus-5-5`.
+- **Strict.** With `strictModels`, a run with no model gets `agent.models.default`, and an alias with no id for the run's CLI is refused instead of falling back to the CLI's default model, so nothing outside the list ever runs. Without it (the pre-policy behaviour, and what the unit tests of other stages use), a missing id means the CLI's default.
+- **Codex is refused.** Codex only serves OpenAI models, so `modelIds` has no entry for it and every run on it (`PIPELINE_AGENT_CLI=codex`, an implement role or PR-check model set with `"cli": "codex"`) fails before the CLI starts. To enable it, add OpenAI ids under `modelIds.codex` for aliases you add to `allowedModels` (the policy then no longer says "Opus and Sonnet only").
+- `PIPELINE_MODEL_OVERRIDE=<alias>` forces one allowed alias for every agent, for experiments; it is checked like any other choice.
 
 ## Commands
 
 ```bash
-node scripts/models/models.mjs list                 # provider, installed, allowed, discovered, available, default
+npm run models                                       # = node scripts/models/models.mjs list
 node scripts/models/models.mjs list --json
-node scripts/models/models.mjs discover --refresh   # re-run discovery, ignoring the 24h cache
-node scripts/models/models.mjs check                # exit 1 if a configured model is not allowed
+node scripts/models/models.mjs discover --refresh    # re-run discovery, ignoring the 24h cache
+npm run models:check                                 # exit 1 if a configured model is not allowed
 node scripts/models/models.mjs resolve --provider claude --model opus   # -> claude-opus-5-5
 node scripts/models/models.mjs resolve --provider copilot               # -> claude-sonnet-5.5 (the default)
 ```
 
-`resolve` accepts the canonical id, the other spelling (`claude-opus-5.5` for Claude, `claude-opus-5-5` for Copilot), a family alias (`opus`, `sonnet`: the newest allowed model of that family), optional `aliases` from the policy file, or nothing/`default` for the provider default. Anything else fails with the allowed list. Copilot's `auto` is not allowed, because it lets Copilot pick any model.
+`resolve` accepts an allowed alias, a CLI id an allowed alias maps to for that CLI, or nothing/`default` for the default. Anything else (another CLI's spelling, a family the policy does not allow, Copilot's `auto`, which lets Copilot pick any model) fails with the allowed list.
 
 ## Changing the list
 
-Edit `scripts/models/config.json` in a pull request:
+Edit `agent.allowedModels` and `agent.modelIds` in `scripts/pipeline/config.json` in a pull request, then run `npm run models:check` (CI runs it with the pipeline tests) so model settings in other configs still pass, and `npm run models` to confirm the installed CLIs offer the new ids. Use ids that `discover` prints; never guess one. An id mapped for an alias that is not in `allowedModels` is ignored with a warning.
 
-```json
-"claude": { "allowed": ["claude-opus-5-5", "claude-sonnet-5-5"], "default": "claude-sonnet-5-5" }
-```
-
-Then run `node scripts/models/models.mjs check` (CI should run it too) so model settings in other config files still pass, and `list` to confirm the installed CLIs offer the new ids. Use ids that `discover` prints; never guess one.
-
-### Local narrowing
-
-`scripts/models/config.local.json` (gitignored) can **narrow** the list for your machine, for example to keep a laptop on Sonnet only, or to change your default within the allowed list:
-
-```json
-{ "providers": { "claude": { "allowed": ["claude-sonnet-5-5"], "default": "claude-sonnet-5-5" } } }
-```
-
-It cannot widen it. Entries the project policy does not allow, new providers and a default outside the narrowed list are ignored with a warning. The allowlist is project policy (cost, data handling and reproducibility of agent output are agreed for the team), so a local file must not be able to quietly opt one developer's pipeline runs into other models. To allow a model, change `config.json` in review. An empty local `allowed` list disables a provider on your machine.
+There is no machine-local override: the allowlist is project policy (cost, data handling and reproducibility of agent output are agreed for the team). `scripts/models/config.json` only holds discovery settings (`cacheTtlHours`).
 
 ## Discovery per CLI
 
-Discovery tells you what the CLIs installed here can serve. It is cached per provider in `$(git rev-parse --git-common-dir)/models-cache.json` (shared by all worktrees) for `cacheTtlHours` (24); `--refresh` bypasses it. A CLI that is not installed is never cached, so installing one shows up immediately. `MODELS_CACHE_FILE` overrides the cache path.
+Discovery tells you what the CLIs installed here can serve. It is cached per CLI in `$(git rev-parse --git-common-dir)/models-cache.json` (shared by all worktrees) for `cacheTtlHours` (24); `--refresh` bypasses it. A CLI that is not installed is never cached, so installing one shows up immediately. `MODELS_CACHE_FILE` overrides the cache path.
 
 | CLI | Mechanism | `source` | Limits |
 | --- | --- | --- | --- |
@@ -61,8 +60,10 @@ Discovery tells you what the CLIs installed here can serve. It is cached per pro
 
 ## Enforcement
 
-- **Library.** `scripts/models/lib/models.mjs` exports `allowedModels(provider)`, `resolveModel(provider, requested)` (canonical id, or throws `ModelNotAllowedError` with `.allowed`; `ProviderDisabledError` for codex), `assertProviderUsable(provider)`, and the async `discoverModels(provider, {refresh})` and `availableModels(provider)`. The policy calls are synchronous and never spawn a process, so they are cheap enough to run on every agent call.
-- **Pipeline.** Every headless agent run resolves its model through `resolveModel(cli, model)` before the CLI starts and passes the canonical id with `--model`/`-m`, so a run never falls back to the CLI's own default model. A model outside the policy, or the codex CLI, fails the run with the error above. A custom `PIPELINE_AGENT_CMD` is not checked: it is a command you wrote, and the pipeline cannot see which model it calls.
-- **Implement model classes.** `modelClasses` in `scripts/implement/config.json` map small/medium/large to models per CLI (Claude: Sonnet 5.5, Sonnet 5.5, Opus 5.5; Copilot: the same with dots; Codex: none). Every value is resolved through the policy.
-- **Check.** `node scripts/models/models.mjs check` scans `agent.models`, `modelClasses` and `implement.roles` in `scripts/*/config.json` and `config.local.json`, the `model:` front matter of `.github/agents/*.agent.md` (must be allowed for both Claude Code and Copilot, which read them), `.claude/agents/*.md` and `scripts/agents-claude.json`. `inherit` is always fine.
-- **Interactive sessions.** The allowlist above binds the pipeline. Claude Code has an `availableModels` setting that restricts the `/model` picker and `--model`, but in a test with version 2.1.318 it had no effect from the project `.claude/settings.json` (`claude -p --model claude-haiku-5-5` still ran Haiku); it did apply through `--settings` (and is documented for managed and user settings), where a disallowed `--model` silently switches to an allowed default instead of failing. So it is not a substitute for the pipeline check. Copilot CLI and Codex have no model allowlist setting; their repository config (`.github/copilot/settings.json`, `.codex/config.toml`) can only set a default `model`. Organisation-wide restrictions belong in Claude Code managed settings and in the GitHub Copilot model policy.
+- **Every run.** `runAgent` and `runAgentAsync` resolve the model through `resolveModel(config, alias, cli)` before building the CLI command and pass the CLI's id with `--model`/`-m`. A model outside the policy, or a CLI without allowed ids (Codex), fails the run with that error. A custom `PIPELINE_AGENT_CMD` gets the alias unchecked against a CLI: it is a command you wrote, and the pipeline cannot see which model it calls.
+- **Config load.** `loadConfig` rejects an `agent.models.<role>` alias outside `allowedModels`.
+- **Implement model classes.** `modelClasses` in `scripts/implement/config.json` map small/medium/large to aliases (`sonnet`, `sonnet`, `opus`). The implement harness checks every class a plan needs for the role's CLI when the plan is accepted, so a disallowed model fails the plan, not a pair halfway through.
+- **PR check.** `prCheck.models.<cli>.<role>` in `scripts/pr-check/config.json` are checked the same way (a CLI's own ids are accepted when an allowed alias maps to them).
+- **Library.** `scripts/models/lib/models.mjs` exports `loadPolicy()` (the per-CLI view of the pipeline config), `allowedModels(cli)`, `resolveModel(cli, requested)` (throws `ModelNotAllowedError` with `.allowed`, `ProviderDisabledError` for a CLI with no allowed ids), `assertProviderUsable(cli)`, and the async `discoverModels(cli, {refresh})` and `availableModels(cli)`.
+- **Check.** `npm run models:check` scans `agent.models`, `modelClasses`, `implement.roles` and `prCheck.models` in `scripts/*/config.json` and `config.local.json`, the `model:` front matter of `.github/agents/*.agent.md` (must be allowed for both Claude Code and Copilot, which read them), `.claude/agents/*.md` and `scripts/agents-claude.json`. `inherit` is always fine.
+- **Interactive sessions.** The allowlist binds the pipeline. Claude Code has an `availableModels` setting that restricts the `/model` picker and `--model`, but in a test with version 2.1.318 it had no effect from the project `.claude/settings.json` (`claude -p --model claude-haiku-5-5` still ran Haiku); it did apply through `--settings` (and is documented for managed and user settings), where a disallowed `--model` silently switches to an allowed default instead of failing. So it is not a substitute for the pipeline check. Copilot CLI and Codex have no model allowlist setting; their repository config (`.github/copilot/settings.json`, `.codex/config.toml`) can only set a default `model`. Organisation-wide restrictions belong in Claude Code managed settings and in the GitHub Copilot model policy.

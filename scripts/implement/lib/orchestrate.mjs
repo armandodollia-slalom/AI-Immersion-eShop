@@ -11,7 +11,9 @@ import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { git } from '../../pipeline/lib/git.mjs';
 import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { appendJsonl, extractResult, log as defaultLog, nowIso, runAsync, tail, writeJson } from '../../pipeline/lib/util.mjs';
-import { DECISIONS_FILE, SUBTASK_RUNS_FILE, crossFindings, decisionRecord, roundRecord, subtaskRunRecord } from './decisions.mjs';
+import { logDecision } from '../../pipeline/lib/decisions.mjs';
+import { addUsage } from '../../pipeline/lib/usage.mjs';
+import { SUBTASK_RUNS_FILE, crossFindings, decisionRecord, planDecisionLog, roundRecord, subtaskRunRecord, verdictDecisionLog } from './decisions.mjs';
 import { commitAll, commitEnv, createSubtaskWorktree, diffSince, discardChanges, filesChanged, headSha, mergeInProgress, removeWorktree, unmergedFiles } from './gitops.mjs';
 import { diagnosticFindings, formatDiagnostics, lspAdapter, signatureChanges } from './lsp.mjs';
 import { isUiStory, parsePlanOutput, parseVerdict, resolveModelForRole, roleCli, scopeViolations, topoOrder, validatePlan, validateRewrite } from './plan.mjs';
@@ -49,7 +51,7 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     plan: null,
     subtasks: new Map(), // id -> { status, branch, worktree, rounds }
     integrationNotes: [],
-    metrics: { agentRuns: 0, byRole: {}, pairRounds: 0, takeovers: 0, escalations: 0, limitHit: null, mode: null, lspCalls: 0, signatureChangesWithoutReferences: false, leaseWaitSec: 0 },
+    metrics: { agentRuns: 0, byRole: {}, pairRounds: 0, takeovers: 0, escalations: 0, limitHit: null, mode: null, lspCalls: 0, signatureChangesWithoutReferences: false, leaseWaitSec: 0, usage: null },
   };
   ctx.deps = {
     runAgent: deps.runAgent ?? runAgentAsync,
@@ -112,6 +114,7 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
     const res = await ctx.deps.runAgent(ctx.config, { name, task, mode, model, cli, noSubagents: true, cwd, timeoutSec: Math.max(1, Math.min(timeoutSec, left)), signal: ctx.abort.signal, usage: { stage: USAGE_STAGE[role] ?? 'implement', story: ctx.key, step, round } });
     if (ctx.abort.signal.aborted) throw new AbortedError('aborted');
     if (res.timedOut && Date.now() >= ctx.deadline) throw limit(ctx, 'limit-wall-clock', `the story ran past its ${ctx.s.storyWallClockSec}s wall clock while ${name} was running`);
+    ctx.metrics.usage = addUsage(ctx.metrics.usage, res.usage ?? null);
     const calls = ctx.deps.lsp.calls(cwd, name, t0, Date.now());
     ctx.metrics.lspCalls += calls.length;
     ctx.progress();
@@ -166,12 +169,12 @@ export async function planStory(ctx) {
     const raw = parsePlanOutput(res.output);
     const agent = { cli: res.cli, model: res.model, version: res.version };
     if (raw?.status === 'blocked') {
-      record(ctx, DECISIONS_FILE, decisionRecord({ ts: nowIso(), key: ctx.key, attempt, accepted: false, errors: [`blocked: ${raw.reason ?? ''}`], agent, raw, storyText: ctx.storyText, uiStory }));
+      logDecision(ctx.config, planDecisionLog(decisionRecord({ ts: nowIso(), key: ctx.key, attempt, accepted: false, errors: [`blocked: ${raw.reason ?? ''}`], agent, raw, storyText: ctx.storyText, uiStory }), { blocked: true }));
       return { fail: 'blocked', reason: raw.reason ?? 'the orchestrator reported the story blocked' };
     }
     const v = raw ? validatePlan(raw, { storyText: ctx.storyText, limits: limitsOf(ctx.s) }) : { ok: false, errors: ['no plan found: end your reply with `AGENT_RESULT: <plan JSON on one line>`'], fatal: [] };
     const decisionId = v.ok ? randomUUID() : null;
-    record(ctx, DECISIONS_FILE, decisionRecord({ ts: nowIso(), key: ctx.key, decisionId, attempt, accepted: v.ok, errors: v.errors, agent, raw, plan: v.plan, storyText: ctx.storyText, uiStory }));
+    logDecision(ctx.config, planDecisionLog(decisionRecord({ ts: nowIso(), key: ctx.key, decisionId, attempt, accepted: v.ok, errors: v.errors, agent, raw, plan: v.plan, storyText: ctx.storyText, uiStory })));
     if (v.ok) {
       // Every model the plan needs must pass the model policy before any pair starts.
       try {
@@ -196,12 +199,13 @@ export async function planStory(ctx) {
 // Verifier pairs
 // ---------------------------------------------------------------------------------------------
 
-const newRec = (st) => ({ st, rounds: [], implementer: null, verifier: null, agentRuns: 0, leaseWaitSec: 0, lspCalls: 0, sigNoRefs: false, outOfOwns: new Set(), neededOutside: [], escalation: 'none', mergeConflictFiles: [], started: Date.now() });
+const newRec = (st) => ({ st, rounds: [], implementer: null, verifier: null, agentRuns: 0, leaseWaitSec: 0, lspCalls: 0, sigNoRefs: false, outOfOwns: new Set(), neededOutside: [], escalation: 'none', mergeConflictFiles: [], usage: null, started: Date.now() });
 
 async function agentFor(ctx, rec, slot, opts) {
   const res = await callAgent(ctx, { step: rec.st.id, round: rec.rounds.length + 1, ...opts });
   rec.agentRuns++;
   rec.lspCalls += res.lspCalls;
+  rec.usage = addUsage(rec.usage, res.usage ?? null);
   rec[slot] = { cli: res.cli, model: res.model, version: res.version };
   return res;
 }
@@ -368,6 +372,8 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
     }
     const blocking = verdict.findings.filter((f) => f.severity !== 'minor');
     rec.rounds.push(roundRecord({ round, verdict: verdict.verdict, findings: verdict.findings, diagnostics: diag, outOfOwns: outside, crossFindings: crossFindings(blocking, others) }));
+    // Why the pair verifier (or the harness's own checks) approved or sent the subtask back, for the retro.
+    logDecision(ctx.config, verdictDecisionLog({ key: ctx.key, decisionId: ctx.decisionId, st, round, verdict, verifier: rec.verifier, ui: st.verify === 'ui' }));
     if (verdict.verdict === 'APPROVED') {
       progress(round, 'approved');
       return { status: 'approved', findings: all };
@@ -425,6 +431,20 @@ export async function runSubtask(ctx, st, others) {
     });
     const d = extractResult(res.output) ?? {};
     const priorFindings = r.findings;
+    logDecision(ctx.config, {
+      stage: 'implement-plan',
+      story: ctx.key,
+      round: null,
+      agent: 'implementer',
+      agentVer: res.version,
+      subject: 'pair-implementer',
+      decision: ['rewrite', 'takeover'].includes(d.action) ? `escalation-${d.action}` : 'gave-up',
+      reason: d.reason ?? null,
+      decision_id: ctx.decisionId,
+      subtask: st.id,
+      pair_outcome: r.status,
+      items: (priorFindings ?? []).slice(-20).map((f) => ({ severity: f.severity ?? null, category: f.category ?? null, file: f.file ?? null, reason: f.issue ?? f.detail ?? null })),
+    });
     let next = null;
     if (['rewrite', 'takeover'].includes(d.action)) {
       const v = validateRewrite(st, d.subtask ?? {}, others, { storyText: ctx.storyText, limits: limitsOf(ctx.s) });
@@ -478,6 +498,7 @@ function writeSubtaskRun(ctx, rec) {
       leaseWaitSec: rec.leaseWaitSec,
       lspCalls: rec.lspCalls,
       signatureChangesWithoutReferences: rec.sigNoRefs,
+      usage: rec.usage,
     }),
   );
 }

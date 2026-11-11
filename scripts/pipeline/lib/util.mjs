@@ -208,21 +208,51 @@ export function isPidAlive(pid) {
   }
 }
 
+// Identifies the current boot, so a pid recorded before a crash or reboot is never mistaken for a live
+// process that happens to reuse it. Null where the OS offers no stable id (the pid check alone is used).
+let cachedBootId;
+export function bootId() {
+  if (cachedBootId !== undefined) return cachedBootId;
+  cachedBootId = null;
+  try {
+    if (process.platform === 'linux') cachedBootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() || null;
+    else if (process.platform === 'darwin') cachedBootId = /sec = (\d+)/.exec(spawnSync('sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8' }).stdout ?? '')?.[1] ?? null;
+  } catch {
+    cachedBootId = null;
+  }
+  return cachedBootId;
+}
+
+// What a background run records about itself (state sections and lock files), checked by isProcessAlive.
+export const selfProcess = () => ({ pid: process.pid, boot: bootId() });
+
+export function isProcessAlive(pid, boot = null) {
+  if (!pid) return false;
+  if (boot && bootId() && String(boot) !== bootId()) return false;
+  return isPidAlive(pid);
+}
+
+const readLock = (file) => {
+  const [pid, boot] = fs.readFileSync(file, 'utf8').trim().split(/\s+/);
+  return { pid: Number(pid), boot: boot ?? null };
+};
+const lockText = () => `${process.pid}${bootId() ? ` ${bootId()}` : ''}`;
+
 export function acquireLock(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try {
-    fs.writeFileSync(file, String(process.pid), { flag: 'wx' });
+    fs.writeFileSync(file, lockText(), { flag: 'wx' });
     return true;
   } catch {
     if (lockHolder(file)) return false;
-    fs.writeFileSync(file, String(process.pid));
+    fs.writeFileSync(file, lockText());
     return true;
   }
 }
 
 export function releaseLock(file) {
   try {
-    if (Number(fs.readFileSync(file, 'utf8')) === process.pid) fs.unlinkSync(file);
+    if (readLock(file).pid === process.pid) fs.unlinkSync(file);
   } catch {
     // already released
   }
@@ -230,8 +260,8 @@ export function releaseLock(file) {
 
 export function lockHolder(file) {
   try {
-    const pid = Number(fs.readFileSync(file, 'utf8'));
-    return isPidAlive(pid) ? pid : null;
+    const { pid, boot } = readLock(file);
+    return isProcessAlive(pid, boot) ? pid : null;
   } catch {
     return null;
   }

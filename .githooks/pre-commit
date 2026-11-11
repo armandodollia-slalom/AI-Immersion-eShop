@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# 1. Lint staged files (fast; the full checks run in CI via .github/workflows/lint.yml).
+#    Set SKIP_LINT=1 to bypass.
+# 2. graphify commands (`graphify update .`, extract, cluster-only) delete committed
+#    semantic cache entries that other branches still need. Keep such deletions out
+#    of commits; set GRAPHIFY_ALLOW_CACHE_PRUNE=1 to prune the shared cache on purpose.
+
+if [ "${SKIP_LINT:-}" != "1" ]; then
+  staged() { git diff --cached --name-only --diff-filter=ACMR -z -- "$@"; }
+  lint_failed=0
+  if [ -x node_modules/.bin/eslint ] && [ -n "$(staged '*.js' '*.mjs' '*.cjs' '*.ts' | tr -d '\0')" ]; then
+    staged '*.js' '*.mjs' '*.cjs' '*.ts' | xargs -0 node_modules/.bin/eslint --no-warn-ignored || lint_failed=1
+  fi
+  if [ -x node_modules/.bin/markdownlint ] && [ -n "$(staged '*.md' | tr -d '\0')" ]; then
+    staged '*.md' | xargs -0 node_modules/.bin/markdownlint || lint_failed=1
+  fi
+  if command -v dotnet >/dev/null 2>&1 && [ -n "$(staged '*.cs' | tr -d '\0')" ]; then
+    staged '*.cs' | xargs -0 dotnet format whitespace --folder --verify-no-changes --include || lint_failed=1
+  fi
+  if [ "$lint_failed" = "1" ]; then
+    echo "[lint] fix the issues above (\`npm run lint:fix\` auto-fixes most) or commit with SKIP_LINT=1." >&2
+    exit 1
+  fi
+fi
+
+[ "${GRAPHIFY_ALLOW_CACHE_PRUNE:-}" = "1" ] && exit 0
+deleted="$(git diff --cached --name-only --diff-filter=D -- graphify-out/cache/semantic)"
+[ -z "$deleted" ] && exit 0
+printf '%s\n' "$deleted" | git -c core.hooksPath=/dev/null checkout -q HEAD --pathspec-from-file=- || exit 1
+echo "[graphify] kept $(printf '%s\n' "$deleted" | wc -l | tr -d ' ') shared semantic cache file(s) out of this commit's deletions (GRAPHIFY_ALLOW_CACHE_PRUNE=1 to override)." >&2

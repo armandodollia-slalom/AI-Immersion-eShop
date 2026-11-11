@@ -1,18 +1,4 @@
 {
-  "$comment": "Project policy: the only models the AI pipeline may call, per agent CLI. Ids are each CLI's own spelling. See docs/ai-pipeline/models.md. scripts/models/config.local.json (gitignored) may narrow these lists, never widen them.",
-  "cacheTtlHours": 24,
-  "providers": {
-    "claude": {
-      "allowed": ["claude-opus-5-5", "claude-sonnet-5-5"],
-      "default": "claude-sonnet-5-5"
-    },
-    "copilot": {
-      "allowed": ["claude-opus-5.5", "claude-sonnet-5.5"],
-      "default": "claude-sonnet-5.5"
-    },
-    "codex": {
-      "allowed": [],
-      "default": null
-    }
-  }
+  "$comment": "Discovery settings only. The model policy (which models the pipeline may call) is agent.allowedModels and agent.modelIds in scripts/pipeline/config.json. See docs/ai-pipeline/models.md.",
+  "cacheTtlHours": 24
 }

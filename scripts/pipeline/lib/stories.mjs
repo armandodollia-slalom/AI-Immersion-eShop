@@ -71,6 +71,13 @@ export function caseIdsIn(text, key) {
   return ids;
 }
 
+// The story file registered with `pipeline start` (not inferred from the branch name).
+export function activeStoryFile(config) {
+  const file = path.join(config.root, config.stateDir, 'active-story');
+  if (!fs.existsSync(file)) return null;
+  return resolveStory(config, fs.readFileSync(file, 'utf8').trim())?.file ?? null;
+}
+
 export function activeStory(config) {
   const file = path.join(config.root, config.stateDir, 'active-story');
   if (fs.existsSync(file)) {

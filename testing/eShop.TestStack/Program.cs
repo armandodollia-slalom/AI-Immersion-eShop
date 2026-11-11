@@ -1,4 +1,4 @@
-using eShop.TestStack;
+﻿using eShop.TestStack;
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>

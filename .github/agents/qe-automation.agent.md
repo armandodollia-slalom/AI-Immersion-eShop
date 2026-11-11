@@ -22,16 +22,34 @@ You turn a verified test plan into a scenario and automated tests. The plan is t
 
 - **e2e layer:** Playwright specs in `e2e/teststack/<scenario>-*.spec.ts` that call `loadScenario('<scenario>')` (see `e2e/teststack/scenario.ts`). Test titles start with the case id: `test('TC-PROMO-3-07 expired coupon is reported as Invalid/Expired', …)`.
 - **functional layer:** xUnit tests in the matching `tests/<Service>.FunctionalTests` project. Each test has `[Trait("Story", "<KEY>")]` and `[Trait("TestCase", "<case id>")]`, and the method name contains the case id with dashes as underscores.
+- **unit layer** (for example AppHost wiring in `tests/eShop.AppHost.UnitTests`): MSTest tests (`MSTest.Sdk`) with `[TestCategory("<KEY>")]` and `[TestProperty("TestCase", "<case id>")]`, and the case id in the method name the same way.
 - One test per case (a case with several equivalent inputs may use a theory or a loop over data, but still exactly one id). Never put an id on a test that does not implement that case.
 - Assert every item in the case's Expected result, including the things that must not happen. Prefer asserting exact values over "truthy" checks.
 - Wait on observable conditions (`expect.poll`, `toPass`, retry helpers), never fixed sleeps.
 - Do not mock the system under test. Use the real services on the test stack or the functional test fixtures.
 - Do not change product code under `src/`. If a test fails because the implementation does not do what the case requires, stop and report it (see below) instead of weakening the test.
 
+## Checks the pipeline runs on your work
+
+After you finish, the pipeline checks these before any verifier sees your tests. Each failure costs a whole extra round, so meet them all the first time:
+
+- Every case id in the plan appears in exactly one test name, and no test names an id that isn't in the plan.
+- `testing/scenarios/<scenario>/scenario.yaml` exists and `testing/teststack validate <scenario>` passes.
+- Every `.cs` file with tests for the story has the story tag, on the class or on every test method. The tag depends on the project's test framework:
+  - **xUnit** (`tests/*.FunctionalTests`): `[Trait("Story", "<KEY>")]`, and `[Trait("TestCase", "<case id>")]` on each test.
+  - **MSTest** (projects using `MSTest.Sdk`, such as `tests/*.UnitTests` and `tests/eShop.AppHost.UnitTests`): `[TestCategory("<KEY>")]`, and `[TestProperty("TestCase", "<case id>")]` on each test. MSTest has no `[Trait]`; never add a `TraitAttribute` shim.
+- `dotnet build <project>` passes, then the story's tests pass:
+  - xUnit: `dotnet test --project <project> --no-build -- --filter-trait "Story=<KEY>"`
+  - MSTest: `dotnet test --project <project> --no-build --filter "TestCategory=<KEY>"`
+- A new test project must be in `eShop.slnx` and use package versions from `Directory.Packages.props`.
+- `npx playwright test -c playwright.teststack.config.ts --grep TC-<KEY>- <your specs>` passes.
+
 ## Running
 
 - Bring the stack up with `testing/teststack up` if it is not running, then run your specs with `npx playwright test -c playwright.teststack.config.ts --grep TC-<KEY>-`.
-- Run functional tests with `dotnet test --project tests/<Project> -- --filter-trait "Story=<KEY>"`.
+- Run functional (xUnit) tests with `dotnet test --project tests/<Project> -- --filter-trait "Story=<KEY>"`, and unit (MSTest) tests with `dotnet test --project tests/<Project> --filter "TestCategory=<KEY>"`.
+- When a Playwright test fails, look at what the browser showed before you change code. `artifacts/e2e-videos/manifest.json` lists each test's error and its keyframes (screenshots at each `test.step`, each `demo` checkpoint and the `failure` state). Open the `failure` and `step failed` frames with your image/file read tool. The task feedback already lists them when the pipeline ran the tests. The run before the last one is kept in `artifacts/e2e-videos-previous/` for comparison.
+- Wrap each step of a case in `test.step('<what the case step says>', …)` (or use `demo.chapter`/`demo.highlight`). Each step then gets its own keyframe, which the verifier compares against the case.
 - Finish only when every test for the story passes.
 
 ## Updating
@@ -43,4 +61,6 @@ When the task says `update`, change existing tests in place to match the current
 End your final message with exactly one line:
 
 - All tests written and passing: `AGENT_RESULT: {"status": "done", "tests": <count>}`
-- The implementation contradicts the plan: `AGENT_RESULT: {"status": "product-bug", "bugs": ["<case id>: expected …, got …"]}`
+- The implementation contradicts the plan: `AGENT_RESULT: {"status": "product-bug", "summary": "<one sentence>", "bugs": [{"case": "<case id>", "expected": "<what the case requires>", "actual": "<what the implementation did>", "location": "<src file:line or endpoint>", "why": "<why the implementation is at fault, not the test or the case>"}]}`
+
+The bugs go back to the implementer and into the pipeline's decision log, so say exactly what you observed (status, body, state) and point at the code responsible when you can.

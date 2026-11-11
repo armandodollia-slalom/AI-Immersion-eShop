@@ -39,7 +39,7 @@ before(() => {
   repo = path.join(tmp, 'shop');
   incoming = path.join(tmp, 'incoming');
   scriptFile = path.join(tmp, 'agent.json');
-  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/board', 'scripts/models']) {
+  for (const dir of ['scripts/pipeline', 'scripts/review', 'scripts/qe', 'scripts/implement', 'scripts/pr-check', 'scripts/board', 'scripts/models']) {
     fs.cpSync(path.join(source, dir), path.join(repo, dir), { recursive: true, filter: (p) => !p.startsWith(path.join(source, dir, 'test')) });
   }
   fs.cpSync(path.join(source, '.github/agents'), path.join(repo, '.github/agents'), { recursive: true });
@@ -51,6 +51,9 @@ before(() => {
   // This test covers the single-agent path; the orchestrated one is in orchestrate-e2e.test.mjs.
   implConfig.implement.orchestrate = false;
   write(repo, 'scripts/implement/config.json', JSON.stringify(implConfig, null, 2));
+  const prCheckConfig = JSON.parse(fs.readFileSync(path.join(repo, 'scripts/pr-check/config.json'), 'utf8'));
+  prCheckConfig.prCheck.hook.enabled = false;
+  write(repo, 'scripts/pr-check/config.json', JSON.stringify(prCheckConfig, null, 2));
   write(repo, '.gitignore', '.agent-state/\n');
   write(repo, 'src/Basket/Coupons.cs', '// coupons\n');
   sh(repo, 'git', ['init', '-q', '-b', 'main']);
@@ -66,7 +69,7 @@ before(() => {
   write(incoming, 'DEMO-4-loyalty-tiers.md', `# DEMO-4 Loyalty tiers\n\n* **Blocked by:** [DEMO-3](DEMO-3-loyalty.md)\n\n${rule}`);
 });
 
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
 
 test('implement run: each story gets a worktree and branch, loops with the review, waits for verified tests and stacks dependents', async () => {
   const happySad = [{ title: 'Valid coupon applies', type: 'happy' }, { title: 'Expired coupon rejected', type: 'sad' }];
@@ -90,7 +93,7 @@ test('implement run: each story gets a worktree and branch, loops with the revie
 
   const dry = pipeline(['implement', 'run', incoming, '--dry-run']);
   assert.equal(dry.status, 0, dry.stderr);
-  assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon  \(blocked by DEMO-1\)/);
+  assert.match(dry.stdout, /1\. DEMO-1 +feat\/demo-1-apply-coupon <- main\n 2\. DEMO-2 +feat\/demo-2-coupon-history <- feat\/demo-1-apply-coupon {2}\(blocked by DEMO-1\)/);
   assert.ok(!fs.existsSync(`${scriptFile}.calls.json`), 'a dry run starts no agents');
 
   const result = pipeline(['implement', 'run', incoming]);
@@ -126,4 +129,33 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   const status = pipeline(['implement', 'status']);
   assert.match(status.stdout, /DEMO-2 +finished +done +feat\/demo-2-coupon-history/);
   assert.match(status.stdout, /DEMO-4 +finished +skipped/);
+
+  // The machine dies while DEMO-3 is being worked on: its runner never records an outcome.
+  const runs = path.join(repo, '.agent-state/implement');
+  const edit = (file, patch) => fs.writeFileSync(path.join(runs, file), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(runs, file), 'utf8')), ...patch }));
+  edit('batch.json', { pid: 2 ** 22 + 7, finishedAt: null });
+  edit('DEMO-3.json', { status: 'running', outcome: null });
+  assert.match(pipeline(['implement', 'status']).stdout, /last implement run was interrupted.*implement resume/);
+  assert.match(JSON.parse(pipeline(['hook', 'session-start']).stdout).additionalContext, /last implement run was interrupted[\s\S]*pipeline.mjs resume/, 'the next session is told');
+  assert.match(pipeline(['implement', 'resume', 'DEMO-9', '--background']).stdout, /does not include DEMO-9/, 'a story-scoped resume leaves other batches alone');
+  fs.writeFileSync(
+    scriptFile,
+    JSON.stringify({
+      implementer: [{ writeImpl: 'src/Loyalty/Points.cs', result: { status: 'done', reason: 'points' } }],
+      'architecture-reviewer': [{ result: { verdict: 'APPROVED', summary: 'ok', findings: [] } }],
+      'qe-plan': [{ writePlan: happySad }],
+      'qe-plan-verifier': [{ result: { score: 10, summary: 'ok', gaps: [] } }],
+      'qe-automation': [{ writeTests: [1, 2], result: { status: 'done' } }],
+      'qe-automation-verifier': [{ result: { score: 10, gaps: [] } }],
+    }),
+  );
+  for (const suffix of ['.calls.json', '.prompts.log']) fs.rmSync(scriptFile + suffix, { force: true });
+  const resumed = pipeline(['implement', 'resume']);
+  assert.equal(resumed.status, 0, resumed.stdout + resumed.stderr);
+  assert.match(resumed.stdout, /DEMO-1 +skip: done in a previous run[\s\S]*DEMO-3 +feat\/demo-3-loyalty <- main {2}\(resume\)[\s\S]*DEMO-4 +feat\/demo-4-loyalty-tiers <- feat\/demo-3-loyalty/);
+  assert.match(resumed.stdout, /DEMO-3 +done[\s\S]*DEMO-4 +done/);
+  assert.equal(calls().implementer, 2, 'only the unfinished stories run again');
+  assert.match(prompts(), /=== implementer #1[\s\S]*previous run of this story was interrupted/);
+  assert.match(pipeline(['implement', 'resume']).stdout, /DEMO-4 +skip: done in a previous run/, 'a finished run resumes to nothing');
+  assert.match(pipeline(['resume']).stdout, /\[implement\]\nNo interrupted implement run\./);
 });
