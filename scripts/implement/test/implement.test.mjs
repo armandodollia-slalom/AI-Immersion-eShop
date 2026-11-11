@@ -161,3 +161,17 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   assert.match(pipeline(['implement', 'resume']).stdout, /DEMO-4 +skip: done in a previous run/, 'a finished run resumes to nothing');
   assert.match(pipeline(['resume']).stdout, /\[implement\]\nNo interrupted implement run\./);
 });
+
+test('implement run --epic: epic delivery by default (one epic branch), --delivery story keeps a branch per story; --dry-run starts nothing', () => {
+  seedTicket(repo, { key: 'epic-promos', type: 'epic', text: '# Epic: Promos\n' });
+  seedTicket(repo, { key: 'DEMO-7', slug: 'DEMO-7-banner', parent: 'epic-promos', text: '# DEMO-7 Banner\n\nRule.\n' });
+  seedTicket(repo, { key: 'DEMO-8', slug: 'DEMO-8-promo-page', parent: 'epic-promos', text: '# DEMO-8 Promo page\n\n* **Blocked by:** [DEMO-7](DEMO-7-banner.md)\n\nRule.\n' });
+  const epic = pipeline(['implement', 'run', '--epic', 'promos', '--dry-run', '--parallel', '1']);
+  assert.equal(epic.status, 0, epic.stderr);
+  assert.match(epic.stdout, /Delivery: epic\. One branch epic\/promos and one PR for epic-promos\./);
+  assert.match(epic.stdout, /2\. DEMO-8 +feat\/demo-8-promo-page <- the epic's branch {2}\(blocked by DEMO-7\)/);
+  const perStory = pipeline(['implement', 'run', '--epic', 'promos', '--delivery', 'story', '--dry-run', '--parallel', '1']);
+  assert.equal(perStory.status, 0, perStory.stderr);
+  assert.match(perStory.stdout, /2\. DEMO-8 +feat\/demo-8-promo-page <- feat\/demo-7-banner/);
+  assert.equal(pipeline(['implement', 'run', '--epic', 'promos', '--delivery', 'nope', '--dry-run']).status, 2);
+});

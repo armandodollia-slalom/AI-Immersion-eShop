@@ -26,7 +26,7 @@ import { boardEvent } from './board-events.mjs';
 import { OUTCOMES_FILE } from './decisions.mjs';
 import { EPIC_PLAN_STAGE, deliveryShape, epicDeps, epicPlanDecision, epicPlanTask, epicPrBody, epicSlug, epicTestKey, groupDeps, groupOutcome, groupsDecision, journeyTicket, nextStories, noteMarkdown, singleGroups, validateNote } from './epic-plan.mjs';
 import { commitAll, commitEnv, headSha, mergeInProgress, mustGit, unmergedFiles } from './gitops.mjs';
-import { applyEnv, plan as planStories, runsDir, startWorker } from './implement.mjs';
+import { plan as planStories, runsDir, startWorker } from './implement.mjs';
 import { lspAdapter } from './lsp.mjs';
 import { waitForMemory } from './resources.mjs';
 import { agentSettings, createContext, runSelf } from './orchestrate.mjs';
@@ -95,7 +95,8 @@ export function prepareUnitWorktree(config, { branch, worktree, base, merge = []
       throw new Error(`merging ${other} into ${branch} conflicts`);
     }
   }
-  const wtConfig = applyEnv(loadConfig('implement', worktree));
+  // The unit's stages read this run's settings (the caller's implement and agent config), from the worktree.
+  const wtConfig = { ...loadConfig('implement', worktree), implement: { ...config.implement }, agent: config.agent };
   for (const t of tickets) {
     const src = path.dirname(config.abs(t.file));
     const dst = ticketDir(wtConfig, t.key);
@@ -349,7 +350,7 @@ async function epicFlow(env) {
       logDecision(config, groupsDecision({ epic, groups: note.prGroups, fallback: 'grouping "ticket": one PR per ticket' }));
     } else {
       log(`planning the epic (design note${feature ? '' : ' and PR groups'})`);
-      const planConfig = feature ? epicWt : applyEnv(loadConfig('implement', config.root));
+      const planConfig = feature ? epicWt : config;
       const planned = await deps.planEpic({ ...env, planConfig, cwd: feature ? epicUnit.worktree : config.root, groups: !feature });
       if (!planned.ok) return failAll(planned.outcome, planned.reason, planned.findings);
       note = planned.note;
