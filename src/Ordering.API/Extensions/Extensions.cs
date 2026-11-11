@@ -8,6 +8,9 @@ internal static class Extensions
 
         // Add the authentication services to DI
         builder.AddDefaultAuthentication();
+        // Shipping is a back-office action: only users in the Admin role may ship orders.
+        services.AddAuthorizationBuilder()
+            .AddPolicy(OrdersApi.OrderingAdminPolicy, policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
 
         // Pooling is disabled because of the following error:
         // Unhandled exception. System.InvalidOperationException:

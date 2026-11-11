@@ -61,8 +61,8 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
         var response = await _httpClient.PutAsync("api/orders/cancel", content, TestContext.Current.CancellationToken);
         var s = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        // Assert (BUG-2: an order the caller does not own, or that does not exist, is not found)
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -76,8 +76,8 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
         var response = await _httpClient.PutAsync("api/orders/ship", content, TestContext.Current.CancellationToken);
         var s = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // Assert (BUG-2: shipping requires the Admin role, and the test user is a buyer)
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -90,8 +90,8 @@ public sealed class OrderingApiTests : IClassFixture<OrderingApiFixture>
         };
         var response = await _httpClient.PutAsync("api/orders/ship", content, TestContext.Current.CancellationToken);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        // Assert (BUG-2: shipping requires the Admin role, and the test user is a buyer)
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

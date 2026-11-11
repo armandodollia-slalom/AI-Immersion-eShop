@@ -48,6 +48,9 @@ public class OrderQueries(OrderingContext context)
             .ToListAsync();
     }
 
+    public Task<bool> OrderExistsAsync(int id) =>
+        context.Orders.AnyAsync(o => o.Id == id);
+
     public async Task<IEnumerable<CardType>> GetCardTypesAsync() =>
         await context.CardTypes.Select(c => new CardType { Id = c.Id, Name = c.Name }).ToListAsync();
 }

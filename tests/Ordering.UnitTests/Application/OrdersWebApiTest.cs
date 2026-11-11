@@ -19,6 +19,13 @@ public class OrdersWebApiTest
         _orderQueriesMock = Substitute.For<IOrderQueries>();
         _identityServiceMock = Substitute.For<IIdentityService>();
         _loggerMock = Substitute.For<ILogger<OrderServices>>();
+
+        // Cancel and ship now look the order up first (BUG-2): by default the order exists and
+        // belongs to the caller, so the existing cancel/ship tests exercise the command path.
+        _orderQueriesMock.GetOrderAsync(Arg.Any<int>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new Order()));
+        _orderQueriesMock.OrderExistsAsync(Arg.Any<int>())
+            .Returns(Task.FromResult(true));
     }
 
     [TestMethod]
