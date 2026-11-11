@@ -433,3 +433,30 @@ policy for every Claude run.
   `board.md` updated. Commit `a162378`. The operator re-sent BUG-14's review
   event.
 - **Impact:** one card showed Failed while its PR was open.
+
+## D21: earlier-merged tickets missed their group PR's card move
+
+- **Symptom:** after restarts, BUG-8, BUG-11, BUG-18 and BUG-20 stayed in
+  Testing although their group PRs (#97, #100, #102) were open.
+- **Root cause:** when the unit's PR opened, only the tickets that finished in
+  the current run were reported to the board; tickets merged into the group by
+  an earlier run are `skipped` ("merged ... in a previous run") in that run.
+- **Fix:** report every ticket merged into the unit (epic state `merged`).
+  Test in `epic.test.mjs`. Commit `c674f78`. Run 9 moved the four cards.
+- **Impact:** four cards showed the wrong lane for up to an hour.
+
+## Observation O8: plan files with MD012 reached a PR
+
+BUG-13's plan files (committed by the QE harness at 08:38) have two blank lines
+in a row, so #100's Markdownlint job fails. Harness commits run with
+`PIPELINE_DISABLE=1`, and the QE precheck lints only the files the agent wrote
+in that round. Follow-up: lint the whole plan folder before the QE commit.
+
+## Observation O9: no tests run on the merged group
+
+Every ticket's tests are verified on its own branch. After the tickets are
+merged into a group (with conflict resolution), only the PR check (a review)
+runs, so cross-ticket breakage reaches CI: on #102, BUG-14's test counts the
+rows of a doc table that BUG-7 and BUG-8 also edited. Follow-up: run the
+harness checks and the touched services' unit tests in the unit worktree
+before the PR (and the group's QE specs when the stack is available).
