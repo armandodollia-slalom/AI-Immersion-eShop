@@ -5,13 +5,16 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   acquireLease,
   connect,
   daemonPaths,
   loadConfig,
+  protectSocket,
   readJson,
   releaseLease,
+  removeSocket,
   resolveNodeModule,
   serverForFile,
   stateDir,
@@ -31,6 +34,13 @@ const INSTRUCTIONS = [
   'When a C# call answers "C# language server unavailable", do not retry in a loop: use graphify and grep instead.',
 ].join(' ');
 
+// Prefers the worktree's server.mjs; a worktree cut before it existed uses this checkout's copy
+// (server.mjs takes the worktree from LSP_WORKSPACE_ROOT either way).
+const windowsServerScript = (worktree) => {
+  const own = path.join(worktree, 'scripts', 'lsp', 'server.mjs');
+  return fs.existsSync(own) ? own : fileURLToPath(new URL('../server.mjs', import.meta.url));
+};
+
 export function lspMcpConfig(config, worktree) {
   return {
     requestTimeout: (config.callTimeoutSec ?? 60) * 1000,
@@ -41,8 +51,10 @@ export function lspMcpConfig(config, worktree) {
       id: s.id,
       extensions: s.extensions,
       languageIds: s.languageIds,
-      command: s.command ?? path.join(worktree, 'scripts/lsp/server.sh'),
-      args: s.args ?? [s.id],
+      // Windows cannot exec server.sh (bash); server.mjs is its Node port.
+      ...(s.command || process.platform !== 'win32'
+        ? { command: s.command ?? path.join(worktree, 'scripts/lsp/server.sh'), args: s.args ?? [s.id] }
+        : { command: process.execPath, args: [windowsServerScript(worktree), ...(s.args ?? [s.id])] }),
       rootPatterns: ['.git'],
     })),
   };
@@ -58,14 +70,12 @@ export async function serve({ worktree, slnf }) {
   fs.mkdirSync(paths.dir, { recursive: true });
 
   // Another daemon already serving this checkout: nothing to do.
-  if (fs.existsSync(paths.socket)) {
-    try {
-      (await connect(paths.socket, 1000)).destroy();
-      log(`another daemon already serves ${worktree}`);
-      return 0;
-    } catch {
-      fs.rmSync(paths.socket, { force: true });
-    }
+  try {
+    (await connect(paths.socket, 1000)).destroy();
+    log(`another daemon already serves ${worktree}`);
+    return 0;
+  } catch {
+    removeSocket(paths.socket);
   }
 
   const entry = resolveNodeModule(worktree, 'lsp-mcp-server/dist/index.js');
@@ -84,6 +94,7 @@ export async function serve({ worktree, slnf }) {
       LSP_LOG_LEVEL: process.env.LSP_LOG_LEVEL ?? 'warn',
     },
     stdio: ['pipe', 'pipe', 'inherit'],
+    windowsHide: true,
   });
   let nextId = 1;
   const pending = new Map();
@@ -183,7 +194,7 @@ export async function serve({ worktree, slnf }) {
     csharp = { status: 'running', reason: null, startedAt: Date.now(), restoring: true };
     log(`restoring NuGet packages for ${missing.length} project(s) before starting C#`);
     const out = fs.openSync(path.join(sdir, 'restore.log'), 'w');
-    const restore = spawn('dotnet', ['restore', restoreTarget], { cwd: worktree, stdio: ['ignore', out, out], env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' } });
+    const restore = spawn('dotnet', ['restore', restoreTarget], { cwd: worktree, stdio: ['ignore', out, out], env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' }, windowsHide: true });
     fs.closeSync(out);
     restore.on('error', (error) => {
       log(`dotnet restore failed to start: ${error.message}`);
@@ -481,7 +492,7 @@ export async function serve({ worktree, slnf }) {
       resolve();
     });
   });
-  fs.chmodSync(paths.socket, 0o600);
+  protectSocket(paths.socket);
   writeJsonAtomic(paths.pidFile, { pid: process.pid, worktree, socket: paths.socket, stateDir: sdir, solution, startedAt });
   log(`serving ${worktree} on ${paths.socket} (pid ${process.pid})`);
 
@@ -499,7 +510,7 @@ export async function serve({ worktree, slnf }) {
   function cleanupFiles() {
     if (readJson(paths.pidFile)?.pid === process.pid) {
       fs.rmSync(paths.pidFile, { force: true });
-      fs.rmSync(paths.socket, { force: true });
+      removeSocket(paths.socket);
     }
     releaseLease(lease);
     lease = null;

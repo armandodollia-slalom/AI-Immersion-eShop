@@ -22,7 +22,9 @@ agent CLI ──stdio──> scripts/lsp/mcp.mjs ──unix socket──> lspd (
 - **`scripts/lsp/lspd.mjs`**: the per-checkout daemon. All sessions in a checkout (the main agent, subagents, the
   pipeline's headless runs, the edit hook) share its language servers. It runs
   [lsp-mcp-server](https://github.com/ProfessioneIT/lsp-mcp-server) as the LSP client, starts language servers on
-  first use, stops idle ones and exits when idle with no sessions.
+  first use, stops idle ones and exits when idle with no sessions. It listens on a unix socket on macOS and Linux and
+  on a named pipe (`\\.\pipe\eshop-lsp-…`) on Windows, where language servers start through `scripts/lsp/server.mjs`
+  (a Node port of `server.sh`, which Windows cannot run).
 - **C# (Roslyn)** is heavy, so each daemon needs a machine-wide **lease** before it starts one (default cap 6).
   Without a lease, or while the solution is restoring or loading, C# calls answer at once with
   `C# language server unavailable (<reason>); use graphify and grep` instead of hanging.

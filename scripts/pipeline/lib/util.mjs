@@ -20,6 +20,7 @@ export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true }
     input,
     env: env ?? process.env,
     encoding: 'utf8',
+    windowsHide: true,
     maxBuffer: 256 * 1024 * 1024,
     timeout: timeoutSec ? timeoutSec * 1000 : undefined,
   });
@@ -42,7 +43,7 @@ export function runAsync(cmd, args, { cwd, input, env, timeoutSec, signal } = {}
     let stderr = '';
     let timedOut = false;
     let settled = false;
-    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const finish = (status, extra = '') => {
       if (settled) return;
       settled = true;
@@ -216,7 +217,7 @@ export function bootId() {
   cachedBootId = null;
   try {
     if (process.platform === 'linux') cachedBootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() || null;
-    else if (process.platform === 'darwin') cachedBootId = /sec = (\d+)/.exec(spawnSync('sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8' }).stdout ?? '')?.[1] ?? null;
+    else if (process.platform === 'darwin') cachedBootId = /sec = (\d+)/.exec(spawnSync('sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8', windowsHide: true }).stdout ?? '')?.[1] ?? null;
   } catch {
     cachedBootId = null;
   }

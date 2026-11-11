@@ -18,6 +18,7 @@ export function runStage(config, stage, args, { input = '', inherit = false } = 
     input,
     encoding: 'utf8',
     env: process.env,
+    windowsHide: true,
     maxBuffer: 64 * 1024 * 1024,
     stdio: inherit ? ['pipe', 'inherit', 'inherit'] : 'pipe',
   });

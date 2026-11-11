@@ -279,8 +279,8 @@ export function runAgentAsync(config, { name, task, mode = 'read', model = null,
   const started = Date.now();
   return new Promise((resolve) => {
     const child = useShell
-      ? spawn([invocation.cmd, ...invocation.args].map(quote).join(' '), { cwd, shell: true, env })
-      : spawn(invocation.cmd, invocation.args, { cwd, env });
+      ? spawn([invocation.cmd, ...invocation.args].map(quote).join(' '), { cwd, shell: true, env, windowsHide: true })
+      : spawn(invocation.cmd, invocation.args, { cwd, env, windowsHide: true });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -288,7 +288,7 @@ export function runAgentAsync(config, { name, task, mode = 'read', model = null,
     const kill = () => {
       // Through a shell the agent is a grandchild that holds the output pipes open, so kill the whole
       // tree and stop waiting on the pipes.
-      if (useShell) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      if (useShell) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
       child.kill('SIGKILL');
       child.stdout.destroy();
       child.stderr.destroy();
