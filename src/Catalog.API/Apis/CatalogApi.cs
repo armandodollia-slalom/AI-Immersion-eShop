@@ -419,10 +419,16 @@ public static class CatalogApi
     }
 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    public static async Task<Created> CreateItem(
+    public static async Task<Results<Created, ValidationProblem>> CreateItem(
         [AsParameters] CatalogServices services,
         CatalogItem product)
     {
+        var errors = CatalogItemValidation.Validate(product);
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
         var item = new CatalogItem(product.Name)
         {
             Id = product.Id,
