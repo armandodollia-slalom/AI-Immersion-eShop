@@ -14,7 +14,7 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | PR groups chosen by the supervisor | 9 (timeline 04:19) |
 | Group PRs opened | 7: #70, #71, #72, #97, #100 (6 bugs), #102 (3 bugs), #103 |
 | Group PR CI | #72 green; #70/#71/#97/#100 fail on BUG-4's compose drift and scopes test; #100 MD012; #102 a cross-ticket test assumption |
-| Tickets verified | **15**: BUG-4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
+| Tickets verified | **16**: BUG-1 (15:21, after the human decision), 4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
 | Escalated to a human | 1: BUG-1 (QE meta-test); 5 more wait behind it (BUG-2, 3, 9, 10, 15) |
 | Agent runs | 309 |
 | Token cost (list price) | **$75.63**: Copilot $38.08, Claude Code $37.56 |
