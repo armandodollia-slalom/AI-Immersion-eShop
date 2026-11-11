@@ -141,7 +141,11 @@ export function tidyPlan(config, story) {
     fs.writeFileSync(path.join(config.root, file), next);
     changed = true;
   }
-  if (changed && verified) stampIndex(config, story, { 'plan-sha': planContentSha(readPlan(config, story)) });
+  if (changed && verified) {
+    const sha = planContentSha(readPlan(config, story));
+    const automated = before.index.data['automation-plan-sha'] === before.index.data['plan-sha'];
+    stampIndex(config, story, { 'plan-sha': sha, ...(automated ? { 'automation-plan-sha': sha } : {}) });
+  }
   return changed;
 }
 

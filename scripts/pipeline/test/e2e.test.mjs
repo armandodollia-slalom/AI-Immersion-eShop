@@ -134,15 +134,6 @@ test('workflow 1: plan loops with a fresh verifier until 10/10, logs denials, an
   assert.match(index, /verified-score: 10/);
   assert.match(qe(['check', '--all']).stdout, /ok +DEMO-1 +plan=verified/);
 
-  // A plan verified with compact table delimiter rows (markdownlint MD060) is tidied and stays verified.
-  write(`${PLAN}/_index.md`, `${index.trimEnd()}\n\n| ID | Title |\n|----|:------|\n| TC-DEMO-1-01 | Valid coupon applies |\n`);
-  const compactSha = planContentSha(readPlan({}, { planDir: PLAN }, fsReader(repo)));
-  write(`${PLAN}/_index.md`, read(`${PLAN}/_index.md`).replace(/^plan-sha: .*$/m, `plan-sha: ${compactSha}`));
-  assert.match(qe(['check', '--all']).stdout, /ok +DEMO-1 +plan=verified/);
-  assert.match(qe(['tidy', 'DEMO-1']).stdout, /DEMO-1: plan markdown tidied/);
-  assert.match(read(`${PLAN}/_index.md`), /^\| ---- \| :------ \|$/m);
-  assert.match(qe(['check', '--all']).stdout, /ok +DEMO-1 +plan=verified/);
-
   gitc('add', '-A');
   gitc('commit', '-qm', 'plan');
   gitc('checkout', '-qb', 'feature/DEMO-1');
@@ -235,6 +226,16 @@ test('workflow 2: the dispatcher runs the review stage first, then automation lo
   assert.match(read(`${PLAN}/_index.md`), /automation-score: 10/);
   assert.match(pipeline(['status', 'DEMO-1']).stdout, /\[review\]\nDEMO-1 +review=APPROVED[\s\S]*\[qe\]\nDEMO-1 +plan=verified .*tests=1 +automation=verified\/verified/);
   assert.equal(stop(), null, 'approved and verified: nothing left to do');
+
+  // A plan and tests verified with compact table delimiter rows (markdownlint MD060) are tidied and stay verified.
+  write(`${PLAN}/_index.md`, `${read(`${PLAN}/_index.md`).trimEnd()}\n\n| ID | Title |\n|----|:------|\n| TC-DEMO-1-01 | Valid coupon applies |\n`);
+  const compactSha = planContentSha(readPlan({}, { planDir: PLAN }, fsReader(repo)));
+  write(`${PLAN}/_index.md`, read(`${PLAN}/_index.md`).replace(/^(plan-sha|automation-plan-sha): .*$/gm, `$1: ${compactSha}`));
+  const verifiedStatus = /DEMO-1 +plan=verified .*automation=verified\/verified/;
+  assert.match(qe(['status', 'DEMO-1']).stdout, verifiedStatus);
+  assert.match(qe(['tidy', 'DEMO-1']).stdout, /DEMO-1: plan markdown tidied/);
+  assert.match(read(`${PLAN}/_index.md`), /^\| ---- \| :------ \|$/m);
+  assert.match(qe(['status', 'DEMO-1']).stdout, verifiedStatus);
 
   // Editing a verified test invalidates the stamp so CI and pre-push catch it.
   write('e2e/teststack/demo-1.spec.ts', `${read('e2e/teststack/demo-1.spec.ts')}// tweak\n`);
