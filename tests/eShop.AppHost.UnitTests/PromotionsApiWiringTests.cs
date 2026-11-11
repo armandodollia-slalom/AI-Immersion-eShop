@@ -1,10 +1,10 @@
-﻿using Aspire.Hosting;
+﻿using System.Reflection;
+using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
-using System.Reflection;
 
 namespace eShop.AppHost.UnitTests;
 
