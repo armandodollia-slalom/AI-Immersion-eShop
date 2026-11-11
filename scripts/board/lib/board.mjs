@@ -160,7 +160,61 @@ export function moveStory(config, key, column, { force = false } = {}) {
   const item = issueItem(config, issue);
   if (item.column === column || (!force && !isForward(item.column, column))) return { issue, from: item.column, to: item.column, moved: false };
   setColumn(config, item.id, column);
+  try {
+    syncEpicColumns(config);
+  } catch {
+    // The epic's lane is cosmetic; the next poll or setup catches up.
+  }
   return { issue, from: item.column, to: column, moved: true };
+}
+
+// The lane an epic sits in, from its stories' lanes: Done when all are done, Pending Review when all are
+// in review or done, In Progress once any has started, Ready once any is ready, else Backlog.
+export function epicColumn(columns) {
+  const started = ['inProgress', 'review', 'done'];
+  if (columns.length && columns.every((c) => c === 'done')) return 'done';
+  if (columns.length && columns.every((c) => c === 'review' || c === 'done')) return 'review';
+  if (columns.some((c) => started.includes(c))) return 'inProgress';
+  if (columns.some((c) => c === 'ready')) return 'ready';
+  return 'backlog';
+}
+
+// Moves every epic card to the lane its stories call for. Returns the epics moved.
+export function syncEpicColumns(config, items = listItems(config), { log = () => {} } = {}) {
+  const moved = [];
+  for (const epic of items.filter((i) => i.labels.includes(config.board.epicLabel))) {
+    const stories = items.filter((i) => i.parent === epic.number);
+    const target = epicColumn(stories.map((s) => (s.state === 'CLOSED' ? 'done' : s.column)));
+    if (epic.column === target) continue;
+    setColumn(config, epic.itemId, target);
+    epic.column = target;
+    moved.push(epic.number);
+    log(`epic #${epic.number} moved to ${config.board.columns[target]}`);
+  }
+  return moved;
+}
+
+// Gives an epic's open stories the epic's assignees (adding and removing as needed), so assigning an
+// epic assigns all of its stories. Issues only: no project access needed (runs in GitHub Actions).
+export function syncEpicAssignees(config, number) {
+  const [owner, name] = config.board.repo.split('/');
+  const epic = graphql(
+    `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){labels(first:30){nodes{name}} assignees(first:20){nodes{login}} subIssues(first:100){nodes{number state assignees(first:20){nodes{login}}}}}}}`,
+    { owner, name, number },
+  ).repository.issue;
+  if (!epic) throw new Error(`#${number} not found in ${config.board.repo}`);
+  if (!epic.labels.nodes.some((l) => l.name === config.board.epicLabel)) return [];
+  const want = epic.assignees.nodes.map((a) => a.login);
+  const changed = [];
+  for (const story of epic.subIssues.nodes.filter((s) => s.state === 'OPEN')) {
+    const has = story.assignees.nodes.map((a) => a.login);
+    const add = want.filter((l) => !has.includes(l));
+    const remove = has.filter((l) => !want.includes(l));
+    if (!add.length && !remove.length) continue;
+    gh(['issue', 'edit', String(story.number), '-R', config.board.repo, ...(add.length ? ['--add-assignee', add.join(',')] : []), ...(remove.length ? ['--remove-assignee', remove.join(',')] : [])]);
+    changed.push({ number: story.number, add, remove });
+  }
+  return changed;
 }
 
 export function comment(config, number, body) {
@@ -178,7 +232,7 @@ export function listItems(config) {
   let after = null;
   for (;;) {
     const data = graphql(
-      `query($owner:String!,$number:Int!,$field:String!,$after:String){${ownerType}(login:$owner){projectV2(number:$number){items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValueByName(name:$field){... on ProjectV2ItemFieldSingleSelectValue{name}}content{... on Issue{number title url state repository{nameWithOwner}assignees(first:20){nodes{login}}labels(first:30){nodes{name}}}}}}}}}`,
+      `query($owner:String!,$number:Int!,$field:String!,$after:String){${ownerType}(login:$owner){projectV2(number:$number){items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValueByName(name:$field){... on ProjectV2ItemFieldSingleSelectValue{name}}content{... on Issue{number title url state repository{nameWithOwner}assignees(first:20){nodes{login}}labels(first:30){nodes{name}}parent{number}}}}}}}}`,
       { owner, number: projectNumber, field: statusField, after },
     );
     const page = data[ownerType].projectV2.items;
@@ -196,6 +250,7 @@ export function listItems(config) {
         key: storyKeyOf(n.content.title),
         assignees: n.content.assignees.nodes.map((a) => a.login),
         labels: n.content.labels.nodes.map((l) => l.name),
+        parent: n.content.parent?.number ?? null,
       });
     }
     if (!page.pageInfo.hasNextPage) return items;
@@ -271,7 +326,7 @@ function epicIssueBody(config, epic, stories) {
   return [
     `**Epic file:** [\`${epic.file}\`](${blob})`,
     '',
-    `The stories of this epic are its sub-issues; on the board's **${config.board.epicViewName}** view they are grouped under it.`,
+    `The stories of this epic are its sub-issues: open them from the list below, or see them on the board's **Stories by epic** view. Assigning this epic assigns all of its open stories; its lane follows its stories' lanes.`,
     '',
     ...(mockups ? [mockups, '', '---', ''] : ['---', '']),
     body.length > 55000 ? `${body.slice(0, 55000)}\n\n_(truncated; see the epic file)_` : body,
@@ -340,8 +395,7 @@ export function setup(config, { listStories, log, writeProjectNumber }) {
 
   ensureColumns(config, log);
   resetMemo();
-  log(ensureBoardView(config));
-  log(ensureEpicView(config));
+  log(ensureViews(config));
 
   const created = [];
   const updated = [];
@@ -360,6 +414,7 @@ export function setup(config, { listStories, log, writeProjectNumber }) {
     if (r.created) created.push(epic.slug);
     if (r.updated) updated.push(epic.slug);
     epics[epic.slug] = r.issue;
+    issueItem(config, r.issue);
   }
   let linked = 0;
   for (const story of stories) {
@@ -381,6 +436,7 @@ export function setup(config, { listStories, log, writeProjectNumber }) {
     if (!item.column) setColumn(config, item.id, 'backlog');
   }
   log(`${created.length} issue(s) created${created.length ? `: ${created.join(', ')}` : ''}, ${updated.length} issue body(ies) refreshed, ${linked} story(ies) linked under their epic; every story is on the board`);
+  syncEpicColumns(config, listItems(config), { log });
   return project(config).url;
 }
 
@@ -419,38 +475,38 @@ function ensureColumns(config, log) {
   log(`columns set: ${wanted.join(' | ')}; ${restore.length} card(s) kept in their columns`);
 }
 
-// A board view with one swimlane per epic: columns by Status, rows grouped by the built-in
-// "Parent issue" field. GitHub has no API to change an existing view's grouping, so this is a new view.
-function ensureEpicView(config) {
-  const { owner, ownerType, projectNumber, statusField, epicViewName } = config.board;
-  try {
-    const data = graphql(
-      `query($owner:String!,$number:Int!){${ownerType}(login:$owner){projectV2(number:$number){views(first:50){nodes{name}} fields(first:50){nodes{... on ProjectV2FieldCommon{databaseId name dataType}}}}}}`,
-      { owner, number: projectNumber },
-    );
-    const p = data[ownerType].projectV2;
-    if (p.views.nodes.some((v) => v.name === epicViewName)) return `"${epicViewName}" view ready`;
-    const field = (pred) => p.fields.nodes.find(pred)?.databaseId;
-    const parent = field((f) => f.dataType === 'PARENT_ISSUE');
-    const status = field((f) => f.name === statusField);
-    if (!parent || !status) throw new Error('missing the Parent issue or Status field');
-    gh(['api', '-X', 'POST', `${ownerType === 'user' ? 'users' : 'orgs'}/${owner}/projectsV2/${projectNumber}/views`, '--input', '-'], {
-      input: JSON.stringify({ name: epicViewName, layout: 'board', group_by: [parent], vertical_group_by: [status] }),
-    });
-    return `"${epicViewName}" view created`;
-  } catch (error) {
-    return `could not create the "${epicViewName}" view through the API (${error.message.split('\n')[0]}); add a Board view and set Group by: Parent issue`;
-  }
-}
+// The project's views, in tab order: the first is the default. GitHub can't reorder views, so when the
+// order is wrong the managed views are recreated in this order and the old ones deleted.
+const VIEWS = (config, f) => [
+  { name: 'Epics', layout: 'board', filter: `label:${config.board.epicLabel}`, vertical_group_by: [f.status] },
+  { name: 'Stories by epic', layout: 'board', filter: `-label:${config.board.epicLabel}`, group_by: [f.parent], vertical_group_by: [f.status] },
+  { name: 'Stories', layout: 'board', filter: `-label:${config.board.epicLabel}`, vertical_group_by: [f.status] },
+  { name: 'All items', layout: 'table' },
+];
+const FORMER_VIEWS = ['View 1', 'Board', 'Board by epic'];
 
-function ensureBoardView(config) {
-  const { owner, ownerType, projectNumber } = config.board;
+function ensureViews(config) {
+  const { owner, ownerType, projectNumber, statusField } = config.board;
   try {
-    const data = graphql(`query($owner:String!,$number:Int!){${ownerType}(login:$owner){projectV2(number:$number){views(first:50){nodes{layout}}}}}`, { owner, number: projectNumber });
-    if (data[ownerType].projectV2.views.nodes.some((v) => v.layout === 'BOARD_LAYOUT')) return 'board view ready';
-    gh(['api', '-X', 'POST', `${ownerType === 'user' ? 'users' : 'orgs'}/${owner}/projectsV2/${projectNumber}/views`, '-f', 'name=Board', '-f', 'layout=board']);
-    return 'board view created';
+    const p = graphql(
+      `query($owner:String!,$number:Int!){${ownerType}(login:$owner){projectV2(number:$number){views(first:50){nodes{id name filter}} fields(first:50){nodes{... on ProjectV2FieldCommon{databaseId name dataType}}}}}}`,
+      { owner, number: projectNumber },
+    )[ownerType].projectV2;
+    const field = (pred) => p.fields.nodes.find(pred)?.databaseId;
+    const want = VIEWS(config, { status: field((x) => x.name === statusField), parent: field((x) => x.dataType === 'PARENT_ISSUE') });
+    const views = p.views.nodes;
+    if (want.every((w, i) => views[i]?.name === w.name)) {
+      for (const [i, w] of want.entries()) {
+        if (w.filter && views[i].filter !== w.filter) graphql('mutation($id:ID!,$filter:String!){updateProjectV2View(input:{viewId:$id,filter:$filter}){clientMutationId}}', { id: views[i].id, filter: w.filter });
+      }
+      return `views ready: ${want.map((w) => w.name).join(', ')}`;
+    }
+    const managed = new Set([...want.map((w) => w.name), ...FORMER_VIEWS]);
+    for (const w of want) gh(['api', '-X', 'POST', `${ownerType === 'user' ? 'users' : 'orgs'}/${owner}/projectsV2/${projectNumber}/views`, '--input', '-'], { input: JSON.stringify(w) });
+    for (const v of views.filter((v) => managed.has(v.name))) graphql('mutation($id:ID!){deleteProjectV2View(input:{viewId:$id}){clientMutationId}}', { id: v.id });
+    const others = views.filter((v) => !managed.has(v.name)).map((v) => `"${v.name}"`);
+    return `views rebuilt: ${want.map((w) => w.name).join(', ')}${others.length ? `; drag Epics before ${others.join(', ')} to make it the default` : ''}`;
   } catch (error) {
-    return `could not create a board view through the API (${error.message.split('\n')[0]}); open the project and switch the view layout to Board`;
+    return `could not set up the views through the API (${error.message.split('\n')[0]}); add them by hand: ${'Epics (label:epic), Stories by epic (group by Parent issue), Stories'}`;
   }
 }

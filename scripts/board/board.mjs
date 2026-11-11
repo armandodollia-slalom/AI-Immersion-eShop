@@ -10,7 +10,7 @@ import { INSTALL_ROOT, SCRIPTS_DIR, loadConfig } from '../pipeline/lib/config.mj
 import { loadState, updateState } from '../pipeline/lib/state.mjs';
 import { activeStory, listStories, resolveStory } from '../pipeline/lib/stories.mjs';
 import { log, nowIso, readJson, setLogTag, sleep } from '../pipeline/lib/util.mjs';
-import { COLUMNS, addLabel, columnForState, comment, findIssue, isActive, issueItem, listItems, moveStory, pickable, project, setColumn, setup, storyKind } from './lib/board.mjs';
+import { COLUMNS, addLabel, columnForState, comment, findIssue, isActive, issueItem, listItems, moveStory, pickable, project, setColumn, setup, storyKind, syncEpicAssignees, syncEpicColumns } from './lib/board.mjs';
 import { captureApiEvidence, featureVideo } from './lib/evidence.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
 
@@ -31,6 +31,8 @@ const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
   review <story> [--pr <url>]   move to Pending Review and attach the evidence (API requests and
                                 responses, or the UI video) to the issue
   status [story]
+  sync-epic <issue>             give an epic's open stories the epic's assignees (run by the
+                                board-epic-assign workflow when an epic is assigned or unassigned)
 
 Hooks (called by the dispatcher)
   hook story-start <story> | hook stop`;
@@ -107,6 +109,18 @@ async function main() {
       requireActive(config);
       const story = requireStory(config, positional[0]);
       console.log(markReadyForReview(config, story, { pr: typeof flags.pr === 'string' ? flags.pr : null }));
+      return 0;
+    }
+
+    case 'sync-epic': {
+      const number = Number(String(positional[0] ?? '').replace(/^#/, ''));
+      if (!number) {
+        console.error('Usage: board sync-epic <issue number>');
+        return 2;
+      }
+      const changed = syncEpicAssignees(config, number);
+      if (!changed.length) console.log(`#${number}: stories already match the epic's assignees (or it is not an epic).`);
+      for (const c of changed) console.log(`#${c.number}:${c.add.length ? ` +${c.add.join(', +')}` : ''}${c.remove.length ? ` -${c.remove.join(', -')}` : ''}`);
       return 0;
     }
 
@@ -211,8 +225,10 @@ async function pick(config, { once, dryRun, parallel, intervalSec }) {
     for (const item of items.filter((i) => i.key && i.state === 'CLOSED' && i.column !== 'done')) {
       if (dryRun) continue;
       setColumn(config, item.itemId, 'done');
+      item.column = 'done';
       log(`#${item.number} ${item.key} closed; moved to ${config.board.columns.done}.`);
     }
+    if (!dryRun) syncEpicColumns(config, items, { log });
     const ready = pickable(config, items, me);
     const batch = [];
     for (const item of ready) {

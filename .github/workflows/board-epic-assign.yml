@@ -1,0 +1,29 @@
+name: Board epic assignment
+
+# Assigning (or unassigning) an epic issue gives all of its open stories the same assignees, so the
+# assignee's `board pick` loop picks them up once they are in Ready. See docs/ai-pipeline/board.md.
+on:
+  issues:
+    types: [assigned, unassigned]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: board-epic-${{ github.event.issue.number }}
+
+jobs:
+  sync:
+    if: contains(github.event.issue.labels.*.name, 'epic')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+    - name: Give the epic's stories its assignees
+      env:
+        GH_TOKEN: ${{ github.token }}
+        EPIC: ${{ github.event.issue.number }}
+      run: node scripts/board/board.mjs sync-epic "$EPIC"

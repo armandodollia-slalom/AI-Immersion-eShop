@@ -18,7 +18,6 @@
     "epicLabel": "epic",
     "epicsDir": "product-research",
     "mockupsDir": "product-research/mockups",
-    "epicViewName": "Board by epic",
     "pollSec": 120,
     "parallel": 1,
     "evidence": {

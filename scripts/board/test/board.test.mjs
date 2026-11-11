@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { columnForState, epicSlugOf, isForward, listEpics, mockupsFor, pickable, renderMockups, storyKind } from '../lib/board.mjs';
+import { columnForState, epicColumn, epicSlugOf, isForward, listEpics, mockupsFor, pickable, renderMockups, storyKind } from '../lib/board.mjs';
 import { parseNetwork, redact, renderEvidence, tracesFromReport } from '../lib/evidence.mjs';
 
 const config = { board: { repo: 'acme/shop', storyLabel: 'story', blockedLabel: 'needs-human' } };
@@ -111,4 +111,14 @@ test('epics and mockups are found by file and folder name and linked in the issu
   assert.match(md, /!\[shot\.png\]\(https:\/\/github\.com\/acme\/shop\/raw\/main\/pr\/mockups\/PROMO-2-admin\/shot\.png\)/);
   assert.equal(renderMockups(cfg, mockupsFor(cfg, 'PROMO-9')), '');
   fs.rmSync(root, { recursive: true });
+});
+
+test("an epic's lane follows its stories' lanes", () => {
+  assert.equal(epicColumn([]), 'backlog');
+  assert.equal(epicColumn(['backlog', null]), 'backlog');
+  assert.equal(epicColumn(['backlog', 'ready']), 'ready');
+  assert.equal(epicColumn(['ready', 'inProgress']), 'inProgress');
+  assert.equal(epicColumn(['backlog', 'done']), 'inProgress');
+  assert.equal(epicColumn(['review', 'done']), 'review');
+  assert.equal(epicColumn(['done', 'done']), 'done');
 });
