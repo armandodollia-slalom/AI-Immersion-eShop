@@ -7,7 +7,7 @@ covers: ["Technical Notes: Quantity < 1 is invalid (boundary 1 is valid)"]
 priority: P1
 ---
 
-## TC-BUG-8-05: A line with quantity 1 is accepted and stored
+# TC-BUG-8-05: A line with quantity 1 is accepted and stored
 
 ## Why
 

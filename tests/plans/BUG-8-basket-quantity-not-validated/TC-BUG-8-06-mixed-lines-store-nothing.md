@@ -8,7 +8,7 @@ covers: ["Expected: Redis is unchanged", "Implementation Notes: validation throw
 priority: P1
 ---
 
-## TC-BUG-8-06: A request with one valid and one invalid line leaves an existing basket unchanged
+# TC-BUG-8-06: A request with one valid and one invalid line leaves an existing basket unchanged
 
 ## Why
 

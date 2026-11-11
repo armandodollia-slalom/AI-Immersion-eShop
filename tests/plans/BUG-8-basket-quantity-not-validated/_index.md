@@ -2,6 +2,14 @@
 story: BUG-8
 story-issue: "https://github.com/armandodollia-slalom/AI-Immersion-eShop/issues/50"
 story-sha: 88171683a1a8
+plan-sha: 7c567f232896
+verified-score: 9
+verified-at: "2026-11-11T15:43:00.590Z"
+verified-by: qe-plan@c3934e11/456099fb
+automation-sha: 8666465d634d
+automation-plan-sha: 7c567f232896
+automation-score: 10
+automation-verified-at: "2026-11-11T16:02:56.576Z"
 ---
 # Test plan: BUG-8 Basket.API stores zero and negative quantities
 

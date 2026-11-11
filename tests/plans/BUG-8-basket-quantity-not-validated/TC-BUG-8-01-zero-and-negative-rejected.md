@@ -8,7 +8,7 @@ covers: ["Expected: INVALID_ARGUMENT; Redis is unchanged"]
 priority: P1
 ---
 
-## TC-BUG-8-01: UpdateBasket with a negative and a zero quantity is rejected and nothing is stored
+# TC-BUG-8-01: UpdateBasket with a negative and a zero quantity is rejected and nothing is stored
 
 ## Why
 

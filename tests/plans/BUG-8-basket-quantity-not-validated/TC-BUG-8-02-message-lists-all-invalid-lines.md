@@ -8,7 +8,7 @@ covers: ["Implementation Notes: all invalid lines are reported in one INVALID_AR
 priority: P2
 ---
 
-## TC-BUG-8-02: INVALID_ARGUMENT message reports every invalid line
+# TC-BUG-8-02: INVALID_ARGUMENT message reports every invalid line
 
 ## Why
 

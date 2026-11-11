@@ -2,7 +2,10 @@ import http from 'http';
 import http2 from 'http2';
 import { execFileSync } from 'child_process';
 import { DOCKER } from './scenario';
-import { BASKET_GRPC_URL, IDENTITY_URL, WEBAPP_URL } from './ports';
+import { BASKET_GRPC_URL, IDENTITY_URL, SLOT, WEBAPP_URL } from './ports';
+
+// Compose project of the leased slot: eshop-teststack (slot 0) or eshop-teststack-<n>.
+const STACK_PROJECT = SLOT > 0 ? `eshop-teststack-${SLOT}` : 'eshop-teststack';
 
 // The issuer and the Basket gRPC endpoint follow TESTSTACK_SLOT (./ports).
 export { BASKET_GRPC_URL, IDENTITY_URL };
@@ -192,11 +195,11 @@ export function basketCall(method: 'GetBasket' | 'UpdateBasket' | 'DeleteBasket'
 
 /** Read a basket straight from Redis (null when the key does not exist). */
 export function redisBasket(userId: string): { BuyerId: string; Items: { ProductId: number; Quantity: number }[] } | null {
-  const out = execFileSync(DOCKER, ['exec', 'eshop-teststack-redis-1', 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', 'GET', `/basket/${userId}`], { encoding: 'utf8' }).trim();
+  const out = execFileSync(DOCKER, ['exec', `${STACK_PROJECT}-redis-1`, 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', 'GET', `/basket/${userId}`], { encoding: 'utf8' }).trim();
   return out ? JSON.parse(out) : null;
 }
 
 /** Run a SQL query against identitydb and return the raw psql (-At) output. */
 export function identitySql(sql: string): string {
-  return execFileSync(DOCKER, ['exec', '-e', 'PGPASSWORD=teststack-postgres', 'eshop-teststack-postgres-1', 'psql', '-U', 'postgres', '-d', 'identitydb', '-At', '-c', sql], { encoding: 'utf8' }).trim();
+  return execFileSync(DOCKER, ['exec', '-e', 'PGPASSWORD=teststack-postgres', `${STACK_PROJECT}-postgres-1`, 'psql', '-U', 'postgres', '-d', 'identitydb', '-At', '-c', sql], { encoding: 'utf8' }).trim();
 }

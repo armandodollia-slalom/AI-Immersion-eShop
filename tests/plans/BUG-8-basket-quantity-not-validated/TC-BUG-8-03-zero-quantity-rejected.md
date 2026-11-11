@@ -8,7 +8,7 @@ covers: ["Technical Notes: Quantity < 1 is invalid (boundary 0)"]
 priority: P1
 ---
 
-## TC-BUG-8-03: A single line with quantity 0 is rejected
+# TC-BUG-8-03: A single line with quantity 0 is rejected
 
 ## Why
 

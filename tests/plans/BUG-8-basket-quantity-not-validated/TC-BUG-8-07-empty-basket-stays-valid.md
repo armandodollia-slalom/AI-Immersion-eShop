@@ -7,7 +7,7 @@ covers: ["Implementation Notes: empty baskets stay valid"]
 priority: P2
 ---
 
-## TC-BUG-8-07: An update with no items is still accepted
+# TC-BUG-8-07: An update with no items is still accepted
 
 ## Why
 
