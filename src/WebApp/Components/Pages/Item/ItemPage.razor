@@ -1,6 +1,9 @@
 ﻿@page "/item/{itemId:int}"
 @using System.Net
+@using eShop.WebApp.Services.Promotions
+@using eShop.WebAppComponents.Promotions
 @inject CatalogService CatalogService
+@inject PromotionsService PromotionsService
 @inject BasketState BasketState
 @inject NavigationManager Nav
 @inject IProductImageUrlProvider ProductImages
@@ -39,6 +42,10 @@
                 <form class="add-to-cart" method="post" @formname="add-to-cart" @onsubmit="@AddToCartAsync" data-enhance="@isLoggedIn">
                     <AntiforgeryToken />
                     <span class="price">$@item.Price.ToPriceDisplay()</span>
+                    @if (promotion is not null)
+                    {
+                        <p class="item-promotion">@PromotionText(promotion)</p>
+                    }
 
                     @if (isLoggedIn)
                     {
@@ -83,6 +90,7 @@
 
 @code {
     private CatalogItem? item;
+    private ActivePromotion? promotion;
     private int numInCart;
     private bool isLoggedIn;
     private string backHref = "";
@@ -101,6 +109,10 @@
         {
             isLoggedIn = HttpContext?.User.Identity?.IsAuthenticated == true;
             item = await CatalogService.GetCatalogItem(ItemId);
+            var promotions = await PromotionsService.GetActivePromotionsAsync();
+            promotion = item is null
+                ? null
+                : PromotionMatching.BestMatch(promotions.Where(p => p.Type != PromotionType.AmountOffOrder).ToList(), item);
             await UpdateNumInCartAsync();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -128,6 +140,14 @@
         }
 
         return "";
+    }
+
+    private static string PromotionText(ActivePromotion p)
+    {
+        var offer = !string.IsNullOrWhiteSpace(p.BadgeLabel)
+            ? p.BadgeLabel
+            : p.Type == PromotionType.PercentOff ? $"{p.Value:0.##}% off" : p.Name;
+        return $"{p.Name}: {offer}, ends {p.EndsAt.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture)}";
     }
 
     private async Task AddToCartAsync()

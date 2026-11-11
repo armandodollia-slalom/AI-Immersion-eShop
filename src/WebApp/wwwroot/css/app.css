@@ -572,3 +572,10 @@ h1:focus {
         scroll-behavior: auto !important;
     }
 }
+/* Promotion line beside the item price (ItemPage). */
+.item-promotion {
+    margin: 0;
+    color: var(--brand-green-strong);
+    font-size: 0.95rem;
+    font-weight: 600;
+}

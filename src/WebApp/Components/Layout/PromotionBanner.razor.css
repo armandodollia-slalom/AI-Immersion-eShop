@@ -1,0 +1,29 @@
+.promo-banner {
+    background: var(--brand-green-strong);
+    color: var(--neutral-0);
+    font-size: 0.95rem;
+}
+
+.promo-banner-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem 1.25rem;
+    padding: 0.6rem 1.25rem;
+}
+
+.promo-banner-text {
+    margin: 0;
+}
+
+.promo-banner-countdown {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.promo-banner-link {
+    color: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+}
