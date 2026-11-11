@@ -6,6 +6,10 @@ plan-sha: 5f0ec17f782c
 verified-score: 9
 verified-at: "2026-11-11T10:47:46.053Z"
 verified-by: qe-plan@09234f3a/456099fb
+automation-sha: 1a8d9200df6d
+automation-plan-sha: 5f0ec17f782c
+automation-score: 9
+automation-verified-at: "2026-11-11T12:07:08.009Z"
 ---
 # Test plan: BUG-5 [FE - WebApp] - Open redirect after sign-in through a protocol-relative returnUrl
 

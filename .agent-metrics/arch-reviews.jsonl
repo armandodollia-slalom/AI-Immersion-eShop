@@ -1,1 +1,2 @@
 {"ts":"2026-11-11T10:46:09.509Z","story":"BUG-5","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[{"severity":"minor","category":"maintainability","file":"src/WebApp/Components/Pages/User/LogIn.razor","line":30,"issue":"LocalReturnUrl is public static only for testability."}]}
+{"ts":"2026-11-11T11:54:46.049Z","story":"BUG-5","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
