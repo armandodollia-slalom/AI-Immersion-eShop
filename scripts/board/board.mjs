@@ -1,29 +1,33 @@
 #!/usr/bin/env node
-// Board stage of the AI pipeline: keeps the GitHub Project board in step with the pipeline and picks up
-// the stories assigned to you. See docs/ai-pipeline/board.md.
-import { spawnSync } from 'node:child_process';
+// Board stage of the AI pipeline: keeps the GitHub Project board in step with the pipeline. Pipeline
+// events move a story's card through the transition table in lib/flow.mjs. See docs/ai-pipeline/board.md.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseArgs, readPayload, requireStory, runMain } from '../pipeline/lib/cli.mjs';
-import { INSTALL_ROOT, SCRIPTS_DIR, loadConfig } from '../pipeline/lib/config.mjs';
+import { SCRIPTS_DIR, loadConfig } from '../pipeline/lib/config.mjs';
+import { currentBranch } from '../pipeline/lib/git.mjs';
 import { loadState, updateState } from '../pipeline/lib/state.mjs';
 import { activeStory, listStories, resolveStory } from '../pipeline/lib/stories.mjs';
-import { log, nowIso, readJson, setLogTag, sleep } from '../pipeline/lib/util.mjs';
-import { COLUMNS, addLabel, columnForState, comment, failureComment, findIssue, isActive, issueItem, listItems, moveStory, pickable, project, setColumn, setup, storyKind, syncEpicAssignees, syncEpicColumns } from './lib/board.mjs';
+import { log, nowIso, readJson, setLogTag } from '../pipeline/lib/util.mjs';
+import { COLUMNS, failureComment, findIssue, isActive, issueItem, listItems, moveStory, project, setup, storyKind, syncEpicAssignees } from './lib/board.mjs';
+import { upsertEpicEvidence } from './lib/epics.mjs';
 import { captureApiEvidence, featureVideo } from './lib/evidence.mjs';
-import { recordLateOutcome } from './lib/outcomes.mjs';
 import { fetchCommand, migrateCommand, newCommand, publishCommand } from './lib/ticket-commands.mjs';
+import { EVENTS, SETTLED, applyEvent, bugComment, cardFlow, claimComment, eventsForState, failStory, owner, testingComment } from './lib/flow.mjs';
+import { syncBoard } from './lib/sync.mjs';
 import { gh, currentLogin } from './lib/github.mjs';
 
 setLogTag('board');
-const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
 const CONFIG_FILE = path.join(SCRIPTS_DIR, 'board', 'config.json');
 
 const USAGE = `Usage: node scripts/board/board.mjs <command> [options]
 
   setup                         enable issues, create the labels, the project, its columns and views
-                                (idempotent). Tickets are created by \`new\` and \`migrate --apply\`
+                                (idempotent). Ticket issues are created by \`new\` and \`migrate --apply\`
+  sync                          move closed stories to Done (recording their late outcome), update
+                                their epic's evidence, and put every epic in the lane its stories call
+                                for (also run at the start of \`pipeline implement run\`)
 
 Tickets (the issue body is the source of truth; see docs/ai-pipeline/board.md)
   fetch <KEY...> | --epic <EPIC> | --all [--refresh]
@@ -35,29 +39,45 @@ Tickets (the issue body is the source of truth; see docs/ai-pipeline/board.md)
   migrate [--summary] | --apply | --verify [--allow-unplaced] | --delete-local [--dry-run]
                                 move the legacy story folder to the board (dry run by default)
 
-  pick [--once] [--parallel N] [--interval <sec>] [--dry-run]
-                                implement the stories in Ready assigned to you (gh's logged-in user),
-                                then keep polling (--once: a single pass)
+Cards
   mine                          the stories assigned to you and their columns
+  claim <story>... [--force] [--how <text>] [--json]
+                                claim the cards for this machine (In Progress); refused when another
+                                machine holds one in In Progress or Testing, unless --force
+  event <story> <${EVENTS.join('|')}> [--id <id>] [--force]
+                                apply a pipeline event (JSON payload on stdin: {"bugs": [...]})
+  fail <story> [--id <id>]      Failed lane, needs-human label and the failure comment from the
+                                story's implement run record
   move <story> <column> [--force]
-                                move a card (${COLUMNS.join(', ')}); only forward unless --force
-  review <story> [--pr <url>]   move to Pending Review and attach the evidence (API requests and
-                                responses, or the UI video) to the issue
+                                move a card by hand (${COLUMNS.join(', ')}); only forward unless --force
+  review <story> [--pr <url>] [--epic-branch <branch>] [--id <id>]
+                                move to Pending Review and attach the evidence (API requests and
+                                responses, or the UI video) to the issue and to its epic
+  epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]
+                                record an epic delivered as one branch on the epic's evidence comment
   status [story]
   sync-epic <issue>             give an epic's open stories the epic's assignees (run by the
                                 board-epic-assign workflow when an epic is assigned or unassigned)
 
 Hooks (called by the dispatcher)
-  hook story-start <story> | hook stop`;
+  hook story-start <story> | hook stop
+
+The pipeline is started by hand (\`pipeline implement run <KEY>\` or \`--epic <EPIC>\`); automatic pickup
+(\`board pick\`) was removed and will be reworked later.`;
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['parallel', 'interval', 'pr', 'epic', 'type', 'key', 'mockups']));
+  const { positional, flags } = parseArgs(rest, new Set(['pr', 'id', 'how', 'branch', 'video', 'epic-branch', 'epic', 'type', 'key', 'mockups']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
   }
+  if (command === 'pick') {
+    console.error('`board pick` was removed: start the pipeline by hand with `node scripts/pipeline/pipeline.mjs implement run <KEY>` (or `--epic <EPIC>`). Automatic pickup will be reworked later; see docs/ai-pipeline/board.md.');
+    return 2;
+  }
   const config = loadConfig('board');
+  const str = (v) => (typeof v === 'string' ? v : null);
 
   switch (command) {
     case 'hook':
@@ -97,12 +117,27 @@ async function main() {
         const story = positional[0] ? resolveStory(config, positional[0]) : activeStory(config);
         console.log(`Board: ${project(config).url}`);
         if (story) {
-          const issue = findIssue(config, story.key);
-          console.log(issue ? `${story.key}: #${issue.number} in ${config.board.columns[issueItem(config, issue).column] ?? '(no column)'}` : `${story.key}: no issue (run board setup)`);
+          const flow = cardFlow(config, story.key);
+          if (!flow) console.log(`${story.key}: no issue (run board setup)`);
+          else {
+            const m = flow.remote;
+            console.log(`${story.key}: #${flow.issue.number} in ${lane(config, issueItem(config, flow.issue).column)}${m ? `; last event #${m.seq} ${m.event} by ${m.owner}` : ''}`);
+          }
         }
       } catch (error) {
         console.log(`Board unavailable: ${error.message}`);
       }
+      return 0;
+    }
+
+    case 'sync': {
+      // Informational wherever it runs, so an inactive board is not an error.
+      if (!isActive(config)) {
+        console.log('Board inactive; nothing to sync.');
+        return 0;
+      }
+      const r = syncBoard(config, { listStories, log: (m) => console.log(m) });
+      console.log(`Board synced: ${r.done.length} story(ies) moved to ${config.board.columns.done}, ${r.outcomes.length} late outcome(s) recorded, ${r.epics.length} epic(s) moved.`);
       return 0;
     }
 
@@ -112,6 +147,48 @@ async function main() {
       const items = listItems(config).filter((i) => i.assignees.some((a) => a.toLowerCase() === me.toLowerCase()));
       if (!items.length) console.log(`No stories assigned to ${me}.`);
       for (const i of items) console.log(`${(i.key ?? '-').padEnd(10)} ${String(config.board.columns[i.column] ?? '-').padEnd(15)} #${i.number} ${i.title}${i.labels.includes(config.board.blockedLabel) ? `  [${config.board.blockedLabel}]` : ''}`);
+      return 0;
+    }
+
+    case 'claim': {
+      // One line per story (JSON with --json, read by `pipeline implement run`). An inactive board or a
+      // GitHub error never refuses a claim.
+      for (const key of positional) {
+        let r;
+        if (!isActive(config)) r = { status: 'inactive' };
+        else {
+          try {
+            r = claim(config, key, { force: Boolean(flags.force), how: str(flags.how) ?? 'pipeline implement run', id: str(flags.id) });
+          } catch (error) {
+            r = { status: 'error', reason: error.message.split('\n')[0] };
+          }
+        }
+        const o = { key, status: r.status, ...(r.owner ? { owner: r.owner } : {}), ...(r.from !== undefined ? { from: r.from } : {}), ...(r.reason ? { reason: r.reason } : {}) };
+        console.log(flags.json ? JSON.stringify(o) : describeClaim(config, o));
+      }
+      return 0;
+    }
+
+    case 'event': {
+      requireActive(config);
+      const story = requireStory(config, positional[0]);
+      const type = positional[1];
+      if (!EVENTS.includes(type)) {
+        console.error(`Unknown event "${type}"; use one of ${EVENTS.join(', ')}.`);
+        return 2;
+      }
+      const r = applyStoryEvent(config, story, { ...readPayload(), type, id: str(flags.id), force: Boolean(flags.force) });
+      console.log(describe(config, story.key, type, r));
+      return 0;
+    }
+
+    case 'fail': {
+      requireActive(config);
+      const story = requireStory(config, positional[0]);
+      const result = readJson(path.join(config.root, config.stateDir, 'implement', `${story.key}.json`), {});
+      const r = failStory(config, story.key, { id: str(flags.id) ?? `failed:${result.finishedAt ?? result.updatedAt ?? nowIso()}`, body: failureComment(config, result, { host: os.hostname() }) }, { log });
+      if (r.status === 'applied') updateEpic(config, r.issue.number, story.key, { status: 'failed', branch: result.branch, note: `Stopped: ${result.outcome ?? 'no result'}${result.reason ? ` (${result.reason})` : ''}` });
+      console.log(describe(config, story.key, 'failed', r));
       return 0;
     }
 
@@ -125,14 +202,26 @@ async function main() {
       }
       const r = moveStory(config, story.key, column, { force: Boolean(flags.force) });
       if (!r) console.error(`${story.key} has no issue; run board setup.`);
-      else console.log(r.moved ? `${story.key} (#${r.issue.number}) moved to ${config.board.columns[column]}.` : `${story.key} (#${r.issue.number}) stays in ${config.board.columns[r.from] ?? '(no column)'}${flags.force ? '' : ' (hooks only move forward; --force to move back)'}.`);
+      else console.log(r.moved ? `${story.key} (#${r.issue.number}) moved to ${config.board.columns[column]}.` : `${story.key} (#${r.issue.number}) stays in ${lane(config, r.from)}${flags.force ? '' : ' (board move only moves forward; --force to move back)'}.`);
       return r ? 0 : 1;
     }
 
     case 'review': {
       requireActive(config);
       const story = requireStory(config, positional[0]);
-      console.log(markReadyForReview(config, story, { pr: typeof flags.pr === 'string' ? flags.pr : null }));
+      console.log(markReadyForReview(config, story, { pr: str(flags.pr), epicBranch: str(flags['epic-branch']), id: str(flags.id) }).message);
+      return 0;
+    }
+
+    case 'epic-pr': {
+      requireActive(config);
+      const number = Number(String(positional[0] ?? '').replace(/^#/, ''));
+      if (!number || !str(flags.pr)) {
+        console.error('Usage: board epic-pr <epic issue number> --pr <url> [--branch <name>] [--video <url>]');
+        return 2;
+      }
+      const r = upsertEpicEvidence(config, { epicNumber: number, epic: { pr: str(flags.pr), branch: str(flags.branch), video: str(flags.video) } });
+      console.log(`Epic #${number}: evidence comment ${r.created ? 'posted' : 'updated'} (${r.url}).`);
       return 0;
     }
 
@@ -148,15 +237,6 @@ async function main() {
       return 0;
     }
 
-    case 'pick':
-      requireActive(config);
-      return pick(config, {
-        once: Boolean(flags.once),
-        dryRun: Boolean(flags['dry-run']),
-        parallel: Math.max(1, Number(flags.parallel ?? config.board.parallel) || 1),
-        intervalSec: Math.max(10, Number(flags.interval ?? config.board.pollSec) || 120),
-      });
-
     default:
       console.error(`Unknown command "${command}".\n\n${USAGE}`);
       return 2;
@@ -169,35 +249,90 @@ function requireActive(config) {
   process.exit(2);
 }
 
+const lane = (config, c) => config.board.columns[c] ?? c ?? '(no column)';
+
+function describe(config, key, type, r) {
+  switch (r.status) {
+    case 'applied':
+      return `${key} (#${r.issue.number}) ${r.moved ? 'moved to' : 'stays in'} ${lane(config, r.to)} (${type}, event #${r.seq}).`;
+    case 'stale':
+      return `${key}: ${type} ignored: event #${r.seq} is not newer than #${r.last}, already applied.`;
+    case 'not-allowed':
+      return `${key}: ${type} ignored: not allowed from ${lane(config, r.from)}.`;
+    case 'not-owner':
+    case 'refused':
+      return `${key}: ${type} ignored: ${r.owner} holds the card in ${lane(config, r.from)}${type === 'claim' ? ' (--force to take it over)' : ''}.`;
+    case 'no-issue':
+      return `${key} has no issue on the board (run board setup).`;
+    default:
+      return `${key}: ${type}: ${r.status}`;
+  }
+}
+
+function describeClaim(config, o) {
+  if (o.status === 'inactive') return `${o.key}: board inactive; not claimed.`;
+  if (o.status === 'error') return `${o.key}: board unavailable (${o.reason}); not claimed.`;
+  if (o.status === 'refused' || o.status === 'not-allowed') return `${o.key}: not claimed: ${o.owner ? `${o.owner} holds it in ${lane(config, o.from)}` : `the card is in ${lane(config, o.from)}`} (--force to take it over).`;
+  return `${o.key}: claimed (${o.status}).`;
+}
+
+function claim(config, key, { force, how, id }) {
+  const [login, ...host] = owner().split('@');
+  return applyEvent(config, key, { type: 'claim', id: id ?? `claim:${nowIso()}`, force, body: claimComment(config, { who: `@${login} on \`${host.join('@') || os.hostname()}\``, how }) }, { log });
+}
+
+// A pipeline event with its comment. `verified` posts the review notes and the evidence.
+function applyStoryEvent(config, story, event) {
+  if (event.type === 'verified') return markReadyForReview(config, story, { id: event.id, pr: event.pr ?? null, epicBranch: event.epicBranch ?? null }).result;
+  if (event.type === 'claim') return claim(config, story.key, { force: event.force, how: event.how ?? 'board event', id: event.id });
+  if (event.type === 'failed') return failStory(config, story.key, { id: event.id, body: event.body ?? 'The pipeline stopped.' }, { log });
+  const body = event.type === 'testing' ? testingComment(config) : event.type === 'product-bug' ? bugComment(config, event.bugs ?? [], { cycle: event.cycle }) : null;
+  return applyEvent(config, story.key, { type: event.type, id: event.id, force: event.force, body }, { log });
+}
+
+function updateEpic(config, number, key, story) {
+  try {
+    const r = upsertEpicEvidence(config, { storyNumber: number, key, story });
+    if (r) log(`${key}: epic #${r.epic} evidence ${r.created ? 'posted' : 'updated'}.`);
+  } catch (error) {
+    log(`${key}: epic evidence not updated: ${error.message}`);
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
-// Hooks: In Progress when a story starts, Pending Review once the tests are verified (interactive
-// sessions; headless runs report after the PR exists).
+// Hooks: interactive sessions (`pipeline start <KEY>` ... `pipeline done`). Headless runs
+// (`pipeline implement`) report their events from the runner instead, so the hooks skip them.
 // ---------------------------------------------------------------------------------------------
 
 function hook(config, [event, key]) {
   readPayload();
-  if (!isActive(config)) return 0;
+  if (!isActive(config) || process.env.PIPELINE_HEADLESS === '1') return 0;
   try {
     if (event === 'story-start') {
       const story = resolveStory(config, key);
       if (!story) return 0;
-      const r = moveStory(config, story.key, 'inProgress');
-      updateState(config, story.key, (s) => (s.board = { column: 'inProgress', at: nowIso() }));
-      if (r?.moved) console.log(`Board: ${story.key} (#${r.issue.number}) moved to ${config.board.columns.inProgress}.`);
+      updateState(config, story.key, (s) => (s.board = { applied: [], at: nowIso() }));
+      const r = claim(config, story.key, { force: false, how: 'pipeline start' });
+      if (['applied', 'refused', 'not-allowed'].includes(r.status)) console.log(`Board: ${describe(config, story.key, 'claim', r)}${r.status === 'refused' ? ` Take it over with \`node scripts/board/board.mjs claim ${story.key} --force\`.` : ''}`);
       return 0;
     }
     if (event === 'stop') {
       const story = activeStory(config);
       if (!story) return 0;
       const state = loadState(config, story.key);
-      const target = columnForState(state, { headless: process.env.PIPELINE_HEADLESS === '1' });
-      if (!target || state.board?.column === target) return 0;
-      if (target === 'review') log(markReadyForReview(config, story, {}));
-      else {
-        const r = moveStory(config, story.key, target);
-        if (r?.moved) log(`${story.key} (#${r.issue.number}) moved to ${config.board.columns[target]}.`);
+      const applied = new Set(state.board?.applied ?? []);
+      try {
+        for (const ev of eventsForState(state)) {
+          if (applied.has(ev.id)) continue;
+          const r = applyStoryEvent(config, story, ev);
+          log(describe(config, story.key, ev.type, r));
+          // Settled events are not reported again; anything else is retried on the next stop.
+          if (!SETTLED.has(r.status)) break;
+          applied.add(ev.id);
+        }
+      } finally {
+        updateState(config, story.key, (s) => (s.board = { ...s.board, applied: [...applied].slice(-20), at: nowIso() }));
       }
-      updateState(config, story.key, (s) => (s.board = { column: target, at: nowIso() }));
       return 0;
     }
   } catch (error) {
@@ -207,16 +342,20 @@ function hook(config, [event, key]) {
   return 0;
 }
 
-function markReadyForReview(config, story, { pr }) {
-  const r = moveStory(config, story.key, 'review');
-  if (!r) return `${story.key} has no issue on the board; nothing to update.`;
+// Pending Review: the review notes with the PR and the story's evidence on the issue (API requests and
+// responses for [BE] stories, the feature video for [FE] stories), the same links on the epic's
+// evidence comment, and `Closes #<issue>` on the PR.
+function markReadyForReview(config, story, { pr, epicBranch = null, id = null }) {
+  const issue = findIssue(config, story.key);
+  if (!issue) return { message: `${story.key} has no issue on the board; nothing to update.`, result: { status: 'no-issue' } };
   const text = fs.readFileSync(path.join(config.root, story.file), 'utf8');
   const kind = storyKind(text);
-  const lines = [`## Ready for review`, '', ...(pr ? [`Pull request: ${pr}`, ''] : []), '- Architecture review: approved', '- Test plan and automated tests: verified', ''];
+  const lines = ['## Ready for review', '', ...(pr ? [`Pull request: ${pr}${epicBranch ? ` (merged into the epic branch \`${epicBranch}\`)` : ''}`, ''] : []), '- Architecture review: approved', '- Test plan and automated tests: verified', ''];
+  let video = null;
   if (kind === 'ui') {
-    const video = featureVideo(config, story, { pr });
-    // TODO(video): drop the placeholder once featureVideo() returns the PR's recording.
-    lines.push(video ? `### Feature video\n\n${video}` : '### Feature video\n\n_Pending: the recording will be linked here (the same video as on the PR) once PR videos land._', '');
+    video = featureVideo(config, story, { pr });
+    // TODO(video): link the recording itself once featureVideo() returns the PR's video URL.
+    lines.push(video ? `### Feature video\n\n${video}` : '### Feature video\n\n_The recording is on the pull request (added by the PR demo video workflow)._', '');
   }
   if (kind === 'api') {
     let evidence;
@@ -227,84 +366,17 @@ function markReadyForReview(config, story, { pr }) {
     }
     lines.push(evidence, '');
   }
-  comment(config, r.issue.number, lines.join('\n'));
+  const state = loadState(config, story.key);
+  const verifiedHash = state.automation?.verifiedHash;
+  const r = applyEvent(config, story.key, { type: 'verified', id: id ?? (verifiedHash ? `verified:${verifiedHash}` : `verified:${nowIso()}`), body: lines.join('\n') }, { log });
+  if (r.status === 'applied') updateEpic(config, issue.number, story.key, { status: 'review', pr, epicBranch, branch: currentBranch(config.root) || null, video, apiEvidence: kind === 'api' ? r.commentUrl : null });
   if (pr) {
     const body = gh(['pr', 'view', pr, '--json', 'body', '-q', '.body']);
-    const closes = `Closes #${r.issue.number}`;
+    const closes = `Closes #${issue.number}`;
     if (!body.includes(closes)) gh(['pr', 'edit', pr, '--body-file', '-'], { input: `${body.trimEnd()}\n\n${closes}\n` });
   }
-  return `${story.key} (#${r.issue.number}) ${r.moved ? 'moved to' : 'is in'} ${config.board.columns[r.to] ?? config.board.columns.review}; review notes posted.`;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Picker: the local user's factory
-// ---------------------------------------------------------------------------------------------
-
-async function pick(config, { once, dryRun, parallel, intervalSec }) {
-  const me = currentLogin();
-  console.log(`Picking up stories assigned to ${me} on ${project(config).url}${once || dryRun ? '' : ` (polling every ${intervalSec}s; Ctrl-C to stop)`}.`);
-  for (;;) {
-    const items = listItems(config);
-    // Merged PRs close their issue (`Closes #N`); finish those cards so the board needs no project workflows.
-    for (const item of items.filter((i) => i.key && i.state === 'CLOSED' && i.column !== 'done')) {
-      if (dryRun) continue;
-      setColumn(config, item.itemId, 'done');
-      item.column = 'done';
-      log(`#${item.number} ${item.key} closed; moved to ${config.board.columns.done}.`);
-      try {
-        const late = recordLateOutcome(config, item.key, { listStories });
-        if (late) log(`${item.key}: outcome recorded (PR ${late.prMerged ? 'merged' : 'not merged'}, ${late.humanCommits ?? '?'} human commit(s)${late.bugStories.length ? `, bugs: ${late.bugStories.join(', ')}` : ''}).`);
-      } catch (error) {
-        log(`${item.key}: could not record the late outcome: ${error.message}`);
-      }
-    }
-    if (!dryRun) syncEpicColumns(config, items, { log });
-    const ready = pickable(config, items, me);
-    const batch = [];
-    for (const item of ready) {
-      const story = resolveStory(config, item.key, { update: true });
-      if (!story) {
-        if (!dryRun) fail(config, item, `Could not fetch the story for ${item.key} from its issue (\`node scripts/board/board.mjs fetch ${item.key}\` shows why). Fix the issue body, then move the card back to ${config.board.columns.ready}.`);
-        continue;
-      }
-      batch.push({ item, story });
-    }
-    if (!batch.length) console.log(`${nowIso()} nothing assigned to ${me} in ${config.board.columns.ready}.`);
-    else console.log(`${nowIso()} picked up: ${batch.map((b) => `${b.story.key} (#${b.item.number})`).join(', ')}`);
-
-    if (batch.length && !dryRun) {
-      // Claim the cards first so another poll (or machine) never picks them twice.
-      for (const { item, story } of batch) {
-        moveStory(config, story.key, 'inProgress', { force: true });
-        comment(config, item.number, `Picked up by @${me}'s pipeline on \`${os.hostname()}\` (\`pipeline implement\`). This card moves to ${config.board.columns.review} with the PR.`);
-      }
-      spawnSync(process.execPath, [PIPELINE_CLI, 'implement', 'run', ...batch.map((b) => b.story.key), '--pr', '--parallel', String(parallel)], { cwd: config.root, stdio: 'inherit' });
-      for (const { item, story } of batch) {
-        const result = readJson(path.join(config.root, config.stateDir, 'implement', `${story.key}.json`), {});
-        if (result.outcome === 'done') continue;
-        fail(config, item, failureComment(config, result, { host: os.hostname() }));
-      }
-    }
-    if (once || dryRun) return 0;
-    await sleep(intervalSec * 1000);
-  }
-}
-
-// A story the pipeline did not finish goes to the Failed lane (the picker never takes it, and no hook
-// moves a card out of it) with the reason, and is labeled for a human.
-function fail(config, item, message) {
-  try {
-    if (config.board.columns.failed) setColumn(config, item.itemId, 'failed');
-  } catch (error) {
-    log(`#${item.number}: could not move to ${config.board.columns.failed}: ${error.message} (run \`board setup\` to create the column)`);
-  }
-  park(config, item.number, message);
-}
-
-function park(config, number, message) {
-  comment(config, number, message);
-  addLabel(config, number, config.board.blockedLabel);
-  log(`#${number}: ${message.split('\n')[0]}`);
+  const message = r.status === 'applied' ? `${story.key} (#${issue.number}) ${r.moved ? 'moved to' : 'is in'} ${lane(config, r.to)}; review notes posted.` : describe(config, story.key, 'verified', r);
+  return { message, result: r };
 }
 
 runMain(main, 'board');

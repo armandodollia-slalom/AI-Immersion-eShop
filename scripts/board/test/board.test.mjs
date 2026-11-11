@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { COLUMNS, columnForState, epicColumn, epicSlugOf, failureComment, isForward, listEpics, mockupsFor, pickable, renderMockups, storyKind } from '../lib/board.mjs';
+import { COLUMNS, epicColumn, epicSlugOf, failureComment, isForward, listEpics, mockupsFor, renderMockups, storyKind } from '../lib/board.mjs';
 import { parseNetwork, redact, renderEvidence, tracesFromReport } from '../lib/evidence.mjs';
 
 const config = { board: { repo: 'acme/shop', storyLabel: 'story', blockedLabel: 'needs-human', columns: { ready: 'Ready', failed: 'Failed' } } };
@@ -15,7 +15,7 @@ test('story kind comes from the [FE]/[BE] tag in the title', () => {
   assert.equal(storyKind('# X-1: Something\n[FE - later]'), 'other');
 });
 
-test('cards only move forward unless forced', () => {
+test('board move only moves a card forward unless forced', () => {
   assert.ok(isForward(null, 'inProgress'));
   assert.ok(isForward('backlog', 'ready'));
   assert.ok(!isForward('ready', 'backlog'));
@@ -24,10 +24,12 @@ test('cards only move forward unless forced', () => {
   assert.ok(!isForward('review', 'review'));
 });
 
-test('the Failed lane sits between Pending Review and Done, so no hook moves a card out of it', () => {
-  assert.deepEqual(COLUMNS, ['backlog', 'ready', 'inProgress', 'review', 'failed', 'done']);
+test('Testing sits between In Progress and Pending Review; Failed between Pending Review and Done', () => {
+  assert.deepEqual(COLUMNS, ['backlog', 'ready', 'inProgress', 'testing', 'review', 'failed', 'done']);
+  assert.ok(isForward('inProgress', 'testing'));
+  assert.ok(isForward('testing', 'review'));
+  assert.ok(!isForward('testing', 'inProgress'));
   assert.ok(isForward('inProgress', 'failed'));
-  assert.ok(!isForward('failed', 'inProgress'), 'pipeline start does not drag a failed card back');
   assert.ok(!isForward('failed', 'review'));
   assert.ok(!isForward('failed', 'ready'), 'only a forced move (a human) retries it');
 });
@@ -50,32 +52,6 @@ test('the failure comment carries the outcome, reason, findings, branch and log'
   assert.match(body, /- plain text finding/);
   assert.match(body, /Branch: `feat\/demo-1-x`\. Log on `box`: `\.agent-state\/logs\/implement-DEMO-1\.log`/);
   assert.match(body, /remove the `needs-human` label and move the card back to Ready/);
-});
-
-test('the stop hook asks for Pending Review once verified (interactive only)', () => {
-  assert.equal(columnForState({ automation: { status: 'idle' } }), null);
-  assert.equal(columnForState({ automation: { status: 'running' } }), null);
-  assert.equal(columnForState({ automation: { status: 'idle', requestedHash: 'h' } }), null);
-  assert.equal(columnForState({ done: { hash: 'h' }, automation: { status: 'verified', requestedHash: null } }), 'review');
-  assert.equal(columnForState({ done: { hash: 'h' }, automation: { status: 'verified', requestedHash: null } }, { headless: true }), null);
-  assert.equal(columnForState({ done: null, automation: { status: 'verified' } }), null);
-});
-
-test('the picker takes open story cards in Ready (never Backlog) assigned to the user and skips parked ones', () => {
-  const item = (over) => ({ key: 'BUG-1', column: 'ready', state: 'OPEN', repo: 'acme/shop', assignees: ['Me'], labels: ['story'], ...over });
-  const items = [
-    item({ number: 1 }),
-    item({ number: 2, column: 'inProgress' }),
-    item({ number: 9, column: 'backlog' }),
-    item({ number: 10, column: 'failed' }),
-    item({ number: 3, assignees: ['someone'] }),
-    item({ number: 4, labels: ['story', 'needs-human'] }),
-    item({ number: 5, state: 'CLOSED' }),
-    item({ number: 6, repo: 'acme/other' }),
-    item({ number: 7, key: null }),
-    item({ number: 8, labels: [] }),
-  ];
-  assert.deepEqual(pickable(config, items, 'me').map((i) => i.number), [1]);
 });
 
 test('secrets in JSON and form bodies are redacted', () => {
@@ -147,6 +123,7 @@ test("an epic's lane follows its stories' lanes", () => {
   assert.equal(epicColumn(['backlog', null]), 'backlog');
   assert.equal(epicColumn(['backlog', 'ready']), 'ready');
   assert.equal(epicColumn(['ready', 'inProgress']), 'inProgress');
+  assert.equal(epicColumn(['ready', 'testing']), 'testing');
   assert.equal(epicColumn(['backlog', 'done']), 'inProgress');
   assert.equal(epicColumn(['review', 'done']), 'review');
   assert.equal(epicColumn(['done', 'done']), 'done');

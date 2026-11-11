@@ -1,7 +1,7 @@
 name: Board epic assignment
 
-# Assigning (or unassigning) an epic issue gives all of its open stories the same assignees, so the
-# assignee's `board pick` loop picks them up once they are in Ready. See docs/ai-pipeline/board.md.
+# Assigning (or unassigning) an epic issue gives all of its open stories the same assignees, so
+# `board mine` lists them for the engineer who runs the epic. See docs/ai-pipeline/board.md.
 on:
   issues:
     types: [assigned, unassigned]

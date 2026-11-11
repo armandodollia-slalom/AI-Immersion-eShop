@@ -10,6 +10,7 @@
       "backlog": "Backlog",
       "ready": "Ready",
       "inProgress": "In Progress",
+      "testing": "Testing",
       "review": "Pending Review",
       "failed": "Failed",
       "done": "Done"
@@ -18,8 +19,6 @@
     "blockedLabel": "needs-human",
     "epicLabel": "epic",
     "spikeLabel": "spike",
-    "pollSec": 120,
-    "parallel": 1,
     "evidence": {
       "playwright": [
         "npx",

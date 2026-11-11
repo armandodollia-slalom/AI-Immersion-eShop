@@ -34,7 +34,7 @@
     },
     {
       "name": "board",
-      "description": "Moves the story's card on the GitHub Project board (In Progress, Testing, Pending Review with evidence) and picks up the stories assigned to you",
+      "description": "Moves the story's card on the GitHub Project board as pipeline events happen (In Progress, Testing, back to In Progress on a product bug, Pending Review with evidence, Failed) and keeps its epic in step",
       "cli": "scripts/board/board.mjs",
       "hooks": ["story-start", "stop"],
       "gitHooks": [],

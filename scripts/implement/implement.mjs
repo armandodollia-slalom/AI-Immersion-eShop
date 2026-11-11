@@ -14,6 +14,7 @@ import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, 
 import { collectStories } from './lib/batch.mjs';
 import { DECISIONS_FILE, OUTCOMES_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
 import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
+import { boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
 import { batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
 
@@ -24,9 +25,10 @@ const USAGE = `Usage: node scripts/implement/implement.mjs <command> [options]
 
   run <KEY...> | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
         implement the given board tickets (fetched into .agent-state/board/; a cached story.md or a
-        <KEY>-<title>.md file works too): each gets a worktree and branch, the implementer agent, the
-        review loop and verified tests. Stories "Blocked by" another story in the batch run after it,
-        stacked on its branch. --epic takes every story of the epic, in Blocked-by order.
+        <KEY>-<title>.md file works too), or every story of an epic in Blocked-by order: each gets a
+        worktree and branch, the implementer agent, the review loop and verified tests. Stories "Blocked
+        by" another story in the batch run after it, stacked on its branch. The run syncs the board and
+        claims each story's card first; a card another machine holds is skipped unless --force.
   resume [KEY] [--parallel N] [--pr] [--background]
                                  continue the last run that did not finish: stories it finished are
                                  kept, interrupted ones resume in their worktree, the rest run.
@@ -53,17 +55,26 @@ const interruptedBatch = (config) => {
   return batch && !batch.finishedAt && !isProcessAlive(batch.pid, batch.boot) ? batch : null;
 };
 
-async function runStories(config, inputs, { base, force = false, parallel, pr = false, dryRun = false }) {
+async function runStories(config, inputs, { base, force = false, parallel, pr = false, dryRun = false, extraSources = [] }) {
   const stories = plan(config, inputs, { base, force });
+  if (!dryRun) {
+    // The board: closed stories to Done and epics in step, then this machine claims the cards it runs.
+    syncBoard(config.root);
+    const claims = claimStories(config.root, stories.filter((s) => !s.skip).map((s) => s.key), { force });
+    for (const key of skipRefused(stories, claims)) log(`${key}: ${stories.find((s) => s.key === key).skip}; skipped.`);
+  }
   console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
   // Agents may read only the tickets handed to this run (scripts/pipeline/lib/story-guard.mjs): a cached
   // ticket's whole folder (story and its own mockups), or the files and folders given.
-  process.env.PIPELINE_STORY_SOURCES = inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))).join(path.delimiter);
-  const batch = { inputs: inputs.map((p) => path.resolve(p)), base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
+  // An epic run also hands over the epic's own ticket (its body and mockups).
+  process.env.PIPELINE_STORY_SOURCES = [...inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))), ...extraSources].join(path.delimiter);
+  const batch = { inputs: inputs.map((p) => path.resolve(p)), extraSources, base, parallel, pr, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
   writeJson(batchFile(config), batch);
   const results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
+  // Every story that did not finish goes to Failed with its outcome, reason and findings.
+  for (const r of failedResults(results, { pr })) boardEvent(config.root, r.key, ['fail', r.key]);
   console.log(`\n${formatSummary(results)}`);
   return results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done') ? 0 : 1;
 }
@@ -98,13 +109,18 @@ async function main() {
 
   switch (command) {
     case 'run': {
-      if (flags.epic) {
+      // --epic <EPIC> stands for the epic's stories on the board (its sub-issues), fetched into the cache.
+      let epicDir = null;
+      if (typeof flags.epic === 'string') {
         const stories = epicTickets(config, flags.epic);
         if (!stories.length) {
           console.error(`Epic ${flags.epic} has no stories on the board (or in the ticket cache).`);
           return 2;
         }
-        positional.push(...stories.map((s) => s.key));
+        const epic = stories[0].epic ? loadTicket(config, stories[0].epic, { fetch: false }) : null;
+        if (epic) epicDir = config.abs(epic.dir);
+        console.log(`Epic ${epic?.key ?? flags.epic}${epic ? ` (${epic.title})` : ''}: ${stories.map((s) => s.key).join(', ')}`);
+        positional.push(...stories.map((s) => s.key).filter((k) => !positional.includes(k)));
       }
       if (!positional.length) {
         console.error(`Give story keys, --epic <EPIC>, or story files.\n\n${USAGE}`);
@@ -124,7 +140,7 @@ async function main() {
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
       const parallel = Math.max(1, Number(flags.parallel ?? config.implement.parallel) || 1);
-      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']) });
+      return runStories(config, positional, { base: flags.base ?? config.baseRef, force: Boolean(flags.force), parallel, pr: Boolean(flags.pr), dryRun: Boolean(flags['dry-run']), extraSources: epicDir ? [epicDir] : [] });
     }
 
     case 'resume': {
@@ -144,7 +160,7 @@ async function main() {
         return 1;
       }
       const parallel = Math.max(1, Number(flags.parallel ?? batch.parallel) || 1);
-      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr) });
+      return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [] });
     }
 
     case 'hook': {

@@ -8,7 +8,7 @@ Agents take a user story from implementation to reviewed code with verified test
 | `review` | `scripts/review/` | Architecture review of the implementation by a fresh reviewer, looping with the implementation agent until approved | [review.md](review.md) |
 | `qe` | `scripts/qe/` | Story to verified test plan (workflow 1); approved implementation to verified automated tests (workflow 2) | [qe.md](qe.md) |
 | `pr-check` | `scripts/pr-check/` | Adversarial critics, defender and judge score the work against its story (acceptance criteria, flow, UI design, style, video evidence). From the Stop hook, once QE has verified the tests, it reports and the agent fixes; on demand, a fixer loops it to 10/10 | [pr-check.md](pr-check.md) |
-| `board` | `scripts/board/` | Keeps the story's card on the GitHub Project board in step (In Progress, Pending Review with evidence) and picks up the stories assigned to you | [board.md](board.md) |
+| `board` | `scripts/board/` | Moves the story's card on the GitHub Project board as pipeline events happen (In Progress, Testing, back to In Progress on a product bug, Pending Review with evidence, Failed), keeps its epic's lane and evidence comment in step | [board.md](board.md) |
 
 Pull requests also get a generated section in their description, written in CI by `.github/workflows/pr-demo-video.yml` (`scripts/pr-video/`, [pr-demo-video.md](pr-demo-video.md)):
 
@@ -49,10 +49,11 @@ Each story gets its own worktree and branch; the implementer plans it into subta
 
 ## Story board
 
-Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Pending Review, Failed, Done). Stories wait in Backlog until they are ready; assign one to yourself, move it to Ready and run the picker on your machine; it runs the whole pipeline and moves the card as it goes, to Failed (with the reason and findings) when it cannot finish. See [board.md](board.md).
+Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Testing, Pending Review, Failed, Done). Stories wait in Backlog until they are ready. An engineer starts the pipeline by hand for one story or a whole epic; the run claims each card (In Progress), and the card follows the pipeline: Testing once the review approves and QE starts, back to In Progress when QE finds a product bug, Pending Review with the PR and evidence, Failed (with the reason and findings) when it cannot finish, Done when the PR merges. Each epic follows its stories and collects their evidence in one comment. Automatic pickup was removed and will be reworked later. See [board.md](board.md).
 
 ```bash
-node scripts/board/board.mjs pick            # implement the stories assigned to you, polling the board
+node scripts/pipeline/pipeline.mjs implement run --epic <EPIC> --pr   # or one story: implement run <KEY> --pr
+node scripts/board/board.mjs sync                                     # closed stories to Done, epic lanes
 ```
 
 ### One story, end to end
@@ -150,10 +151,10 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 
 | When | Hook | Dispatcher call | Stages | Cost |
 | --- | --- | --- | --- | --- |
-| `pipeline start` | (command) | `story-start` | review, qe, pr-check, board (card to In Progress) | none |
+| `pipeline start` | (command) | `story-start` | review, qe, pr-check, board (claims the card: In Progress) | none |
 | Any agent tool call | `PreToolUse` (Gemini `BeforeTool`) | `hook pre-tool` | story guard (see below) | none |
 | Agent session start/resume | `SessionStart` | `hook session-start` | implement, review, qe, pr-check | none |
-| Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then pr-check, then board (Pending Review) | LLM, only after `pipeline done` |
+| Agent turn ends | `Stop` and `SubagentStop` | `hook stop` | review, then qe, then pr-check, then board (Testing, back to In Progress on a product bug, Pending Review) | LLM, only after `pipeline done` |
 | Commit or merge | `.githooks/post-commit`, `.githooks/post-merge` | `git-hook post-commit\|post-merge` | qe, only with `git config qe.autoPlan true` (plans for changed stories, in the background) | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
@@ -251,7 +252,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
 node scripts/pipeline/pipeline.mjs resume [KEY] [--force]       # continue every stage's runs that died (crash, kill, reboot)
-node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N] [--base <ref>] [--pr] [--force] [--dry-run]
 node scripts/pipeline/pipeline.mjs implement resume [--parallel N] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs stages

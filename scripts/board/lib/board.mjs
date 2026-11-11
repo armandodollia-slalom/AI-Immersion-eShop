@@ -3,14 +3,15 @@ import { git } from '../../pipeline/lib/git.mjs';
 import { readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { gh, ghJson, graphql } from './github.mjs';
 
-// Columns in board order. Hooks only move a story forward; `board move` can move it anywhere.
-// Backlog is never picked up; Ready is the picker's lane. Failed holds stories the pipeline could not
-// finish: it sits after Pending Review so no hook moves a card out of it; a human moves it back to Ready.
-export const COLUMNS = ['backlog', 'ready', 'inProgress', 'review', 'failed', 'done'];
+// Columns in board order. Pipeline events move a story through the transition table in flow.mjs;
+// `board move` moves it forward in this order, or anywhere with --force. Testing is where QE writes and
+// verifies the tests after the review approved the code. Failed holds stories the pipeline could not
+// finish: it sits after Pending Review, and a human moves it back to Ready.
+export const COLUMNS = ['backlog', 'ready', 'inProgress', 'testing', 'review', 'failed', 'done'];
 // Earlier names of a column: `setup` renames them in place and keeps their cards.
 const FORMER_NAMES = { ready: ['Todo'] };
 // Removed columns: `setup` deletes them and moves their cards to the given column.
-const RETIRED = { Testing: 'inProgress' };
+const RETIRED = {};
 const KEY_TITLE = /^([A-Z][A-Z0-9]*-\d+):/;
 
 export const storyKeyOf = (title) => KEY_TITLE.exec(title ?? '')?.[1] ?? null;
@@ -98,8 +99,8 @@ export function setColumn(config, itemId, column) {
   gh(['project', 'item-edit', '--id', itemId, '--project-id', p.id, '--field-id', p.fieldId, '--single-select-option-id', optionId]);
 }
 
-// Moves a story's card. Without `force` it only moves forward, so replaying a hook never drags a card
-// back. Returns null when the story has no issue.
+// Moves a story's card by hand (`board move`). Without `force` it only moves forward in board order.
+// Pipeline events go through applyEvent in flow.mjs instead. Returns null when the story has no issue.
 export function moveStory(config, key, column, { force = false } = {}) {
   const issue = findIssue(config, key);
   if (!issue) return null;
@@ -114,14 +115,20 @@ export function moveStory(config, key, column, { force = false } = {}) {
   return { issue, from: item.column, to: column, moved: true };
 }
 
-// The lane an epic sits in, from its stories' lanes: Done when all are done, Pending Review when all are
-// in review or done, In Progress once any has started, Ready once any is ready, else Backlog.
+// The lane an epic sits in, from its stories' lanes, first match wins: Done when all are done; Pending
+// Review when all are in review or done; In Progress when any is in progress; Testing when any is in
+// testing; Failed when any failed and none can still move on its own (none in progress, testing or
+// ready); Ready when any is ready; In Progress when some finished but the rest wait in Backlog; else
+// Backlog.
 export function epicColumn(columns) {
-  const started = ['inProgress', 'review', 'done'];
+  const any = (...lanes) => columns.some((c) => lanes.includes(c));
   if (columns.length && columns.every((c) => c === 'done')) return 'done';
   if (columns.length && columns.every((c) => c === 'review' || c === 'done')) return 'review';
-  if (columns.some((c) => started.includes(c))) return 'inProgress';
-  if (columns.some((c) => c === 'ready')) return 'ready';
+  if (any('inProgress')) return 'inProgress';
+  if (any('testing')) return 'testing';
+  if (any('failed') && !any('ready')) return 'failed';
+  if (any('ready')) return 'ready';
+  if (any('review', 'done')) return 'inProgress';
   return 'backlog';
 }
 
@@ -204,14 +211,6 @@ export function listItems(config) {
   }
 }
 
-// Column a story's pipeline state calls for in the stop hook: Pending Review once its tests are
-// verified (headless runs report after the PR exists instead).
-export function columnForState(state, { headless = false } = {}) {
-  const a = state.automation ?? {};
-  if (a.status === 'verified' && !a.requestedHash) return state.done && !headless ? 'review' : null;
-  return null;
-}
-
 // The comment posted when the pipeline does not finish a story: outcome, reason, findings, branch and
 // log, from the implement run record (`.agent-state/implement/<KEY>.json`).
 export function failureComment(config, result, { host = 'this machine', maxFindings = 20 } = {}) {
@@ -232,22 +231,6 @@ export function failureComment(config, result, { host = 'this machine', maxFindi
   return lines.join('\n');
 }
 
-// Stories the local pipeline should pick up: open story issues in Ready (never Backlog), assigned to `login`, not
-// parked for a human.
-export function pickable(config, items, login) {
-  const me = login.toLowerCase();
-  return items.filter(
-    (i) =>
-      i.key &&
-      i.column === 'ready' &&
-      i.state === 'OPEN' &&
-      i.repo.toLowerCase() === config.board.repo.toLowerCase() &&
-      i.assignees.some((a) => a.toLowerCase() === me) &&
-      i.labels.includes(config.board.storyLabel) &&
-      !i.labels.includes(config.board.blockedLabel),
-  );
-}
-
 // ---------------------------------------------------------------------------------------------
 // One-time setup: issues on, labels, the project and its columns, and an issue per story
 // ---------------------------------------------------------------------------------------------
@@ -262,9 +245,10 @@ const LABELS = (config) => [
 ];
 
 const COLUMN_STYLE = {
-  backlog: ['GRAY', 'Not ready for implementation; the pipeline never picks these up, even when assigned'],
-  ready: ['PURPLE', 'Ready for implementation; your local `board pick` picks up the ones assigned to you'],
-  inProgress: ['YELLOW', 'The pipeline is implementing the story'],
+  backlog: ['GRAY', 'Not ready for implementation'],
+  ready: ['PURPLE', 'Ready for implementation; start it with `pipeline implement run <KEY>` or `--epic <EPIC>`'],
+  inProgress: ['YELLOW', 'The pipeline is implementing the story (or fixing a bug QE found)'],
+  testing: ['ORANGE', 'The review approved the code; QE is writing and verifying the automated tests'],
   review: ['BLUE', 'Implemented and verified; the PR is waiting for a human review'],
   failed: ['RED', 'The pipeline could not finish the story; see the latest comment, then move it back to Ready to retry'],
   done: ['GREEN', 'Merged'],
