@@ -347,7 +347,10 @@ export function deleteLocal(config, { run = exec, log = () => {}, dryRun = false
   if (report.legacyDir !== dir) return { ok: false, reason: `the last verify was for ${report.legacyDir}, not ${dir}` };
   const changed = [];
   if (!dryRun && root) {
-    run('git', ['rm', '-r', '-q', '--ignore-unmatch', '--', dir], { cwd: config.root });
+    // The verify covered the files as they are now (fingerprint), uncommitted edits included, so the
+    // removal is staged from the index and the folder deleted from disk.
+    const rm = run('git', ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', dir], { cwd: config.root });
+    if (rm.status !== 0) return { ok: false, reason: `git rm failed: ${String(rm.stderr).trim()}` };
     fs.rmSync(root, { recursive: true, force: true });
     changed.push(`${dir}/ (removed)`);
   }
@@ -375,6 +378,20 @@ export function referenceEdits(config, dir, report = null) {
     const text = fs.readFileSync(abs, 'utf8');
     let next = text;
     if (file.endsWith('.json')) {
+      // Line edits keep the file's formatting; a full rewrite is the fallback.
+      const q = escapeRe(JSON.stringify(dir));
+      const lean = text.replace(new RegExp(`^\\s*"legacyDir":\\s*${q},?\\n`, 'm'), '').replace(new RegExp(`,\\s*${q}(?=\\s*\\])|${q}\\s*,\\s*`, 'g'), '');
+      let valid;
+      try {
+        JSON.parse(lean);
+        valid = !lean.includes(dir);
+      } catch {
+        valid = false;
+      }
+      if (valid) {
+        if (lean !== text) edits.push({ file, text: lean });
+        continue;
+      }
       const data = JSON.parse(text);
       if (data.tickets?.legacyDir === dir) delete data.tickets.legacyDir;
       if (Array.isArray(data.storyGuard?.folders)) data.storyGuard.folders = data.storyGuard.folders.filter((f) => f !== dir);
