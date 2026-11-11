@@ -299,3 +299,13 @@ worked on): symptom, root cause, fix, commit and impact.
   "Interrupted runs". Commit `e3ec3a0`.
 - **Impact:** about $1–2 and 5–10 minutes of an agent slot per restart (five
   restarts so far).
+
+## Observation O7: Claude Code's background model
+
+Each Claude Code run records a second model besides the one the pipeline asked
+for: `claude-haiku-5.5`, its built-in model for small background calls (about
+18 output tokens per run, about $0.001). The pipeline's model policy covers
+the models it requests, not the CLI's internal calls. The operator pinned the
+background model to sonnet for this run (`ANTHROPIC_DEFAULT_HAIKU_MODEL`) so
+only allowed models run. A follow-up could set it in `cliInvocation` from the
+policy for every Claude run.
