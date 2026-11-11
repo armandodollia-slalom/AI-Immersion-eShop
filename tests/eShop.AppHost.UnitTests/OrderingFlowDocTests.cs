@@ -18,7 +18,7 @@ public class OrderingFlowDocTests
         StringAssert.DoesNotMatch(knownIssues, new Regex(@"GET /api/orders/\{id\}|reads? bob's order 7|another buyer's order by id"));
 
         var flowRow = doc.Split('\n').Single(l => l.Contains("A buyer reads another buyer's order by id"));
-        Assert.IsFalse(flowRow.Contains("**fixme**"), flowRow);
+        Assert.DoesNotContain("**fixme**", flowRow, flowRow);
 
         // The spec table must count the file's remaining test.fixme markers, and the fixed test must not be one.
         var specRow = doc.Split('\n').Single(l => l.Contains("| `ordering-api.spec.ts` |"));
