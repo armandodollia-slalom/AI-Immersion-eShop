@@ -1,0 +1,5 @@
+description: >
+  BUG-14: basket-edge data, unchanged. bob's Redis basket (key /basket/b0b00000-0000-4000-8000-000000000002)
+  holds Explorer 45L Backpack (product 7, quantity 2) and Carbon Fiber Trekking Poles (product 6,
+  quantity 1); the cart quantity box cases use the backpack line.
+extends: basket-edge

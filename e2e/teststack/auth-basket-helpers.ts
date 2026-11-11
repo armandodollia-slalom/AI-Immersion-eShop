@@ -2,7 +2,7 @@ import http from 'http';
 import http2 from 'http2';
 import { execFileSync } from 'child_process';
 import { DOCKER } from './scenario';
-import { BASKET_GRPC_URL, IDENTITY_URL, WEBAPP_URL } from './ports';
+import { BASKET_GRPC_URL, IDENTITY_URL, REDIS_CONTAINER, WEBAPP_URL } from './ports';
 
 // The issuer and the Basket gRPC endpoint follow TESTSTACK_SLOT (./ports).
 export { BASKET_GRPC_URL, IDENTITY_URL };
@@ -192,7 +192,7 @@ export function basketCall(method: 'GetBasket' | 'UpdateBasket' | 'DeleteBasket'
 
 /** Read a basket straight from Redis (null when the key does not exist). */
 export function redisBasket(userId: string): { BuyerId: string; Items: { ProductId: number; Quantity: number }[] } | null {
-  const out = execFileSync(DOCKER, ['exec', 'eshop-teststack-redis-1', 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', 'GET', `/basket/${userId}`], { encoding: 'utf8' }).trim();
+  const out = execFileSync(DOCKER, ['exec', REDIS_CONTAINER, 'redis-cli', '-a', 'teststack-redis', '--no-auth-warning', 'GET', `/basket/${userId}`], { encoding: 'utf8' }).trim();
   return out ? JSON.parse(out) : null;
 }
 

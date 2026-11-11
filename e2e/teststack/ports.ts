@@ -28,3 +28,6 @@ export const CATALOG_URL = `http://localhost:${port('catalog')}`;
 export const BASKET_GRPC_URL = `http://localhost:${port('basket')}`;
 export const ORDERING_URL = `http://localhost:${port('ordering')}`;
 export const MOBILE_BFF_URL = `http://localhost:${port('mobileBff')}`;
+
+/** Redis container of this slot's compose project (eshop-teststack for slot 0, eshop-teststack-<slot> otherwise). */
+export const REDIS_CONTAINER = `eshop-teststack${SLOT ? `-${SLOT}` : ''}-redis-1`;
