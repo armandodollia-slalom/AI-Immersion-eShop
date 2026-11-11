@@ -253,7 +253,7 @@ async function main() {
       if (batch.epic?.key) {
         const epic = loadTicket(config, batch.epic.key, { fetch: false });
         const tickets = collectStories(inputs).map((s) => loadTicket(config, s.key, { fetch: false })).filter(Boolean);
-        epicRun = { epic: epicInfo(epic, batch.epic.key), tickets, only: batch.epic.only ?? null, grouping: batch.epic.grouping ?? null };
+        epicRun = { epic: epicInfo(epic, batch.epic.key), tickets, only: batch.epic.only ?? null, grouping: batch.epic.grouping ?? null, groups: deliveryShape(tickets, batch.epic.grouping ?? config.implement.epic?.grouping ?? 'auto').kind === 'groups' };
       }
       return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [], epicRun, delivery: batch.delivery ?? 'story' });
     }
