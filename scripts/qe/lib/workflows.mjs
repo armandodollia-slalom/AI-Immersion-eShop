@@ -648,6 +648,13 @@ export function formatRecovery(r) {
 // Agent lifecycle hook: implementation agent Stop / SubagentStop
 // ---------------------------------------------------------------------------------------------
 
+// Automation already runs, or already ran on this implementation, and needs no restart. A run that stopped
+// on the plan (`blocked-on-plan`) does need one once the plan is verified (a `qe plan` re-run after the
+// escalation was handled): with the implementation unchanged, nothing else would ever start it again.
+export const automationUpToDate = (automation, hash, planState = null) =>
+  ['running', 'starting'].includes(automation.status) ||
+  (automation.workingHash === hash && automation.status !== 'interrupted' && !(automation.status === 'blocked-on-plan' && planState === 'verified'));
+
 // Runs after the review stage in the dispatcher. Its gate is the review's approval of the exact
 // implementation now on disk; automation then runs in the background so the agent can finish.
 export function hookStop(config, story) {
@@ -660,7 +667,7 @@ export function hookStop(config, story) {
   if (isInterrupted(config, story, 'automation', state)) {
     const recovered = recoverRun(config, story, 'automation');
     if (recovered && recovered.action !== 'abandoned') return { systemMessage: formatRecovery({ story: story.key, ...recovered }) };
-  } else if (['running', 'starting'].includes(automation.status) || (automation.workingHash === hash && automation.status !== 'interrupted')) {
+  } else if (automationUpToDate(automation, hash, automation.status === 'blocked-on-plan' ? planStatus(config, story).state : null)) {
     return null;
   }
   const bg = startAutomation(config, story, hash);
