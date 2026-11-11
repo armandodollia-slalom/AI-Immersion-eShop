@@ -155,10 +155,17 @@ export async function runChecks(ctx, cwd, files) {
   const ut = ctx.s.unitTests;
   if (ut?.cmd) {
     const services = [...new Set(files.map((f) => /^src\/([^/]+)\//.exec(f)?.[1]).filter(Boolean))];
+    // A service's tests are named after it, its name without `.API` or its first part (src/Basket.API ->
+    // tests/Basket.UnitTests, src/Ordering.Domain -> tests/Ordering.UnitTests); a service with none is
+    // covered by the shared fallback project.
+    const projects = new Set();
     for (const svc of services) {
-      const project = ut.project.replace('{service}', svc);
-      if (fs.existsSync(path.join(cwd, project))) await exec(`unit tests ${project}`, ut.cmd.replace('{project}', project));
+      const names = [...new Set([svc, svc.replace(/\.API$/, ''), svc.split('.')[0]])];
+      const project = names.map((n) => ut.project.replace('{service}', n)).find((p) => fs.existsSync(path.join(cwd, p)));
+      if (project) projects.add(project);
+      else if (ut.fallbackProject && fs.existsSync(path.join(cwd, ut.fallbackProject))) projects.add(ut.fallbackProject);
     }
+    for (const project of projects) await exec(`unit tests ${project}`, ut.cmd.replace('{project}', project));
   }
   return { ok, output: parts.join('\n\n') || '(no checks configured)' };
 }

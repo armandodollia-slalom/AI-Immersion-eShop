@@ -304,7 +304,7 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 | `agent.models.implementer` | `null` (the orchestrator's class) | Model alias for the orchestrator or single implementer |
 | `implement.prepareCmd` | `dotnet restore eShop.Web.slnf` | Run in each new subtask worktree (failure is logged, not fatal) |
 | `implement.checks` | `dotnet build eShop.Web.slnf` | Commands whose output verifiers get; a failure fails the round |
-| `implement.unitTests` | `tests/{service}.UnitTests`, `dotnet test --project {project}` | Run for each `src/<service>/` with changes, when that project exists |
+| `implement.unitTests` | `tests/{service}.UnitTests`, `dotnet test --project {project}`, fallback `tests/Application.UnitTests` | Run for each `src/<service>/` with changes: its own project, named after the service, the service without `.API` or its first part (`src/Basket.API` → `tests/Basket.UnitTests`, `src/Ordering.Domain` → `tests/Ordering.UnitTests`), otherwise the `fallbackProject` that covers services without one (Identity, Webhooks, the processors) |
 | `implement.ui.*` | `slotsCmd`, `teststackCmd`, `leaseWaitSec` 300, `leaseRetrySec` 30, `stackTimeoutSec` 2400, `renewEverySec` 1800, `screenshotsDir` `artifacts/pairs` | Stack slot contract and timing |
 | `implement.lsp.*` | `lspdCmd`, `slnfCmd`, `timeoutSec` 300, `enabled` | Language server tooling |
 | `implement.decisions.*` | see [Decision log](#decision-log) | Labeling thresholds |

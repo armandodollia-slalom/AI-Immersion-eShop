@@ -79,6 +79,7 @@
     ],
     "unitTests": {
       "project": "tests/{service}.UnitTests",
+      "fallbackProject": "tests/Application.UnitTests",
       "cmd": "export PATH=$HOME/.dotnet:$PATH && dotnet test --project {project}"
     },
     "ui": {
