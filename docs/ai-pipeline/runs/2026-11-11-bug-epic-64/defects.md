@@ -218,6 +218,20 @@ worked on): symptom, root cause, fix, commit and impact.
   The user's slot 0 should be rebuilt from `main` after the run (`testing/teststack up`
   from the main checkout).
 
+## D11: live run cost was invisible
+
+- **Symptom:** mid-run, `pipeline costs` showed 1 run ($0.77, the epic plan)
+  while about 145 agent runs had finished.
+- **Root cause:** every agent run appends to `.agent-metrics/token-usage.jsonl`
+  in the worktree it ran in. Ticket and group branches merge to `main` only
+  after human review, so the main checkout only sees the epic planner's run.
+  This is correct for the committed record, but an operator could not watch
+  spend during a run.
+- **Fix:** `pipeline costs --worktrees` reads the file from every git worktree
+  and drops identical records (a group branch carries its tickets' records).
+  Test added; `costs.md` updated. Commit `c70f369`.
+- **Impact:** monitoring only; no run behavior changed.
+
 ## Observations (not changed)
 
 - **O1, lspd leak on kill.** The implement runner has no signal handlers, so
@@ -237,3 +251,8 @@ worked on): symptom, root cause, fix, commit and impact.
   merges the extra branches. The operator removed the empty `token-audience`
   worktree before resuming so it is recreated stacked.
 - **O5: killing the batch leaves QE runs orphaned.** `qe.mjs automate` runs are spawned detached (by design, so QE survives an agent turn), so killing the batch and its workers leaves them and their agents running. The operator stopped them by hand; a resume would otherwise have found the automation lock held. Not changed (detaching is intended), but a `implement stop` command would make operator interventions safer.
+- **O6: wall-clock timeouts count host sleep.** The laptop slept (deep idle)
+  from 06:50 to 08:26. BUG-13's planner hit its 33-minute timeout without
+  having had 33 minutes of compute, and was retried. For unattended runs, keep
+  the host awake (`caffeinate -dimsu -w <batch pid>` on macOS); a future
+  `implement run` could start it itself.
