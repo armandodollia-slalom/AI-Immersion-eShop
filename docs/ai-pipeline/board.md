@@ -16,7 +16,7 @@ flowchart LR
   R -->|PR merged: Closes #issue<br/>board sync| D[Done]
   P -.->|pipeline stops| F[Failed<br/>needs-human, reason in a comment]
   Q -.->|pipeline stops| F
-  F -.->|you fix it and run it again| P
+  F -.->|you answer the questions and tick Resolved:<br/>escalation-resolved, board sync| T
 ```
 
 ## Lanes
@@ -28,7 +28,7 @@ flowchart LR
 | In Progress | the **claim** when `pipeline implement run` (or an interactive `pipeline start <KEY>`) begins the story, with a comment naming the user and machine; and the **product-bug** event when QE finds bugs in the implementation and the story goes back to the implementer, with a comment listing the bugs |
 | Testing | the **testing** event: the architecture review approved the code and QE started writing and verifying the automated tests (again after every bug fix) |
 | Pending Review | the **verified** event: the tests are verified and the PR is open (headless), or the line of work is done and verified (interactive, no PR). The issue gets the review notes and evidence; the epic gets the same links |
-| Failed | the **failed** event: any outcome of `pipeline implement run` other than done (`blocked`, `unresolved`, `plan-rejected`, `pair-exhausted`, `limit-*`, `qe-*`, a blocker that failed, a PR that could not be opened, ...). The card gets the `needs-human` label and a comment with the outcome, reason, findings, branch and log path |
+| Failed | the **failed** event: any outcome of `pipeline implement run` other than done (`blocked`, `unresolved`, `plan-rejected`, `pair-exhausted`, `limit-*`, `qe-*`, a blocker that failed, a PR that could not be opened, ...). The card gets the `needs-human` label and a comment with the outcome, up to three questions for a human, the details (escalation notes, findings, branch, log) collapsed, and a **Resolved** checkbox ([escalations](escalations.md#questions-and-the-resolve-checkbox)) |
 | Done | `board sync`: closed story issues move to Done. The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
 
 The board is informational: GitHub errors are logged and never block an agent or change a pipeline outcome.
@@ -69,7 +69,7 @@ node scripts/pipeline/pipeline.mjs implement run PROMO-3 --pr                   
 node scripts/board/board.mjs mine                                                              # the stories assigned to you
 ```
 
-`implement run` first runs `board sync`, then claims every story it will run. The headless runner reports `testing`, `product-bug` and `verified` from each story's worktree as they happen, and after the batch it moves every story that did not finish to Failed. Fix a failed story, remove the `needs-human` label and run it again (the claim takes it out of Failed), or move it back to Ready by hand (`board move <KEY> ready --force`).
+`implement run` first runs `board sync`, then claims every story it will run. The headless runner reports `testing`, `product-bug` and `verified` from each story's worktree as they happen, and after the batch it moves every story that did not finish to Failed. Answer the questions on its failure comment and tick **Resolved** (the `board-escalation-resolve` workflow swaps `needs-human` for `escalation-resolved`); the next `board sync` moves it to Ready and the next run takes your answers as binding requirements. `implement requeue` (by hand or [on a timer](escalations.md#requeue-on-a-timer)) runs every resolved ticket in one batch. You can still fix a failed story yourself and run it again (the claim takes it out of Failed), or move it back to Ready by hand (`board move <KEY> ready --force`).
 
 **Interactive sessions.** `pipeline start <KEY>` claims the card (story-start hook; a card another machine holds is not taken: `board claim <KEY> --takeover` takes it). The board stage's Stop hook reads the story's pipeline state and reports, in order, a product bug QE found since the last stop, the review approving the code QE is now testing, and the verified tests of a finished line of work, so the card moves the same way as in a headless run. Headless runs (`PIPELINE_HEADLESS=1`) skip both hooks because the runner reports its own events.
 
@@ -79,6 +79,7 @@ node scripts/board/board.mjs mine                                               
 
 - Closed story issues move to Done, and their section on the epic's evidence comment shows Done.
 - Their late outcome is recorded for the [implement decision log](implement.md#decision-log): whether the PR merged, how many commits and lines humans added on the branch before merge, and which BUG-* stories name the story (`type: "late"` in `.agent-metrics/decision-outcomes.jsonl` of the checkout, left uncommitted). Only stories this machine implemented have a run record to compare with.
+- Failed story cards labeled `escalation-resolved` and not `needs-human` (a human answered the escalation questions) move to Ready. `--json` prints the keys moved (`requeued`) and every resolved ticket in Ready (`resolved`), which `implement requeue` runs.
 - Every epic card moves to the lane its stories call for.
 
 ## Pending Review evidence
@@ -243,9 +244,23 @@ gh auth refresh -s project                       # Projects need the project sco
 node scripts/board/board.mjs setup
 ```
 
-`setup` enables issues on the repo, creates the labels (`story`, `epic`, `spike`, `needs-human`, `frontend`, `backend`), creates and links the project (saving its number in `scripts/board/config.json`), sets the Status columns, sets up the views, and puts every card without a lane in Backlog. It never writes issue bodies: tickets are created by `board new` and `board migrate --apply`. It renames columns in place (Todo became Ready) and adds new ones without losing their cards. **Run `board setup` once after pulling the change that adds the Testing lane**: until then, moving a card to Testing is logged and skipped. Any repo collaborator can be assigned.
+`setup` enables issues on the repo, creates the labels (`story`, `epic`, `spike`, `needs-human`, `escalation-resolved`, `frontend`, `backend`), creates and links the project (saving its number in `scripts/board/config.json`), sets the Status columns, sets up the views, and puts every card without a lane in Backlog. It never writes issue bodies: tickets are created by `board new` and `board migrate --apply`. It renames columns in place (Todo became Ready) and adds new ones without losing their cards. **Run `board setup` once after pulling the change that adds the Testing lane**: until then, moving a card to Testing is logged and skipped. Any repo collaborator can be assigned.
 
 The board is active only when `scripts/board/config.json` has a `projectNumber`, the checkout's `origin` is the configured repo (so test fixtures and forks never touch it), and `PIPELINE_BOARD` is not `0`. Everyone who runs the pipeline needs `gh` logged in with the `project` scope.
+
+## Labels and workflows
+
+| Label | Set by | Meaning |
+| --- | --- | --- |
+| `needs-human` | `board fail` | The pipeline could not finish the ticket; the latest comment has the questions and the Resolved box |
+| `escalation-resolved` | `board-escalation-resolve` workflow (or a human) | A human answered the questions; `board sync` moves the card from Failed to Ready, the next run re-runs it and removes the label when it claims the card |
+
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| `board-epic-assign` | an epic is assigned or unassigned | `board sync-epic`: the epic's stories get its assignees |
+| `board-escalation-resolve` | a failure comment is edited (Resolved ticked), a `Qn:` reply, or `escalation-resolved` added by hand | `board resolve-check`: untick and list what is missing, or swap the labels, record `## Decisions` in the issue body and confirm ([escalations](escalations.md#questions-and-the-resolve-checkbox)) |
+
+Both use only `github.token` with `issues: write`; moving cards needs the project scope, so it happens in `board sync` on a pipeline machine.
 
 ## Commands
 
@@ -255,11 +270,14 @@ node scripts/board/board.mjs fetch <KEY>... | --epic <EPIC> | --all [--refresh] 
 node scripts/board/board.mjs new <file.md|-> [--type story|bug|epic|spike] [--key KEY] [--epic <epic-key>] [--mockups <dir>] [--dry-run]
 node scripts/board/board.mjs publish <KEY> [--force]       # the cached story back to its issue
 node scripts/board/board.mjs migrate [--apply|--verify [--allow-unplaced]|--delete-local [--dry-run]]
-node scripts/board/board.mjs sync                          # closed stories to Done, late outcomes, epic lanes
+node scripts/board/board.mjs sync [--json]                 # closed stories to Done, resolved Failed to Ready, late outcomes, epic lanes
+node scripts/board/board.mjs resolved [--json]             # resolved tickets (escalation-resolved, no needs-human); moves nothing
 node scripts/board/board.mjs mine
 node scripts/board/board.mjs claim <KEY>... [--force] [--takeover]  # claim for this machine (implement run does this)
 node scripts/board/board.mjs event <KEY> claim|testing|product-bug|verified|failed|closed [--id <id>] [--force] [--takeover]
-node scripts/board/board.mjs fail <KEY>                    # Failed + needs-human from the implement run record
+node scripts/board/board.mjs fail <KEY>                    # Failed + needs-human, questions and Resolved box from the run record
+node scripts/board/board.mjs resolve-check <issue> [--actor <login>] [--comment <id>] [--label]   # run by board-escalation-resolve
+node scripts/board/board.mjs clear-resolved <KEY>          # drop escalation-resolved (a re-run started; implement run does this)
 node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|testing|review|failed|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>] [--epic-branch <branch>]   # Pending Review + evidence
 node scripts/board/board.mjs epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]

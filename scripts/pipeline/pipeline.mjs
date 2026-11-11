@@ -32,6 +32,9 @@ Pipeline
                                 and branch; claims each story's board card (--force takes it over)
   implement resume [--parallel N] [--pr]
                                 continue the last implement run that did not finish
+  implement requeue [--requeue-only] [--dry-run] [--parallel N|auto] [--no-pr]
+                                run the Failed tickets a human resolved on GitHub (escalation-resolved)
+                                in one batch; safe on a timer (scripts/implement/requeue-schedule.mjs)
   implement status [story]      progress of the latest implement run
   implement cleanup [story...]  remove subtask worktrees a failed run left behind
   implement decisions [--story KEY] [--json]
@@ -69,7 +72,7 @@ async function main() {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
       const args = process.argv.slice(3);
-      if (args[0] && !['run', 'resume', 'story', 'status', 'cleanup', 'decisions', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      if (args[0] && !['run', 'resume', 'requeue', 'story', 'status', 'cleanup', 'decisions', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
       return runStage(config, stage, args, { inherit: true }).status;
     }
 

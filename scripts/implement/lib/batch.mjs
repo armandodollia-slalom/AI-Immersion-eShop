@@ -58,6 +58,8 @@ export function collectStories(inputs, cwd = process.cwd()) {
       // Implemented: the story has Implementation Notes, or its issue is closed (its PR merged; the
       // notes may never have been published back to the issue).
       implemented: /^##\s+Implementation Notes\b/m.test(text) || String(meta?.issue?.state ?? '').toUpperCase() === 'CLOSED',
+      // The issue's labels when the ticket was last fetched (escalation-resolved lets plan() re-run it).
+      labels: meta?.issue?.labels ?? [],
     });
   }
   return [...byKey.values()].sort((a, b) => keyOrder(a.key, b.key));

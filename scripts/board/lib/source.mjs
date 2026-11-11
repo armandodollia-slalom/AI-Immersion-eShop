@@ -12,6 +12,8 @@
 // a ticket that is neither cached nor on the board is a clear error.
 import fs from 'node:fs';
 import path from 'node:path';
+import { HUMAN_DECISIONS_FILE } from '../../pipeline/lib/human-decisions.mjs';
+import { extractDecisions } from './escalation.mjs';
 import { boardDisabled } from '../../pipeline/lib/run-tags.mjs';
 import { readJson, writeJson, sha, nowIso } from '../../pipeline/lib/util.mjs';
 import { downloadAssets, exec, readAsset } from './assets.mjs';
@@ -163,6 +165,15 @@ export function sourceOfIssue(config, issue, key, { run = exec, gh = defaultGh }
   return { content: parsed.content, meta: parsed.meta, legacy: false, edited: parsed.edited };
 }
 
+// The `## Decisions` a human recorded on the issue (escalation.mjs) go next to the cached story as
+// decisions.md, which the agents' prompts include as binding requirements; none removes the file.
+export function writeDecisionsFile(dir, body) {
+  const file = path.join(dir, HUMAN_DECISIONS_FILE);
+  const text = extractDecisions(body);
+  if (text) fs.writeFileSync(file, `${text}\n`);
+  else fs.rmSync(file, { force: true });
+}
+
 const issueSummary = (i) => ({ number: i.number, url: i.url, updatedAt: i.updatedAt, state: i.state, title: i.title, labels: i.labels });
 
 // Fetches tickets by key into the cache. Returns one result per key:
@@ -218,6 +229,7 @@ export function fetchTickets(config, keys, { refresh = false, gh = defaultGh, ru
       }
       writeTicket(config, key, { content: src.content, meta: { ...src.meta, edited: src.edited }, issue: issueSummary(issue) });
       const dir = ticketDir(config, key);
+      writeDecisionsFile(dir, issue.body);
       if (src.meta.assets?.files?.length) {
         downloadAssets(config, src.meta.assets, path.join(dir, 'mockups'), { run, filter: (f) => f.kind === 'mockup' });
         downloadAssets(config, src.meta.assets, path.join(dir, 'files'), { run, filter: (f) => f.kind === 'file' });

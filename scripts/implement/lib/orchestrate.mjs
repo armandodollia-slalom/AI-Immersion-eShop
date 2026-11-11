@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { git } from '../../pipeline/lib/git.mjs';
+import { readDecisions } from '../../pipeline/lib/human-decisions.mjs';
 import { metricsFile } from '../../pipeline/lib/state.mjs';
 import { appendJsonl, extractResult, log as defaultLog, nowIso, runAsync, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
@@ -43,6 +44,8 @@ export function createContext({ config, key, storyFile, branch, worktree, base, 
     key,
     storyFile,
     storyText: fs.readFileSync(storyFile, 'utf8'),
+    // A human's answers to an earlier run's escalation questions (decisions.md next to the story).
+    decisions: readDecisions(storyFile),
     // Epic delivery: the epic design note, handed to the planner.
     epicNote,
     branch,
@@ -201,7 +204,7 @@ export async function planStory(ctx) {
       round: attempt,
       cwd: ctx.worktree,
       timeoutSec: ctx.s.timeouts.plannerSec,
-      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits, errors, epicNote: ctx.epicNote, mockups: uiStory ? mockupText(ctx) : null }),
+      task: planTask({ key: ctx.key, storyFile: ctx.storyFile, worktree: ctx.worktree, uiStory, limits, errors, epicNote: ctx.epicNote, mockups: uiStory ? mockupText(ctx) : null, decisions: ctx.decisions }),
     });
     const raw = parsePlanOutput(res.output);
     const agent = { cli: res.cli, model: res.model, version: res.version };
@@ -250,7 +253,7 @@ async function agentFor(ctx, rec, slot, opts) {
 const PATHLIKE = /(?:^|[\s`'"(])((?:src|tests|testing|deploy|scripts|docs)\/[\w./-]+|[\w-]+\.(?:props|targets|json|slnx?|slnf))/g;
 
 async function verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) {
-  const task = codeVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, disputes });
+  const task = codeVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, disputes, decisions: ctx.decisions });
   for (let attempt = 0; attempt <= ctx.config.agent.resultParseRetries; attempt++) {
     const res = await agentFor(ctx, rec, 'verifier', { role: 'verifier', name: 'pair-verifier', mode: 'read', modelClass: ctx.s.roles.verifier.modelClass, cwd: worktree, timeoutSec: ctx.s.timeouts.codeVerifierSec, task });
     discardChanges(worktree);
@@ -320,7 +323,7 @@ async function verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec,
       renders = { ...r, text: formatRenders(r.entries) };
     }
     const mockupRenders = (renders?.entries ?? []).filter((e) => e.kind === 'screen' && e.png).map((e) => e.png);
-    const task = uiVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, webappUrl: lease.webappUrl, screenshotsDir: shots, worktree, mockups: mockupText(ctx), renders, implementerScreens: rec.mockupScreens ?? null, disputes });
+    const task = uiVerifierTask({ key: ctx.key, st, round, maxRounds: ctx.s.maxPairRounds, diff: diffSince(worktree, base), checks: checks.output, diagnostics: diagText, webappUrl: lease.webappUrl, screenshotsDir: shots, worktree, mockups: mockupText(ctx), renders, implementerScreens: rec.mockupScreens ?? null, disputes, decisions: ctx.decisions });
     for (let attempt = 0; attempt <= ctx.config.agent.resultParseRetries; attempt++) {
       const res = await agentFor(ctx, rec, 'verifier', { role: 'uiVerifier', name: 'pair-ui-verifier', mode: 'verify', modelClass: ctx.s.roles.uiVerifier.modelClass, cwd: worktree, timeoutSec: ctx.s.timeouts.uiVerifierSec, task });
       const removed = discardChanges(worktree);
@@ -372,7 +375,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
         model: role === 'pairImplementer' ? st.model ?? null : null,
         cwd: worktree,
         timeoutSec: ctx.s.timeouts.pairImplementerSec,
-        task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self), mockups: st.verify === 'ui' ? mockupText(ctx) : null, mockupRenders }),
+        task: pairImplementerTask({ key: ctx.key, storyFile: path.join(worktree, path.relative(ctx.worktree, ctx.storyFile)), st, worktree, branch, base, round, maxRounds: max, findings, screenshots, diagnostics: diagText, self: Boolean(st.self), mockups: st.verify === 'ui' ? mockupText(ctx) : null, mockupRenders, decisions: ctx.decisions }),
       });
       commitAll(worktree, `${ctx.key}: ${st.id} (round ${round})`);
       if (ctx.deps.lsp.csharpRunning(worktree) && signatureChanges(git(worktree, ['diff', before, 'HEAD']).stdout).length && !res.referencesCalls) {

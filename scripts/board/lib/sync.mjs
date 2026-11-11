@@ -4,12 +4,15 @@
 //    their late outcome is recorded for the implement decision log (PR merged, human commits, BUG-*
 //    stories that name them).
 //  - Their section on the epic's evidence comment shows Done.
+//  - Failed story cards labeled `escalation-resolved` (a human answered the escalation questions) and no
+//    longer `needs-human` move back to Ready; `pipeline implement requeue` runs them.
 //  - Every epic card moves to the lane its stories call for.
 //  - Feature videos the PR demo video workflow published after a story (or epic) reached Pending Review
 //    are posted on the story issue and linked from the epic's evidence comment.
 import { listItems, setColumn, syncEpicColumns } from './board.mjs';
 import { readEpicEvidence, upsertEpicEvidence } from './epics.mjs';
 import { featureVideo } from './evidence.mjs';
+import { resolvedLabel } from './escalation.mjs';
 import { postComment } from './flow.mjs';
 import { recordLateOutcome } from './outcomes.mjs';
 
@@ -79,7 +82,27 @@ export function syncBoard(config, { listStories, log = () => {}, findVideo } = {
       log(`${item.key}: could not record the late outcome: ${error.message}`);
     }
   }
+  const { requeued, resolved } = requeueResolved(config, items, { log });
   const epics = syncEpicColumns(config, items, { log });
   const videos = syncVideos(config, items, { log, ...(findVideo ? { findVideo } : {}) });
-  return { done, outcomes, epics, videos };
+  return { done, outcomes, epics, videos, requeued, resolved };
+}
+
+// Open story cards a human resolved (`escalation-resolved`, no `needs-human`): Failed ones move to Ready.
+// Returns the keys moved and every resolved key (also those already in Ready).
+export const resolvedItems = (config, items) => items.filter((i) => i.key && i.state !== 'CLOSED' && i.labels.includes(resolvedLabel(config)) && !i.labels.includes(config.board.blockedLabel) && !i.labels.includes(config.board.epicLabel) && ['failed', 'ready'].includes(i.column));
+
+export function requeueResolved(config, items, { log = () => {} } = {}) {
+  const requeued = [];
+  const resolved = [];
+  for (const item of resolvedItems(config, items)) {
+    if (item.column === 'failed') {
+      setColumn(config, item.itemId, 'ready');
+      item.column = 'ready';
+      requeued.push(item.key);
+      log(`#${item.number} ${item.key} resolved by a human; moved to ${config.board.columns.ready}.`);
+    }
+    if (item.column === 'ready') resolved.push(item.key);
+  }
+  return { requeued, resolved };
 }
