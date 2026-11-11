@@ -126,3 +126,21 @@
         }
     }
 }
+
+.catalog-product-promo {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.catalog-product-content .price .price-original {
+    margin-right: 0.35rem;
+    color: var(--color-ink-2, #666);
+    font-weight: 400;
+}
+
+.catalog-product-content .price .price-sale {
+    color: var(--color-sale, var(--color-ink));
+}

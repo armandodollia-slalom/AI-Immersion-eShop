@@ -11,10 +11,10 @@ INSERT INTO "Promotions" ("Id", "Name", "Description", "Type", "Value", "MinOrde
 -- Id 5: Draft, so never active even though its window is open.
 -- Id 6: Published but ended yesterday.
 -- Id 7: Published but starts tomorrow.
-INSERT INTO "Promotions" ("Id", "Name", "Description", "Type", "Value", "Status", "StartsAt", "EndsAt", "Priority") VALUES
-  (5, 'Draft 5% off', '5% off everything', 'PercentOff', 5, 'Draft', now() - interval '1 day', now() + interval '30 days', 3),
-  (6, 'Ended yesterday', '5% off everything', 'PercentOff', 5, 'Published', now() - interval '10 days', now() - interval '1 day', 2),
-  (7, 'Starts tomorrow', '5% off everything', 'PercentOff', 5, 'Published', now() + interval '1 day', now() + interval '30 days', 1);
+INSERT INTO "Promotions" ("Id", "Name", "Description", "Type", "Value", "Status", "StartsAt", "EndsAt", "Priority", "IsStackable", "RequiresCoupon") VALUES
+  (5, 'Draft 5% off', '5% off everything', 'PercentOff', 5, 'Draft', now() - interval '1 day', now() + interval '30 days', 3, false, false),
+  (6, 'Ended yesterday', '5% off everything', 'PercentOff', 5, 'Published', now() - interval '10 days', now() - interval '1 day', 2, false, false),
+  (7, 'Starts tomorrow', '5% off everything', 'PercentOff', 5, 'Published', now() + interval '1 day', now() + interval '30 days', 1, false, false);
 
 INSERT INTO "PromotionTargets" ("Id", "PromotionId", "Scope", "TargetId") VALUES
   (1, 1, 'Type', 3),

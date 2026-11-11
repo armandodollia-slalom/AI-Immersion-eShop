@@ -1,7 +1,10 @@
 @page "/"
 @inject NavigationManager Nav
 @inject CatalogService CatalogService
+@inject PromotionsService PromotionsService
 @attribute [StreamRendering]
+@using eShop.WebApp.Services.Promotions
+@using eShop.WebAppComponents.Promotions
 
 <PageTitle>AdventureWorks</PageTitle>
 <SectionContent SectionName="page-header-title">Ready for a new adventure?</SectionContent>
@@ -85,7 +88,7 @@
             <div class="catalog-items">
                 @foreach (var item in catalogResult.Data)
                 {
-                    <CatalogListItem Item="@item" />
+                    <CatalogListItem Item="@item" Promotions="@promotions" />
                 }
             </div>
 
@@ -160,6 +163,7 @@
     public int[]? TypeIds { get; set; }
 
     CatalogResult? catalogResult;
+    IReadOnlyList<ActivePromotion> promotions = [];
 
     static IEnumerable<int> GetPageTokens(int totalPages, int current)
     {
@@ -195,6 +199,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        promotions = await PromotionsService.GetActivePromotionsAsync();
         catalogResult = await CatalogService.GetCatalogItems(
             Page.GetValueOrDefault(1) - 1,
             PageSize,

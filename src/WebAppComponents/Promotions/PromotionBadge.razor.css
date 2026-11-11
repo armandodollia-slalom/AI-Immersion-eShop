@@ -1,0 +1,13 @@
+.promotion-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-pill, 999px);
+    background: var(--color-ink, #111);
+    color: var(--color-surface, #fff);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
