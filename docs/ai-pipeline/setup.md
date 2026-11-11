@@ -126,7 +126,7 @@ The [review gate](review-gate.md) needs nothing extra to assess PRs and request 
 | Allow auto-merge | Settings → General → Pull Requests | `gh pr merge --auto` waits for GitHub's own requirements instead of failing |
 | A GitHub App with a ruleset bypass, its token in `REVIEW_GATE_APP_TOKEN`, and `implement.autoMerge.identity: "app"` | the App's settings; the ruleset's bypass list | only once `main` requires approvals from people: a Low PR that needs none can then merge only through a bypass |
 
-Auto-merge itself is off until `implement.autoMerge.enabled` is set to `true` in `scripts/implement/config.json`.
+Auto-merge is on (`implement.autoMerge.enabled` in `scripts/implement/config.json`); set it to `false` to stop it.
 
 ## CI
 

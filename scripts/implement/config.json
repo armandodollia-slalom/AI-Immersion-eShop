@@ -291,7 +291,7 @@
       }
     },
     "autoMerge": {
-      "enabled": false,
+      "enabled": true,
       "identity": "gh-user",
       "method": "squash",
       "appTokenEnv": "REVIEW_GATE_APP_TOKEN"
