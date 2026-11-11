@@ -1,0 +1,2 @@
+{"ts":"2026-11-11T11:29:45.511Z","stage":"plan","story":"BUG-6","round":1,"agent_prompt_ver":"c3934e11","verifier_ver":"456099fb","cli":"copilot","score":9,"passed":true,"gaps":1}
+{"ts":"2026-11-11T11:39:00.221Z","stage":"automation","story":"BUG-6","round":3,"agent_prompt_ver":"09b47565","verifier_ver":"3158c4fc","cli":"copilot","score":10,"passed":true,"gaps":0}

@@ -1,0 +1,5 @@
+description: >
+  BUG-6: Basket.API token audience validation. Reuses basket-edge, where alice
+  (a11ce000-0000-4000-8000-000000000001) has no basket in Redis, so any basket
+  written for her proves a token was accepted.
+extends: basket-edge
