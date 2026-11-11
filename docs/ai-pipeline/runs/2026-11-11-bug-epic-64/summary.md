@@ -52,6 +52,16 @@ remove the `test.fixme` and drop the nested-run test TC-BUG-1-07, recommended).
 Answer it and tick **Resolved**; `implement requeue` then runs BUG-1 with the
 decision and the 5 tickets behind it.
 
+## After the run: review gate (#110, #112)
+
+The post-publish review gate (bug-triage ratings, severity and confidence,
+`approvals:N` or auto-merge for Low fixes) was merged to main at 14:26, and into
+this branch at 14:35. Reading the merged group-delivery code showed D23 (fixed
+before any gated run): a group finishing across restarts would have been gated
+on part of its tickets. The seven group PRs opened before the gate are gated
+by a separate session at Armando's request. This run has nothing left to start
+until BUG-1's question is answered; `implement requeue` picks it up then.
+
 ## Totals
 
 | Metric | Value |
@@ -66,7 +76,7 @@ decision and the 5 tickets behind it.
 | By stage | PR checks $26.37 (87 runs), implementation $25.02 (71), QE automation + verify $11.82 (60), QE plan + verify $8.15 (61), review $2.58 (23), pairs $0.93, epic plan $0.77 |
 | Copilot premium requests | 1,037 (Opus 930, Sonnet 107), then the monthly quota ran out |
 | Cache hit rate | 87% |
-| Pipeline flow defects found and fixed | **22** (D1–D22, plus D13b), all with tests; D16 was superseded by main's own fix (#99) at the merge |
+| Pipeline flow defects found and fixed | **23** (D1–D23, plus D13b), all with tests; D16 was superseded by main's own fix (#99) at the merge |
 | Observations recorded | 9 (O1–O9) |
 
 ## What worked
@@ -95,7 +105,7 @@ decision and the 5 tickets behind it.
 | Group (bug epic) delivery | D2 `dependsOn` ignored, D7/D7b stale tickets at push, D8 duplicate PR checks, D9 existing PR, D17 shared spec files, D19 dirty metrics blocked a merge |
 | Gates that did not gate | D4/D5 QE commit failed lint, D15 no drift check, D16 unit tests never matched (no ticket ran Basket/Ordering/Application tests) |
 | Provider and environment | D1 Copilot prompt file outside cwd, D10 QE on the user's slot-0 stack, D12 quota outage read as ticket failures, O6 host sleep, O7 hidden background model |
-| Board | D18 blocked-on-plan never restarted (QE), D20 Failed → Pending Review, D21 earlier-merged tickets' cards, D22 blocked tickets' failure comments (escalation questions, #101) |
+| Board | D18 blocked-on-plan never restarted (QE), D20 Failed → Pending Review, D21 earlier-merged tickets' cards, D22 blocked tickets' failure comments (escalation questions, #101), D23 review gate saw part of a group's tickets (#110) |
 | Monitoring | D11 live cost invisible |
 
 ## Lessons

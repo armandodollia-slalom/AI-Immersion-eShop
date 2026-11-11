@@ -20,7 +20,7 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | Token cost (list price) | **$75.63**: Copilot $38.08, Claude Code $37.56 |
 | Cost by model | Opus 5.5 $46.79, Sonnet 5.5 $28.81, Haiku 5.5 $0.03 (CLI background), Sol 6.1 $0 |
 | Copilot premium requests | 1,037 (Opus 930, Sonnet 107), then the monthly quota ran out |
-| Pipeline defects found and fixed | **22** (D1–D22, plus D13b); D16 superseded by main's fix (#99) |
+| Pipeline defects found and fixed | **23** (D1–D23, plus D13b); D16 superseded by main's fix (#99) |
 | Cache hit rate | 87% |
 
 ## Escalation questions (PR #101, merged at 12:00)
@@ -38,6 +38,19 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 
 Slide idea: "From Failed to a decision": a failure comment with questions and
 the Resolved box, the Action that checks the answers, and `implement requeue`.
+
+## Review gate (#110, #112: merged at 14:26)
+
+| Item | Value |
+| --- | --- |
+| Merged into the run | 14:35 (`2a0d3ac`), 2 conflicted files, all checks green (367 tests) |
+| Defect found in the gate's integration | D23: a group PR finishing across restarts would be gated on part of its tickets (with auto-merge on) |
+| Group PRs opened before the gate | #70, #71, #72, #97, #100, #102, #103: gated by a separate session at Armando's request, not by this run |
+| Gated PRs opened by this run | 0 so far (nothing left to run until BUG-1 is answered) |
+
+Slide idea: "Who merges a bug fix?": triage ratings → severity and confidence
+→ auto-merge for Low, approvals for the rest; why a group's gate must see
+every ticket (D23).
 
 ## Lane counts over time
 

@@ -477,3 +477,24 @@ before the PR (and the group's QE specs when the stack is available).
   `batch.test.mjs` and `escalation.test.mjs`; `escalations.md`. Commit
   `e28c656`.
 - **Impact:** five confusing comments on the board, one per run.
+
+## D23: a group PR was gated on part of its tickets
+
+- **Symptom (found reading the merged code before any gated run):** after a
+  group PR opened, the runner called the review gate with
+  `results.filter(done)`, the tickets that finished in that run only.
+- **Root cause:** a group can finish across restarts (here `basket-cart`:
+  BUG-7/8 in one run, BUG-14 in a later one; `catalog-item-validation`: six
+  tickets over three runs). Tickets merged by an earlier run are `skipped`
+  ("merged ... in a previous run") in the run that opens the PR, the same
+  pattern as D21. With `implement.autoMerge.enabled` on, a Low rating on the
+  last ticket could auto-merge fixes the `bug-triage` agent never rated. A
+  re-delivered group with an existing PR was also handed to the gate again,
+  and skipped only because its key list happened to be empty.
+- **Fix:** `openPr` reports an existing PR; the runner gates only a PR it
+  opened, with every ticket merged into the group. Tests in `epic.test.mjs`
+  (a group finishing across two runs is gated with all three tickets; a
+  re-delivered PR is not gated again). `review-gate.md` updated. Commit
+  `0917392`.
+- **Impact:** none in this run (no group PR opened since the gate merged);
+  it would have under-rated the next group PR to finish across restarts.
