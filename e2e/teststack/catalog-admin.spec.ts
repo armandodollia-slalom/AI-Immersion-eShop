@@ -106,9 +106,7 @@ test.describe('Catalog.API admin writes', () => {
       expect((await post(request, newItem, '3.0')).status()).toBe(400);
     });
 
-    // BUG: [Required] Name is not validated; a body without "name" reaches the database and fails with
-    // a NOT NULL violation, so the API answers 500 instead of a 400 validation problem.
-    adminTest.fixme('a body without a name is rejected with 400', async ({ request }) => {
+    adminTest('a body without a name is rejected with 400', async ({ request }) => {
       const { name: _name, ...withoutName } = newItem;
       await expectProblem(await post(request, withoutName), 400);
     });

@@ -29,7 +29,6 @@ These tests assert the correct behavior and are marked `test.fixme` until the ap
 | --- | --- | --- |
 | Negative `pageSize` or `pageIndex` reach Postgres | 500, `LIMIT must not be negative` | `catalog-api` "negative pageSize or pageIndex is rejected with 400" |
 | WebApp `?page=0` and `?page=-1` request `pageIndex` -1 | Skeleton stays, "An unhandled error has occurred." | `catalog-browse` "?page=0 shows the first page", "?page=-1 ..." |
-| Create without `name` | 500 (NOT NULL violation) | `catalog-admin` "a body without a name is rejected with 400" |
 | Create with an empty name or a negative price | 201, stored | `catalog-admin` "an empty name or a negative price is rejected with 400" |
 | Create with an existing id | 500 (primary key violation) | `catalog-admin` "creating an item with an existing id is rejected with 409" |
 | Create or update with an unknown brand or type id | 500 (foreign key violation) | `catalog-admin` "unknown brand or type ids ...", "v2 PUT with an unknown type id is 400" |
