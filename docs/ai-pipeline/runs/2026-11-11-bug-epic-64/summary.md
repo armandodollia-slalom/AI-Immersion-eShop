@@ -14,13 +14,13 @@ other 6 wait for one human decision: BUG-1's QE escalation.
 
 | Group (supervisor's choice) | Tickets | PR | Result | CI at the end |
 | --- | --- | --- | --- | --- |
-| `catalog-write-auth` (security, alone) | BUG-4 | [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70) | verified | fails `teststack` (compose drift) and `test` (scopes test), both from BUG-4 |
-| `token-audience` (security, alone) | BUG-6 | [#71](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/71) | verified | inherits #70's failures (stacked on it) |
-| `login-open-redirect` (security, alone) | BUG-5 | [#72](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/72) | verified | **green** |
-| `catalog-paging` | BUG-11, BUG-12 | [#97](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/97) | verified | inherits #70's failures; `record` hit an apt mirror error |
-| `catalog-item-validation` | BUG-13, 17, 18, 19, 20, 21 | [#100](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/100) | verified | inherits #70's failures; Markdownlint MD012 in BUG-13's plan (O8) |
-| `basket-cart` | BUG-7, BUG-8, BUG-14 | [#102](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/102) | verified | `teststack` green; `test` fails: BUG-14's table-row count vs BUG-7/8's edits (O9) |
-| `webhooks-event-validation` | BUG-16 | [#103](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/103) | verified | running at the end of the run |
+| `catalog-write-auth` (security, alone) | BUG-4 | [#70](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/70) → [#119](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/119) | verified | fails `teststack` (compose drift) and `test` (scopes test), both from BUG-4 |
+| `token-audience` (security, alone) | BUG-6 | [#71](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/71) → [#120](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/120) | verified | inherits #70's failures (stacked on it) |
+| `login-open-redirect` (security, alone) | BUG-5 | [#72](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/72) → [#121](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/121) | verified | **green** |
+| `catalog-paging` | BUG-11, BUG-12 | [#97](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/97) → [#122](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/122) | verified | inherits #70's failures; `record` hit an apt mirror error |
+| `catalog-item-validation` | BUG-13, 17, 18, 19, 20, 21 | [#100](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/100) → [#123](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/123) | verified | inherits #70's failures; Markdownlint MD012 in BUG-13's plan (O8) |
+| `basket-cart` | BUG-7, BUG-8, BUG-14 | [#102](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/102) → [#124](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/124) | verified | `teststack` green; `test` fails: BUG-14's table-row count vs BUG-7/8's edits (O9) |
+| `webhooks-event-validation` | BUG-16 | [#103](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/103) → [#118](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/118) | verified | running at the end of the run |
 | `ordering-ownership` | BUG-1, BUG-2, BUG-3 | none | BUG-1 `qe-escalated`, BUG-2/3 blocked | - |
 | `ordering-error-handling` (stacked on `ordering-ownership`) | BUG-9, BUG-10, BUG-15 | none | blocked by its group dependency | - |
 
@@ -61,6 +61,14 @@ before any gated run): a group finishing across restarts would have been gated
 on part of its tickets. The seven group PRs opened before the gate are gated
 by a separate session at Armando's request. This run has nothing left to start
 until BUG-1's question is answered; `implement requeue` picks it up then.
+
+The seven group PRs were resubmitted at 15:50 as the GitHub App
+`dev-bot-armandodollia-slalom`, with main merged in and gated: **#118**
+(`webhooks-event-validation`, Low, auto-merge once green), **#119**
+(`catalog-write-auth`), **#120** (`token-audience`), **#121**
+(`login-open-redirect`), **#122** (`catalog-paging`), **#123**
+(`catalog-item-validation`), **#124** (`basket-cart`). The table above keeps the
+original numbers, with the new ones after the arrow.
 
 ## Totals
 

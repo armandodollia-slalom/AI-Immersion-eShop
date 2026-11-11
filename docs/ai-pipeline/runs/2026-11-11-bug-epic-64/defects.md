@@ -526,3 +526,15 @@ epic run, and its dependents (BUG-2/3 in its group, and the
 continues (`implement run --epic` or `implement resume`). That is how
 `epicToJoin` is documented; an operator (or the requeue) has to continue the
 epic afterwards.
+
+## Observation O11: re-delivery of groups whose PRs people took over
+
+Every run re-delivers each done group: it syncs tickets, re-verifies stale
+tests, pushes the group branch and refreshes the recorded PR's body. After
+Armando merged main into the seven group branches and resubmitted the PRs as
+the GitHub App (#118–#124), this run's state still names the closed PRs and
+its local branches are behind. The push is rejected (non-fast-forward), so the
+new PRs are never touched, but the re-delivery is wasted work and logs "no
+PR: push failed". Follow-up: a group whose recorded PR is closed or merged, or
+whose remote branch moved past the local one, should be reported and skipped,
+not re-delivered.
