@@ -7,6 +7,9 @@ namespace eShop.Promotions.FunctionalTests;
 
 /// <summary>
 /// PROMO-1 functional cases: the real Promotions.API in-process against a real Postgres database (seeding on unless a case says otherwise).
+/// Updated for PROMO-2, which changes PROMO-1 behaviour on purpose: the PromotionRuleModel migration and the epic seed
+/// data, coupon-only promotions left out of /active, and the public /active shape (no status; description, value,
+/// badgeLabel and targets added).
 /// The cases that need a token issued by Identity.API (the Identity cases of the plan) run on the test stack in
 /// e2e/teststack/promo-1-promotions.spec.ts.
 /// </summary>
@@ -20,7 +23,7 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static readonly string[] SeededNamesByPriority =
-        ["15% off everything", "$20 off your order", "Buy 2 get 1 free", "Coupon only: 10% off"];
+        ["Fall Hiking Sale", "$10 off orders over $150", "Buy 2 Get 1 Free"];
 
     // ---- Migration and seeding -------------------------------------------------------------------------------
 
@@ -41,9 +44,11 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
             Assert.Contains(table, tables);
         }
 
-        var history = await Query<string>(connectionString, "SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\"");
-        var initial = Assert.Single(history);
-        Assert.EndsWith("_Initial", initial);
+        // PROMO-2 adds the PromotionRuleModel migration after PROMO-1's Initial.
+        var history = await Query<string>(connectionString, "SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\" ORDER BY \"MigrationId\"");
+        Assert.Equal(2, history.Count);
+        Assert.EndsWith("_Initial", history[0]);
+        Assert.EndsWith("_PromotionRuleModel", history[1]);
     }
 
     [Fact]
@@ -150,11 +155,12 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
 
     [Fact]
     [Trait("TestCase", "TC-PROMO-1-11")]
-    public async Task TC_PROMO_1_11_GET_active_returns_the_four_seeded_promotions_and_no_inactive_ones()
+    public async Task TC_PROMO_1_11_GET_active_returns_the_seeded_promotions_without_coupon_and_no_inactive_ones()
     {
         var now = DateTimeOffset.UtcNow;
         using var host = await StartSeededAsync(now);
-        var seededIds = await Ids(host);
+        // PROMO-2: the coupon-only seeded promotion is left out of the public feed.
+        var seededIds = await Ids(host, includeCouponOnly: false);
         await AddInactiveExtrasAsync(host, now);
 
         using var client = host.CreateClient();
@@ -162,9 +168,9 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var promotions = await ReadArray(response);
-        Assert.Equal(4, promotions.Count);
+        Assert.Equal(3, promotions.Count);
         Assert.Equal(seededIds.Order(), promotions.Select(p => p.GetProperty("id").GetInt32()).Order());
-        Assert.Contains(promotions, p => p.GetProperty("requiresCoupon").GetBoolean());
+        Assert.DoesNotContain(promotions, p => p.GetProperty("requiresCoupon").GetBoolean());
         Assert.DoesNotContain(promotions, p => p.GetProperty("name").GetString() is "Draft" or "Ended yesterday" or "Starts tomorrow");
     }
 
@@ -179,7 +185,7 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var promotions = await ReadArray(response);
-        Assert.Equal([10, 8, 6, 5], promotions.Select(p => p.GetProperty("priority").GetInt32()));
+        Assert.Equal([10, 8, 6], promotions.Select(p => p.GetProperty("priority").GetInt32()));
         Assert.Equal(SeededNamesByPriority, promotions.Select(p => p.GetProperty("name").GetString()));
     }
 
@@ -203,10 +209,10 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var promotions = await ReadArray(response);
-        Assert.Equal(6, promotions.Count);
+        Assert.Equal(5, promotions.Count);
         Assert.Equal([100, 100], promotions.Take(2).Select(p => p.GetProperty("priority").GetInt32()));
         Assert.Equal([9000, 9001], promotions.Take(2).Select(p => p.GetProperty("id").GetInt32()));
-        Assert.Equal([10, 8, 6, 5], promotions.Skip(2).Select(p => p.GetProperty("priority").GetInt32()));
+        Assert.Equal([10, 8, 6], promotions.Skip(2).Select(p => p.GetProperty("priority").GetInt32()));
     }
 
     [Fact]
@@ -220,22 +226,22 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var promotions = await ReadArray(response);
-        Assert.Equal(4, promotions.Count);
+        Assert.Equal(3, promotions.Count);
         foreach (var promotion in promotions)
         {
+            // PROMO-2 public shape: status is no longer part of it.
             var names = promotion.EnumerateObject().Select(p => p.Name).ToHashSet();
             Assert.True(
-                new[] { "id", "name", "type", "status", "startsAt", "endsAt", "priority", "requiresCoupon" }.All(names.Contains),
+                new[] { "id", "name", "description", "type", "value", "badgeLabel", "targets", "startsAt", "endsAt", "priority", "requiresCoupon" }.All(names.Contains),
                 $"Missing properties in {promotion}");
+            Assert.DoesNotContain("status", names);
             Assert.Equal(JsonValueKind.String, promotion.GetProperty("type").ValueKind);
-            Assert.Equal(JsonValueKind.String, promotion.GetProperty("status").ValueKind);
             Assert.True(promotion.GetProperty("startsAt").GetDateTimeOffset() < promotion.GetProperty("endsAt").GetDateTimeOffset());
         }
 
-        Assert.Equal(["PercentOff", "AmountOffOrder", "BuyXGetY", "PercentOff"], promotions.Select(p => p.GetProperty("type").GetString()));
-        Assert.All(promotions, p => Assert.Equal("Published", p.GetProperty("status").GetString()));
-        Assert.Equal(1, promotions.Count(p => p.GetProperty("requiresCoupon").GetBoolean()));
-        Assert.Equal(3, promotions.Count(p => !p.GetProperty("requiresCoupon").GetBoolean()));
+        Assert.Equal(["PercentOff", "AmountOffOrder", "BuyXGetY"], promotions.Select(p => p.GetProperty("type").GetString()));
+        Assert.Equal(["-20%", "$10 off", "Buy 2 Get 1"], promotions.Select(p => p.GetProperty("badgeLabel").GetString()));
+        Assert.All(promotions, p => Assert.False(p.GetProperty("requiresCoupon").GetBoolean()));
     }
 
     [Fact]
@@ -312,7 +318,7 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var promotions = await ReadArray(response);
-        Assert.Equal(4, promotions.Count);
+        Assert.Equal(3, promotions.Count);
         Assert.Equal(SeededNamesByPriority, promotions.Select(p => p.GetProperty("name").GetString()));
         Assert.Equal(await anonymous.Content.ReadAsStringAsync(Ct), await response.Content.ReadAsStringAsync(Ct));
     }
@@ -364,10 +370,10 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
         return host;
     }
 
-    private static async Task<List<int>> Ids(PromotionsApiHost host)
+    private static async Task<List<int>> Ids(PromotionsApiHost host, bool includeCouponOnly = true)
     {
         await using var context = host.CreateContext();
-        return await context.Promotions.Select(p => p.Id).ToListAsync(Ct);
+        return await context.Promotions.Where(p => includeCouponOnly || !p.RequiresCoupon).Select(p => p.Id).ToListAsync(Ct);
     }
 
     /// <summary>A Draft, an ended-yesterday and a starts-tomorrow promotion, none of which is active.</summary>
@@ -385,12 +391,13 @@ public sealed class PromotionsApiTests(InfrastructureFixture infrastructure)
     {
         Id = id,
         Name = name,
+        Description = name,
         Type = PromotionType.PercentOff,
         Status = status,
         StartsAt = startsAt,
         EndsAt = endsAt,
         Priority = priority,
-        PercentOff = 5m,
+        Value = 5m,
     };
 
     private static async Task<List<JsonElement>> ReadArray(HttpResponseMessage response)

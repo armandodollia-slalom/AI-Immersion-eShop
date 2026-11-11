@@ -14,7 +14,7 @@ public sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
 /// The real Promotions.API in-process against a real Postgres database. Any public type of the Promotions.API
 /// assembly selects the entry point (its generated Program class is internal).
 /// </summary>
-public sealed class PromotionsApiHost : WebApplicationFactory<global::Promotions.API.PromotionDto>
+public sealed class PromotionsApiHost : WebApplicationFactory<global::Promotions.API.Model.PromotionDetails>
 {
     private readonly string _databaseConnectionString;
     private readonly string _rabbitMqConnectionString;
