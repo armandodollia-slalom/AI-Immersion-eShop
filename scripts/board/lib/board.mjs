@@ -27,8 +27,65 @@ export function storyKind(text) {
   return 'other';
 }
 
+// The epic a story belongs to: the `epic-<slug>.md` file its text links to ("Part of: [...](../epic-x.md)").
+export const epicSlugOf = (text) => /\]\((?:[^)\s]*\/)?(epic-[\w-]+)\.md\)/.exec(text ?? '')?.[1] ?? null;
+
+// Epic files: `epic-*.md` in the epics folder.
+export function listEpics(config) {
+  const dir = path.join(config.root, config.board.epicsDir);
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => /^epic-[\w-]+\.md$/.test(f))
+    .sort()
+    .map((f) => {
+      const file = path.posix.join(config.board.epicsDir, f);
+      const text = fs.readFileSync(path.join(config.root, file), 'utf8');
+      return { slug: f.replace(/\.md$/, ''), file, title: /^#\s+(.+)$/m.exec(text)?.[1] ?? f, text };
+    });
+}
+
+// Mockup folders that belong to a story or epic: folders in the mockups dir named `<KEY>-...` or
+// `<epic-slug>...`. Each carries its files and the README's summary and external links.
+export function mockupsFor(config, owner) {
+  const root = path.join(config.root, config.board.mockupsDir);
+  if (!owner || !fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && (d.name === owner || d.name.startsWith(`${owner}-`)))
+    .map((d) => {
+      const dir = path.posix.join(config.board.mockupsDir, d.name);
+      const files = fs.readdirSync(path.join(root, d.name)).filter((f) => !f.startsWith('.')).sort();
+      const readme = files.includes('README.md') ? fs.readFileSync(path.join(root, d.name, 'README.md'), 'utf8') : '';
+      return { name: d.name, dir, files, readme };
+    });
+}
+
+// The issue section that links a story's or epic's mockups: the folder, the README summary and its
+// external (live) links, every file, and images inline.
+export function renderMockups(config, mockups, { ref = 'main' } = {}) {
+  if (!mockups.length) return '';
+  const base = `https://github.com/${config.board.repo}`;
+  const out = ['## Mockups', ''];
+  for (const m of mockups) {
+    const title = /^#\s+(.+)$/m.exec(m.readme)?.[1] ?? m.name;
+    out.push(`### [${title}](${base}/tree/${ref}/${m.dir})`, '');
+    const summary = m.readme.replace(/^#.*$/gm, '').trim().split(/\n\s*\n/)[0]?.replace(/\]\((?!https?:)[^)]*\)/g, ']')?.trim();
+    if (summary && !summary.startsWith('-') && !summary.startsWith('|')) out.push(summary, '');
+    const links = m.readme.split('\n').filter((l) => /^\s*[-*]\s/.test(l) && /https?:\/\/(?!github\.com)/.test(l));
+    if (links.length) out.push(...links.map((l) => l.trim()), '');
+    for (const f of m.files.filter((f) => f !== 'README.md')) {
+      const p = `${m.dir}/${f}`;
+      if (/\.(png|jpe?g|gif|svg|webp)$/i.test(f)) out.push(`![${f}](${base}/raw/${ref}/${p})`);
+      else out.push(`- [\`${f}\`](${base}/blob/${ref}/${p})`);
+    }
+    out.push('');
+  }
+  return out.join('\n').trimEnd();
+}
+
 const cacheFile = (config) => path.join(config.root, config.stateDir, 'board.json');
-const loadCache = (config) => readJson(cacheFile(config), { issues: {} });
+const loadCache = (config) => ({ issues: {}, epics: {}, ...readJson(cacheFile(config), {}) });
 const saveCache = (config, cache) => writeJson(cacheFile(config), cache);
 
 let activeMemo = null;
@@ -104,7 +161,61 @@ export function moveStory(config, key, column, { force = false } = {}) {
   const item = issueItem(config, issue);
   if (item.column === column || (!force && !isForward(item.column, column))) return { issue, from: item.column, to: item.column, moved: false };
   setColumn(config, item.id, column);
+  try {
+    syncEpicColumns(config);
+  } catch {
+    // The epic's lane is cosmetic; the next poll or setup catches up.
+  }
   return { issue, from: item.column, to: column, moved: true };
+}
+
+// The lane an epic sits in, from its stories' lanes: Done when all are done, Pending Review when all are
+// in review or done, In Progress once any has started, Ready once any is ready, else Backlog.
+export function epicColumn(columns) {
+  const started = ['inProgress', 'review', 'done'];
+  if (columns.length && columns.every((c) => c === 'done')) return 'done';
+  if (columns.length && columns.every((c) => c === 'review' || c === 'done')) return 'review';
+  if (columns.some((c) => started.includes(c))) return 'inProgress';
+  if (columns.some((c) => c === 'ready')) return 'ready';
+  return 'backlog';
+}
+
+// Moves every epic card to the lane its stories call for. Returns the epics moved.
+export function syncEpicColumns(config, items = listItems(config), { log = () => {} } = {}) {
+  const moved = [];
+  for (const epic of items.filter((i) => i.labels.includes(config.board.epicLabel))) {
+    const stories = items.filter((i) => i.parent === epic.number);
+    const target = epicColumn(stories.map((s) => (s.state === 'CLOSED' ? 'done' : s.column)));
+    if (epic.column === target) continue;
+    setColumn(config, epic.itemId, target);
+    epic.column = target;
+    moved.push(epic.number);
+    log(`epic #${epic.number} moved to ${config.board.columns[target]}`);
+  }
+  return moved;
+}
+
+// Gives an epic's open stories the epic's assignees (adding and removing as needed), so assigning an
+// epic assigns all of its stories. Issues only: no project access needed (runs in GitHub Actions).
+export function syncEpicAssignees(config, number) {
+  const [owner, name] = config.board.repo.split('/');
+  const epic = graphql(
+    `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){labels(first:30){nodes{name}} assignees(first:20){nodes{login}} subIssues(first:100){nodes{number state assignees(first:20){nodes{login}}}}}}}`,
+    { owner, name, number },
+  ).repository.issue;
+  if (!epic) throw new Error(`#${number} not found in ${config.board.repo}`);
+  if (!epic.labels.nodes.some((l) => l.name === config.board.epicLabel)) return [];
+  const want = epic.assignees.nodes.map((a) => a.login);
+  const changed = [];
+  for (const story of epic.subIssues.nodes.filter((s) => s.state === 'OPEN')) {
+    const has = story.assignees.nodes.map((a) => a.login);
+    const add = want.filter((l) => !has.includes(l));
+    const remove = has.filter((l) => !want.includes(l));
+    if (!add.length && !remove.length) continue;
+    gh(['issue', 'edit', String(story.number), '-R', config.board.repo, ...(add.length ? ['--add-assignee', add.join(',')] : []), ...(remove.length ? ['--remove-assignee', remove.join(',')] : [])]);
+    changed.push({ number: story.number, add, remove });
+  }
+  return changed;
 }
 
 export function comment(config, number, body) {
@@ -122,7 +233,7 @@ export function listItems(config) {
   let after = null;
   for (;;) {
     const data = graphql(
-      `query($owner:String!,$number:Int!,$field:String!,$after:String){${ownerType}(login:$owner){projectV2(number:$number){items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValueByName(name:$field){... on ProjectV2ItemFieldSingleSelectValue{name}}content{... on Issue{number title url state repository{nameWithOwner}assignees(first:20){nodes{login}}labels(first:30){nodes{name}}}}}}}}}`,
+      `query($owner:String!,$number:Int!,$field:String!,$after:String){${ownerType}(login:$owner){projectV2(number:$number){items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValueByName(name:$field){... on ProjectV2ItemFieldSingleSelectValue{name}}content{... on Issue{number title url state repository{nameWithOwner}assignees(first:20){nodes{login}}labels(first:30){nodes{name}}parent{number}}}}}}}}`,
       { owner, number: projectNumber, field: statusField, after },
     );
     const page = data[ownerType].projectV2.items;
@@ -140,6 +251,7 @@ export function listItems(config) {
         key: storyKeyOf(n.content.title),
         assignees: n.content.assignees.nodes.map((a) => a.login),
         labels: n.content.labels.nodes.map((l) => l.name),
+        parent: n.content.parent?.number ?? null,
       });
     }
     if (!page.pageInfo.hasNextPage) return items;
@@ -200,6 +312,7 @@ const LABELS = (config) => [
   [config.board.blockedLabel, 'b60205', 'The pipeline could not finish this story; a human needs to look'],
   ['frontend', '1d76db', 'Visible UI work (WebApp)'],
   ['backend', '0e8a16', 'API and service work'],
+  [config.board.epicLabel, '3e4b9e', 'A group of stories; its stories are its sub-issues'],
 ];
 
 const COLUMN_STYLE = {
@@ -214,7 +327,9 @@ const COLUMN_STYLE = {
 function storyIssueBody(config, story, text) {
   const blob = `https://github.com/${config.board.repo}/blob/main/${story.file}`;
   const body = text.replace(/^#\s+.+\n+/, '');
+  const mockups = renderMockups(config, mockupsFor(config, story.key));
   return [
+    ...(mockups ? [mockups, '', '---', ''] : []),
     `**Story file:** [\`${story.file}\`](${blob})`,
     '',
     `Assign this issue to yourself and move it to **${config.board.columns.ready}** when it is ready for implementation (cards in **${config.board.columns.backlog}** are never picked up): \`node scripts/board/board.mjs pick\` on your machine picks it up and runs the pipeline, moving the card to **${config.board.columns.inProgress}** and then **${config.board.columns.review}** with the PR.`,
@@ -223,6 +338,62 @@ function storyIssueBody(config, story, text) {
     '',
     body.length > 55000 ? `${body.slice(0, 55000)}\n\n_(truncated; see the story file)_` : body,
   ].join('\n');
+}
+
+function epicIssueBody(config, epic, stories) {
+  const blob = `https://github.com/${config.board.repo}/blob/main/${epic.file}`;
+  const body = epic.text.replace(/^#\s+.+\n+/, '');
+  const own = mockupsFor(config, epic.slug);
+  const mockups = renderMockups(config, [...own, ...stories.flatMap((s) => mockupsFor(config, s.key))]);
+  return [
+    `**Epic file:** [\`${epic.file}\`](${blob})`,
+    '',
+    `The stories of this epic are its sub-issues: open them from the list below, or see them on the board's **Stories by epic** view. Assigning this epic assigns all of its open stories; its lane follows its stories' lanes.`,
+    '',
+    ...(mockups ? [mockups, '', '---', ''] : ['---', '']),
+    body.length > 55000 ? `${body.slice(0, 55000)}\n\n_(truncated; see the epic file)_` : body,
+  ].join('\n');
+}
+
+function findEpicIssue(config, epic) {
+  const cache = loadCache(config);
+  if (cache.epics[epic.slug]) return cache.epics[epic.slug];
+  const found = ghJson(['issue', 'list', '-R', config.board.repo, '--label', config.board.epicLabel, '--state', 'all', '--json', 'number,title,url,body', '--limit', '100']);
+  const issue = (found ?? []).find((i) => i.body?.includes(`\`${epic.file}\``) || i.title === epic.title);
+  if (!issue) return null;
+  cache.epics[epic.slug] = { number: issue.number, url: issue.url };
+  saveCache(config, cache);
+  return cache.epics[epic.slug];
+}
+
+// Creates or refreshes the issue; returns { issue, created, updated }.
+function upsertIssue(config, { find, cacheKey, cacheId, title, labels, body }) {
+  const { repo } = config.board;
+  let issue = find();
+  if (!issue) {
+    const url = gh(['issue', 'create', '-R', repo, '--title', title, '--body-file', '-', ...labels.flatMap((l) => ['--label', l])], { input: body }).trim();
+    const cache = loadCache(config);
+    cache[cacheKey][cacheId] = { number: Number(url.split('/').pop()), url };
+    saveCache(config, cache);
+    return { issue: cache[cacheKey][cacheId], created: true };
+  }
+  // Keep issue bodies in step with the source file and the board's instructions.
+  if (ghJson(['issue', 'view', String(issue.number), '-R', repo, '--json', 'body']).body.trim() !== body.trim()) {
+    gh(['issue', 'edit', String(issue.number), '-R', repo, '--body-file', '-'], { input: body });
+    return { issue, updated: true };
+  }
+  return { issue };
+}
+
+// Makes `child` a sub-issue of `parent` (moving it from another parent if needed).
+function ensureParent(config, parent, child) {
+  const [owner, name] = config.board.repo.split('/');
+  const q = (n) => graphql(`query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){id parent{number}}}}`, { owner, name, number: n }).repository.issue;
+  const c = q(child.number);
+  if (c.parent?.number === parent.number) return false;
+  const p = q(parent.number);
+  graphql(`mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c,replaceParent:true}){issue{id}}}`, { p: p.id, c: c.id });
+  return true;
 }
 
 export function setup(config, { listStories, log, writeProjectNumber }) {
@@ -246,36 +417,48 @@ export function setup(config, { listStories, log, writeProjectNumber }) {
 
   ensureColumns(config, log);
   resetMemo();
-  const view = ensureBoardView(config);
-  log(view);
+  log(ensureViews(config));
 
   const created = [];
   const updated = [];
-  for (const story of listStories(config)) {
-    const text = fs.readFileSync(path.join(config.root, story.file), 'utf8');
-    let issue = findIssue(config, story.key);
-    if (!issue) {
-      const title = /^#\s+(.+)$/m.exec(text)?.[1] ?? story.key;
-      const kind = storyKind(text);
-      const labels = [config.board.storyLabel, story.key.startsWith('BUG-') || /\*\*Type:\*\*\s*Bug/.test(text) ? 'bug' : 'enhancement', ...(kind === 'ui' ? ['frontend'] : kind === 'api' ? ['backend'] : [])];
-      const url = gh(['issue', 'create', '-R', repo, '--title', title, '--body-file', '-', ...labels.flatMap((l) => ['--label', l])], { input: storyIssueBody(config, story, text) }).trim();
-      const cache = loadCache(config);
-      cache.issues[story.key] = { number: Number(url.split('/').pop()), url };
-      saveCache(config, cache);
-      issue = cache.issues[story.key];
-      created.push(story.key);
-    } else {
-      // Keep issue bodies in step with the story file and the board's instructions.
-      const body = storyIssueBody(config, story, text);
-      if (ghJson(['issue', 'view', String(issue.number), '-R', repo, '--json', 'body']).body.trim() !== body.trim()) {
-        gh(['issue', 'edit', String(issue.number), '-R', repo, '--body-file', '-'], { input: body });
-        updated.push(story.key);
-      }
-    }
-    const item = issueItem(config, issue);
+  const stories = listStories(config).map((story) => ({ ...story, text: fs.readFileSync(path.join(config.root, story.file), 'utf8') }));
+  const epics = {};
+  for (const epic of listEpics(config)) {
+    const own = stories.filter((s) => epicSlugOf(s.text) === epic.slug);
+    const r = upsertIssue(config, {
+      find: () => findEpicIssue(config, epic),
+      cacheKey: 'epics',
+      cacheId: epic.slug,
+      title: `Epic: ${epic.title.replace(/^Epic:\s*/i, '')}`,
+      labels: [config.board.epicLabel],
+      body: epicIssueBody(config, epic, own),
+    });
+    if (r.created) created.push(epic.slug);
+    if (r.updated) updated.push(epic.slug);
+    epics[epic.slug] = r.issue;
+    issueItem(config, r.issue);
+  }
+  let linked = 0;
+  for (const story of stories) {
+    const { text } = story;
+    const kind = storyKind(text);
+    const r = upsertIssue(config, {
+      find: () => findIssue(config, story.key),
+      cacheKey: 'issues',
+      cacheId: story.key,
+      title: /^#\s+(.+)$/m.exec(text)?.[1] ?? story.key,
+      labels: [config.board.storyLabel, story.key.startsWith('BUG-') || /\*\*Type:\*\*\s*Bug/.test(text) ? 'bug' : 'enhancement', ...(kind === 'ui' ? ['frontend'] : kind === 'api' ? ['backend'] : [])],
+      body: storyIssueBody(config, story, text),
+    });
+    if (r.created) created.push(story.key);
+    if (r.updated) updated.push(story.key);
+    const epic = epics[epicSlugOf(text)];
+    if (epic && ensureParent(config, epic, r.issue)) linked++;
+    const item = issueItem(config, r.issue);
     if (!item.column) setColumn(config, item.id, 'backlog');
   }
-  log(`${created.length} issue(s) created${created.length ? `: ${created.join(', ')}` : ''}, ${updated.length} issue body(ies) refreshed; every story is on the board`);
+  log(`${created.length} issue(s) created${created.length ? `: ${created.join(', ')}` : ''}, ${updated.length} issue body(ies) refreshed, ${linked} story(ies) linked under their epic; every story is on the board`);
+  syncEpicColumns(config, listItems(config), { log });
   return project(config).url;
 }
 
@@ -314,14 +497,38 @@ function ensureColumns(config, log) {
   log(`columns set: ${wanted.join(' | ')}; ${restore.length} card(s) kept in their columns`);
 }
 
-function ensureBoardView(config) {
-  const { owner, ownerType, projectNumber } = config.board;
+// The project's views, in tab order: the first is the default. GitHub can't reorder views, so when the
+// order is wrong the managed views are recreated in this order and the old ones deleted.
+const VIEWS = (config, f) => [
+  { name: 'Epics', layout: 'board', filter: `label:${config.board.epicLabel}`, vertical_group_by: [f.status] },
+  { name: 'Stories by epic', layout: 'board', filter: `-label:${config.board.epicLabel}`, group_by: [f.parent], vertical_group_by: [f.status] },
+  { name: 'Stories', layout: 'board', filter: `-label:${config.board.epicLabel}`, vertical_group_by: [f.status] },
+  { name: 'All items', layout: 'table' },
+];
+const FORMER_VIEWS = ['View 1', 'Board', 'Board by epic'];
+
+function ensureViews(config) {
+  const { owner, ownerType, projectNumber, statusField } = config.board;
   try {
-    const data = graphql(`query($owner:String!,$number:Int!){${ownerType}(login:$owner){projectV2(number:$number){views(first:50){nodes{layout}}}}}`, { owner, number: projectNumber });
-    if (data[ownerType].projectV2.views.nodes.some((v) => v.layout === 'BOARD_LAYOUT')) return 'board view ready';
-    gh(['api', '-X', 'POST', `${ownerType === 'user' ? 'users' : 'orgs'}/${owner}/projectsV2/${projectNumber}/views`, '-f', 'name=Board', '-f', 'layout=board']);
-    return 'board view created';
+    const p = graphql(
+      `query($owner:String!,$number:Int!){${ownerType}(login:$owner){projectV2(number:$number){views(first:50){nodes{id name filter}} fields(first:50){nodes{... on ProjectV2FieldCommon{databaseId name dataType}}}}}}`,
+      { owner, number: projectNumber },
+    )[ownerType].projectV2;
+    const field = (pred) => p.fields.nodes.find(pred)?.databaseId;
+    const want = VIEWS(config, { status: field((x) => x.name === statusField), parent: field((x) => x.dataType === 'PARENT_ISSUE') });
+    const views = p.views.nodes;
+    if (want.every((w, i) => views[i]?.name === w.name)) {
+      for (const [i, w] of want.entries()) {
+        if (w.filter && views[i].filter !== w.filter) graphql('mutation($id:ID!,$filter:String!){updateProjectV2View(input:{viewId:$id,filter:$filter}){clientMutationId}}', { id: views[i].id, filter: w.filter });
+      }
+      return `views ready: ${want.map((w) => w.name).join(', ')}`;
+    }
+    const managed = new Set([...want.map((w) => w.name), ...FORMER_VIEWS]);
+    for (const w of want) gh(['api', '-X', 'POST', `${ownerType === 'user' ? 'users' : 'orgs'}/${owner}/projectsV2/${projectNumber}/views`, '--input', '-'], { input: JSON.stringify(w) });
+    for (const v of views.filter((v) => managed.has(v.name))) graphql('mutation($id:ID!){deleteProjectV2View(input:{viewId:$id}){clientMutationId}}', { id: v.id });
+    const others = views.filter((v) => !managed.has(v.name)).map((v) => `"${v.name}"`);
+    return `views rebuilt: ${want.map((w) => w.name).join(', ')}${others.length ? `; drag Epics before ${others.join(', ')} to make it the default` : ''}`;
   } catch (error) {
-    return `could not create a board view through the API (${error.message.split('\n')[0]}); open the project and switch the view layout to Board`;
+    return `could not set up the views through the API (${error.message.split('\n')[0]}); add them by hand: ${'Epics (label:epic), Stories by epic (group by Parent issue), Stories'}`;
   }
 }
