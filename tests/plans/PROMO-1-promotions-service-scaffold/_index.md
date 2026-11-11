@@ -6,10 +6,10 @@ plan-sha: 509d55bc6934
 verified-score: 9
 verified-at: "2026-11-11T15:41:26.760Z"
 verified-by: qe-plan@c3934e11/456099fb
-automation-sha: afd3b90f8691
+automation-sha: c836f883de1e
 automation-plan-sha: 509d55bc6934
-automation-score: 9
-automation-verified-at: "2026-11-11T16:32:26.040Z"
+automation-score: 10
+automation-verified-at: "2026-11-11T16:50:05.927Z"
 ---
 # Test plan: PROMO-1 [BE - Promotions.API, eShop.AppHost, Identity.API] - Promotions service scaffold
 
