@@ -117,8 +117,8 @@ test.describe('Catalog.API admin writes', () => {
       await expectProblem(await post(request, { ...newItem, price: -5 }), 400);
     });
 
-    // BUG: an id that already exists causes a primary-key violation and a 500.
-    adminTest.fixme('creating an item with an existing id is rejected with 409', async ({ request }) => {
+    // BUG-18: an id that already exists is rejected with 409 instead of a primary-key violation.
+    adminTest('creating an item with an existing id is rejected with 409', async ({ request }) => {
       expect((await post(request, { ...newItem, id: 1 })).status()).toBe(409);
       expect((await (await getItem(request, 1)).json()).name).toBe('Edge 01 Penny Boot');
     });
