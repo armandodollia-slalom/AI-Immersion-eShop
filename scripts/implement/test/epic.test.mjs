@@ -110,6 +110,7 @@ function fakeDeps(note, extra = {}) {
     lsp: fakeLsp(),
     board: (root, key, args) => board.push([key, ...args]),
     epicQe: async (env, { key }) => ({ status: 'verified', key }),
+    reverifyStale: async () => ({ stale: [], failed: [] }),
     prCheck: async (env, keys) => (checks.push(keys), { verdict: 'PASS', score: 10, openFindings: [] }),
     openPr: (env, { title, body, existing }) => {
       prs.push({ title, body, branch: env.branch, base: env.prBase, existing });
@@ -383,6 +384,20 @@ test('bug epic: a ticket still escalated from an earlier run is not run again an
   assert.equal(byKey['BUG-1'].outcome, 'qe-escalated');
   assert.match(byKey['BUG-2'].reason, /^blocker BUG-1 ended qe-escalated/);
   assert.deepEqual(f.prs.map((p) => p.branch), ['bugfix/shop/auth']);
+});
+
+test('bug epic: tickets whose verified tests went stale through later tickets are re-verified before the push; a failed re-verify blocks the PR', async () => {
+  const env = makeRepo({ bugs: true });
+  const worker = fakeWorker();
+  const note = { stories: [], prGroups: [{ id: 'cart', tickets: ['BUG-1', 'BUG-2'] }, { id: 'auth', tickets: ['BUG-3'] }] };
+  const seen = [];
+  const reverifyStale = async (uenv, keys) => (seen.push([uenv.unit.id, keys]), uenv.unit.id === 'cart' ? { stale: ['BUG-1'], failed: ['BUG-1'] } : { stale: [], failed: [] });
+  const f = fakeDeps(note, { startWorker: worker.startWorker, reverifyStale });
+  const r = await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+  assert.deepEqual(seen.map(([id, keys]) => [id, [...keys].sort()]), [['cart', ['BUG-1', 'BUG-2']], ['auth', ['BUG-3']]]);
+  assert.deepEqual(f.prs.map((p) => p.branch), ['bugfix/shop/auth'], 'the cart group gets no PR while BUG-1 is not re-verified');
+  assert.equal(loadEpicRun(env.config, 'epic-shop').units.cart.outcome, 'qe-reverify-failed');
+  assert.equal(r.epic.outcome, 'qe-reverify-failed');
 });
 
 test('bug epic: a stacked group gets the tickets of the groups below it synced before its PR check and push', async () => {

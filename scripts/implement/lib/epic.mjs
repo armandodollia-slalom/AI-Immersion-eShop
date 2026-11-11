@@ -270,6 +270,24 @@ export async function epicQe(env, { key, note }) {
   return { status: state().automation?.status ?? 'unknown', bugs: state().automation?.bugs ?? [] };
 }
 
+// The tickets on a unit branch whose verified tests went stale because other tickets edited the same
+// spec files (`qe check`: "tests or scenario edited after verification"); QE automates each again in
+// the unit worktree, which re-runs its verifier, and the result is committed.
+const STALE_TESTS = /^FAIL\s+(\S+)\s.*tests or scenario edited after verification/;
+export async function reverifyStale(env, keys) {
+  const { wtConfig, worktree, base, log = () => {} } = env;
+  const checked = cli(QE_CLI, worktree, base, ['check', '--changed-from', wtConfig.baseRef], { sources: keys.map((k) => ticketDir(wtConfig, k)) });
+  const stale = (checked.stdout ?? '').split('\n').map((l) => STALE_TESTS.exec(l)?.[1]).filter((k) => k && keys.includes(k));
+  const failed = [];
+  for (const key of stale) {
+    log(`${key}: its verified tests changed with later tickets' spec edits; re-verifying them in ${env.branch}`);
+    const r = cli(QE_CLI, worktree, base, ['automate', key], { timeoutSec: wtConfig.implement.qeTimeoutSec, sources: [ticketDir(wtConfig, key)] });
+    commitAll(worktree, `${key}: Re-verify automated tests after later tickets edited their spec files`);
+    if (r.status !== 0) failed.push(key);
+  }
+  return { stale, failed };
+}
+
 // The PR check of a whole unit (its tickets, and the journey ticket) against the unit diff, in one run of
 // the PR check's multi-ticket mode (`run --stories K1,K2`): every frontend ticket gets the design lens.
 // Report only unless `fix` (fixes are committed on the unit branch).
@@ -289,7 +307,7 @@ export async function prCheckUnit(env, keys, { fix = false } = {}) {
 function openPr(env, { title, body, existing = null }) {
   const { worktree, branch, prBase } = env;
   const push = git(worktree, ['push', '-u', 'origin', branch]);
-  if (push.status !== 0) return { url: null, reason: `push failed: ${tail(push.stderr, 300)}` };
+  if (push.status !== 0) return { url: null, reason: `push failed: ${tail(`${push.stderr ?? ''}\n${push.stdout ?? ''}`.trim(), 600)}` };
   const prior = existing ?? (run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url'], { cwd: worktree }).stdout ?? '').trim();
   if (prior) {
     run('gh', ['pr', 'edit', prior, '--body', body], { cwd: worktree });
@@ -302,6 +320,7 @@ function openPr(env, { title, body, existing = null }) {
 export const defaultDeps = (config, log) => ({
   runAgent: runAgentAsync,
   startWorker,
+  reverifyStale,
   lsp: lspAdapter(config, { log }),
   board: (root, key, args, opts) => boardEvent(root, key, args, opts),
   planEpic,
@@ -525,7 +544,13 @@ async function deliverUnit(env, unit, units, epicWt) {
     }
   };
   addStack(unit);
-  syncTickets(uenv, [...unit.keys, ...units.filter((u) => stacked.has(u.id)).flatMap((u) => u.keys)], state);
+  const branchKeys = [...unit.keys, ...units.filter((u) => stacked.has(u.id)).flatMap((u) => u.keys)];
+  syncTickets(uenv, branchKeys, state);
+  // Tickets of one branch add cases to the same spec files, so a later ticket changes the files an
+  // earlier ticket's verified tests live in and that ticket's automation hash goes stale. Its QE runs
+  // again in the unit worktree (verifier gate unchanged) before the pre-push check sees it.
+  const reverified = await deps.reverifyStale(uenv, branchKeys);
+  if (reverified.failed.length) return finish('qe-reverify-failed', { reason: `re-verifying the tests of ${reverified.failed.join(', ')} after later tickets edited their spec files failed` });
 
   // The PR check for the whole unit, in one run: every ticket (frontend ones get the design lens) and
   // the journeys. Each ticket's row in the PR body shows the unit's result.
