@@ -14,10 +14,28 @@ export function log(...args) {
   process.stderr.write(`[${logTag}] ${args.join(' ')}\n`);
 }
 
-export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true } = {}) {
+// Windows cannot spawn an extensionless shebang script (testing/teststack): run it through bash.
+function viaBash(cmd, args, cwd) {
+  if (process.platform !== 'win32' || path.extname(cmd)) return [cmd, args];
+  const file = path.resolve(cwd ?? process.cwd(), cmd);
+  try {
+    const fd = fs.openSync(file, 'r');
+    const head = Buffer.alloc(2);
+    fs.readSync(fd, head, 0, 2, 0);
+    fs.closeSync(fd);
+    if (head.toString() === '#!') return ['bash', [file.replace(/\\/g, '/'), ...args]];
+  } catch {
+    // not a local file: a command on PATH
+  }
+  return [cmd, args];
+}
+
+export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true, shell = false } = {}) {
+  if (!shell) [cmd, args] = viaBash(cmd, args, cwd);
   const result = spawnSync(cmd, args, {
     cwd,
     input,
+    shell,
     env: env ?? process.env,
     encoding: 'utf8',
     windowsHide: true,
@@ -38,6 +56,7 @@ export function run(cmd, args, { cwd, input, env, timeoutSec, allowFail = true }
 
 // Async twin of run(): lets a caller run several processes at once. Same result shape.
 export function runAsync(cmd, args, { cwd, input, env, timeoutSec, signal } = {}) {
+  [cmd, args] = viaBash(cmd, args, cwd);
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
