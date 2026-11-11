@@ -22,4 +22,21 @@ public static class CatalogItemValidation
 
         return errors;
     }
+
+    /// <summary>
+    /// Adds an error for each brand or type id that does not exist, so unknown ids are rejected
+    /// with 400 instead of failing the foreign key on save.
+    /// </summary>
+    public static async Task AddReferenceErrorsAsync(CatalogItem item, CatalogContext context, Dictionary<string, string[]> errors)
+    {
+        if (!await context.CatalogBrands.AnyAsync(b => b.Id == item.CatalogBrandId))
+        {
+            errors[nameof(CatalogItem.CatalogBrandId)] = [$"Catalog brand with id {item.CatalogBrandId} does not exist."];
+        }
+
+        if (!await context.CatalogTypes.AnyAsync(t => t.Id == item.CatalogTypeId))
+        {
+            errors[nameof(CatalogItem.CatalogTypeId)] = [$"Catalog type with id {item.CatalogTypeId} does not exist."];
+        }
+    }
 }
