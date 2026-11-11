@@ -260,7 +260,10 @@ Each run saves its story list and options to `.agent-state/implement/batch.json`
 
 - stories that finished `done` and still have their branch are kept, and their dependents still stack on them (`--force` redoes them);
 - stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there, the runner goes straight to the tests; otherwise the implementer continues from the work on the branch, and the review keeps its round count;
+- stories whose issue is labeled `escalation-resolved` (a human answered the questions of their failure comment) run again from the start, as with `--force` for that story's earlier outcome, with the issue's `## Decisions` in every agent prompt as binding requirements; the claim removes the label and the old escalation notes ([escalations](escalations.md#questions-and-the-resolve-checkbox)). `implement resume` refreshes the cached tickets first, so a label added since is seen;
 - the rest run as usual.
+
+`implement requeue` runs every resolved ticket in one batch after `board sync` moved it back to Ready; it does nothing when nothing is resolved, a run is active or interrupted here, or the agent provider is out, so it can run on a timer ([requeue on a timer](escalations.md#requeue-on-a-timer)).
 
 A QE run that dies while the runner waits is resumed by the QE stage's own [recovery](qe.md#crash-recovery). A worker that fails with `error` or `qe-not-started` is retried `maxWorkerRetries` times in the same run.
 
