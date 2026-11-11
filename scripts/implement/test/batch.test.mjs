@@ -63,20 +63,27 @@ test('a later run resumes the stories an interrupted run left part-way, in their
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('a story still escalated from a previous run keeps its outcome and its dependents stay blocked; --force retries it', () => {
+test('a story whose escalation still stands keeps its outcome and its dependents stay blocked; handling it or --force runs it again', () => {
   const dir = storiesDir({ 'B-1-a.md': '# B-1 A\n', 'B-2-b.md': `# B-2 B\n\n${blocked('B-1')}`, 'B-3-c.md': '# B-3 C\n' });
   const config = { baseRef: 'origin/main', root: dir, stateDir: '.agent-state', implement: { branchPrefix: 'feat/', worktreeDir: '../{repo}-wt' } };
   const runs = path.join(dir, '.agent-state', 'implement');
   fs.mkdirSync(runs, { recursive: true });
   fs.writeFileSync(path.join(runs, 'B-1.json'), JSON.stringify({ key: 'B-1', worktree: dir, status: 'finished', outcome: 'qe-escalated' }));
   fs.writeFileSync(path.join(runs, 'B-3.json'), JSON.stringify({ key: 'B-3', worktree: dir, status: 'finished', outcome: 'review-escalated' }));
+  const escalations = path.join(dir, '.agent-state', 'escalations');
+  fs.mkdirSync(escalations, { recursive: true });
+  fs.writeFileSync(path.join(escalations, 'B-1-automation.md'), '# B-1 automation: tests did not reach 9/10\n');
+  fs.writeFileSync(path.join(escalations, 'B-3-review.md'), '# B-3 review: did not converge\n');
   const by = Object.fromEntries(plan(config, [dir]).map((s) => [s.key, s]));
-  assert.match(by['B-1'].skip, /qe-escalated in a previous run: waits for a human/);
+  assert.match(by['B-1'].skip, /qe-escalated in a previous run: its escalation waits for a human/);
   assert.deepEqual(skippedOutcome(by['B-1']).outcome, 'qe-escalated');
   assert.equal(by['B-3'].escalatedBefore, 'review-escalated');
   assert.deepEqual(by['B-2'].deps, ['B-1'], 'the escalated blocker still blocks B-2');
   const forced = Object.fromEntries(plan(config, [dir], { force: true }).map((s) => [s.key, s]));
   assert.equal(forced['B-1'].skip, null);
+  // Once the escalation is handled (its note cleared), the story runs again without --force.
+  fs.rmSync(path.join(escalations, 'B-1-automation.md'));
+  assert.equal(plan(config, [dir]).find((s) => s.key === 'B-1').skip, null);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

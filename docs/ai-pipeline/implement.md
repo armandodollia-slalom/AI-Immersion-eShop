@@ -260,7 +260,7 @@ Each run saves its story list and options to `.agent-state/implement/batch.json`
 
 - stories that finished `done` and still have their branch are kept, and their dependents still stack on them (`--force` redoes them);
 - stories that were in progress, or ended `error`, `qe-crashed`, `qe-not-started` or `qe-timed-out`, resume in their worktree. If the review had already approved the code there (the hash is taken against the story's base, its group or epic branch in epic delivery, as the review took it), the runner goes straight to the tests; otherwise the implementer continues from the work on the branch, and the review keeps its round count;
-- stories that ended `qe-escalated` or `review-escalated` wait for a human (see `.agent-state/escalations/` in their worktree): they keep that outcome, and their dependents are skipped for it, instead of running again to the same end. `--force` retries them once the escalation is handled;
+- stories that ended `qe-escalated`, `qe-blocked-on-plan` or `review-escalated` keep that outcome while their escalation note is still in their worktree (`.agent-state/escalations/<KEY>-automation.md`, `-plan.md` or `-review.md`), and their dependents are skipped for it, instead of running again to the same end. Once the escalation is handled (a re-run of that stage that passes clears its note, or a human deletes it), the next run picks the story up; `--force` runs it regardless;
 - the rest run as usual.
 
 A QE run that dies while the runner waits is resumed by the QE stage's own [recovery](qe.md#crash-recovery). A worker that fails with `error` or `qe-not-started` is retried `maxWorkerRetries` times in the same run.

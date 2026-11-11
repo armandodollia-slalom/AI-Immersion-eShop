@@ -371,6 +371,9 @@ test('bug epic: a ticket still escalated from an earlier run is not run again an
   const runs = path.join(env.repo, '.agent-state', 'implement');
   fs.mkdirSync(runs, { recursive: true });
   fs.writeFileSync(path.join(runs, 'BUG-1.json'), JSON.stringify({ key: 'BUG-1', status: 'finished', outcome: 'qe-escalated' }));
+  const escalations = path.join(env.tmp, 'shop-worktrees', 'bug-1', '.agent-state', 'escalations');
+  fs.mkdirSync(escalations, { recursive: true });
+  fs.writeFileSync(path.join(escalations, 'BUG-1-automation.md'), '# BUG-1 automation: tests did not reach 9/10\n');
   const worker = fakeWorker();
   const note = { stories: [], prGroups: [{ id: 'cart', tickets: ['BUG-1', 'BUG-2'] }, { id: 'auth', tickets: ['BUG-3'] }] };
   const f = fakeDeps(note, { startWorker: worker.startWorker });

@@ -30,9 +30,16 @@ const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on
 // them itself a few times.
 const INTERRUPTED = new Set(['error', 'qe-crashed', 'qe-not-started', 'qe-timed-out']);
 const RETRYABLE = new Set(['error', 'qe-not-started']);
-// Outcomes that wait for a human (the escalation in .agent-state/escalations/): a later run keeps the
-// outcome instead of running the story again to the same end; --force retries it.
-const NEEDS_HUMAN = new Set(['qe-escalated', 'review-escalated']);
+// Outcomes that wait for a human, and the stage whose escalation note says so: while the note is still in
+// the story's worktree (.agent-state/escalations/<KEY>-<stage>.md), a later run keeps the outcome
+// instead of running the story again to the same end. Handling the escalation (a stage re-run that
+// passes clears its note, or a human deletes it) or --force runs it again.
+const ESCALATION_STAGE = { 'qe-escalated': 'automation', 'qe-blocked-on-plan': 'plan', 'review-escalated': 'review' };
+const escalationStands = (config, s, prev) => {
+  const stage = ESCALATION_STAGE[prev?.outcome];
+  const wt = prev?.worktree ?? worktreeFor(config, s);
+  return Boolean(stage) && fs.existsSync(path.join(wt, config.stateDir, 'escalations', `${s.key}-${stage}.md`));
+};
 // The outcome a story skipped by plan() reports: its standing escalation, or `skipped`.
 export const skippedOutcome = (s) => ({ outcome: s.escalatedBefore ?? 'skipped', reason: s.skip });
 
@@ -57,8 +64,8 @@ export function plan(config, inputs, { base = config.baseRef, force = false } = 
     if (prev?.outcome === 'done' && prev.branch && revExists(config.root, `refs/heads/${prev.branch}`)) {
       s.skip = `done in a previous run (--force to redo)`;
       s.doneBefore = true;
-    } else if (NEEDS_HUMAN.has(prev?.outcome)) {
-      s.skip = `${prev.outcome} in a previous run: waits for a human (--force to retry)`;
+    } else if (escalationStands(config, s, prev)) {
+      s.skip = `${prev.outcome} in a previous run: its escalation waits for a human (--force to retry)`;
       s.escalatedBefore = prev.outcome;
     }
     // A record without a worktree (an epic run's story that died before reporting one) resumes in the
