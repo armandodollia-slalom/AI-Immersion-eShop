@@ -23,6 +23,7 @@ import { newFeedbackLog } from './feedback.mjs';
 import { epicNoteBlock, integrationTask } from './tasks.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
+const QE_CLI = path.join(INSTALL_ROOT, 'scripts/qe/qe.mjs');
 const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
 // Outcomes from a run that died rather than finished: the next run resumes them, and the batch retries
 // them itself a few times.
@@ -487,6 +488,8 @@ async function implementStoryInner(config, opts, holder) {
   const qeFindings = outcome === 'done' ? undefined : (qe.bugs ?? []).map((b) => (typeof b === 'string' ? b : b.title ?? b.issue ?? JSON.stringify(b)));
   const result = finish(outcome, qeReason, qeFindings?.length ? { findings: qeFindings } : {});
   recordOutcome(outcome, qeReason);
+  // Plans verified before the runner tidied their tables would fail the pre-commit markdownlint.
+  run(process.execPath, [QE_CLI, 'tidy', key], { cwd: worktree, env: { ...process.env, PIPELINE_ROOT: worktree } });
   commitAll(worktree, `${key}: Add verified test plan and automated tests`);
   result.finalSha = headSha(worktree);
 

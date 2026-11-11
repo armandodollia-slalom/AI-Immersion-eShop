@@ -123,6 +123,28 @@ export function stampIndex(config, story, fields) {
   fs.writeFileSync(file, stringifyFrontMatter(next, body));
 }
 
+// Agents often write table delimiter rows without spaces (`|----|----|`), which markdownlint's MD060
+// rejects and `--fix` cannot repair, so the runner normalizes them to `| --- | --- |`.
+export const tidyTableDelimiters = (text) =>
+  text.replace(/^[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*$/gm, (row) => `| ${row.trim().slice(1, -1).split('|').map((cell) => cell.trim()).join(' | ')} |`);
+
+// Formatting-only tidy of the plan files. A plan that was verified stays verified: only whitespace in
+// table delimiter rows changed, so the runner re-stamps its plan-sha.
+export function tidyPlan(config, story) {
+  const before = readPlan(config, story);
+  const verified = before.index != null && before.index.data['plan-sha'] === planContentSha(before);
+  const files = [...(before.index ? [{ file: `${story.planDir}/${INDEX}`, text: before.index.text }] : []), ...before.cases];
+  let changed = false;
+  for (const { file, text } of files) {
+    const next = tidyTableDelimiters(text);
+    if (next === text) continue;
+    fs.writeFileSync(path.join(config.root, file), next);
+    changed = true;
+  }
+  if (changed && verified) stampIndex(config, story, { 'plan-sha': planContentSha(readPlan(config, story)) });
+  return changed;
+}
+
 // Test files and scenario files that implement a story's cases.
 export function automationFiles(config, story, reader = fsReader(config.root)) {
   const tests = new Map();

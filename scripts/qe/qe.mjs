@@ -10,7 +10,7 @@ import { keysFromPaths, keysInText, loadTicket, storyOf } from '../pipeline/lib/
 import { selfProcess, setLogTag } from '../pipeline/lib/util.mjs';
 import { calibrateCommand, formatLessonsRecovery, lessonsCommand, recoverLessons } from './lib/lessons.mjs';
 import { computeMetrics, formatMetrics } from './lib/metrics.mjs';
-import { automationFiles, automationStatus, planStatus } from './lib/plans.mjs';
+import { automationFiles, automationStatus, planStatus, tidyPlan } from './lib/plans.mjs';
 import { automationLoop, formatRecovery, hookStop, planLoop, recoverAll, sessionContext, spawnQe } from './lib/workflows.mjs';
 
 setLogTag('qe');
@@ -24,6 +24,7 @@ Workflow 1 (story -> verified test plan)
 Workflow 2 (review-approved implementation -> verified automated tests)
   automate <story> [--impl-hash <h>] [--skip-tests] [--resume] [--background]
   status [story]
+  tidy <story>                  normalize the plan's markdown tables (keeps a verified plan verified)
 
 Recovery
   resume [story...] [--force]   resume plan and automation runs that died (crash, kill, reboot) from
@@ -197,6 +198,12 @@ async function main() {
       const lessons = keys ? null : recoverLessons(config, { force: Boolean(flags.force) });
       if (lessons) console.log(formatLessonsRecovery(lessons));
       if (!results.length && !lessons) console.log(`No interrupted QE runs${keys ? ` for ${keys.join(', ')}` : ''}.`);
+      return 0;
+    }
+
+    case 'tidy': {
+      const story = requireStory(config, positional[0]);
+      console.log(`${story.key}: ${tidyPlan(config, story) ? 'plan markdown tidied' : 'plan markdown already tidy'}`);
       return 0;
     }
 

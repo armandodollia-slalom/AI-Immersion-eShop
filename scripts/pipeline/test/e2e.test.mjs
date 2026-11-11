@@ -8,6 +8,8 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { CACHE, seedTicket } from './fixtures/tickets.mjs';
+import { fsReader } from '../lib/git.mjs';
+import { planContentSha, readPlan } from '../../qe/lib/plans.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = path.resolve(here, '..', '..', '..');
@@ -130,6 +132,15 @@ test('workflow 1: plan loops with a fresh verifier until 10/10, logs denials, an
 
   const index = read(`${PLAN}/_index.md`);
   assert.match(index, /verified-score: 10/);
+  assert.match(qe(['check', '--all']).stdout, /ok +DEMO-1 +plan=verified/);
+
+  // A plan verified with compact table delimiter rows (markdownlint MD060) is tidied and stays verified.
+  write(`${PLAN}/_index.md`, `${index.trimEnd()}\n\n| ID | Title |\n|----|:------|\n| TC-DEMO-1-01 | Valid coupon applies |\n`);
+  const compactSha = planContentSha(readPlan({}, { planDir: PLAN }, fsReader(repo)));
+  write(`${PLAN}/_index.md`, read(`${PLAN}/_index.md`).replace(/^plan-sha: .*$/m, `plan-sha: ${compactSha}`));
+  assert.match(qe(['check', '--all']).stdout, /ok +DEMO-1 +plan=verified/);
+  assert.match(qe(['tidy', 'DEMO-1']).stdout, /DEMO-1: plan markdown tidied/);
+  assert.match(read(`${PLAN}/_index.md`), /^\| ---- \| :------ \|$/m);
   assert.match(qe(['check', '--all']).stdout, /ok +DEMO-1 +plan=verified/);
 
   gitc('add', '-A');

@@ -14,6 +14,7 @@ import {
   automationSha,
   caseDecisions,
   planContentSha,
+  tidyPlan,
   planStatus,
   precheckPlan,
   readPlan,
@@ -163,6 +164,7 @@ export async function planLoop(config, story, { force = false, resume = false, s
   }
   const finished = (status, extra = {}) => updateState(config, story.key, (s) => Object.assign(s.plan, { status, pid: null, boot: null, ...RECOVERY_DONE, finishedAt: nowIso(), ...extra }));
   try {
+    tidyPlan(config, story);
     const initial = planStatus(config, story);
     if (initial.state === 'verified' && !force && !seedFeedback) {
       log(`${story.key}: plan is verified and up to date.`);
@@ -192,6 +194,7 @@ export async function planLoop(config, story, { force = false, resume = false, s
         continue;
       }
       stampIndex(config, story, { 'plan-sha': undefined, 'verified-score': undefined, 'verified-at': undefined, 'verified-by': undefined });
+      tidyPlan(config, story);
       const pre = precheckPlan(config, story);
       if (!pre.errors.length) pre.errors.push(...lintFiles(config, [...(pre.plan.index ? [`${story.planDir}/${INDEX}`] : []), ...pre.plan.cases.map((c) => c.file)]));
       if (pre.errors.length) {
