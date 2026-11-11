@@ -50,7 +50,7 @@ The [dispatcher](README.md#lifecycle-events) calls the QE stage on these events:
 | `story-start` | reports the story's test plan state |
 | `session-start` | resumes plan and automation runs that died; test plan and automation state of the active story, open product bugs, stale plans |
 | `stop` | after review approval: starts automation in the background, or resumes it if its run died |
-| `post-commit`, `post-merge` | nothing by default; with `git config qe.autoPlan true`, the plan loop in the background for stories added or changed |
+| `post-commit`, `post-merge` | nothing by default (stories are board issues, so commits never start a plan); after a merge with `git config qe.autoLessons true`, `qe lessons --if-due` in the background |
 | `pre-push` | `qe check`: existing plans and tests for touched stories are verified and current (a story with no plan yet passes). A push touches a story through its plan or scenario folder, tests carrying its case ids, or its key in the branch name or a commit message; stories are checked against their cached ticket (fetched when missing) |
 | pull request | `qe-check.yml`, called from `ai-pipeline.yml` |
 | manual (local, or `workflow_dispatch`) | `qe-lessons.yml`: `calibrate`, `metrics`, `lessons` (opens a PR) |
@@ -139,13 +139,13 @@ Models are named by alias. `agent.allowedModels` in `scripts/pipeline/config.jso
 
 ```bash
 node scripts/qe/qe.mjs status [PROMO-3]
-node scripts/qe/qe.mjs plan PROMO-3 | --stale | --all [--force] [--background]
+node scripts/qe/qe.mjs plan PROMO-3 | --stale | --all [--force] [--resume] [--background]
 node scripts/qe/qe.mjs automate PROMO-3 [--skip-tests] [--background]
 node scripts/qe/qe.mjs resume [PROMO-3] [--force]   # resume runs that died (and, without a story, the lessons run); --force also escalated ones
 node scripts/qe/qe.mjs check [--all] [--changed-from origin/main]
 node scripts/qe/qe.mjs metrics [--json] [--since 2026-01-01]
 node scripts/qe/qe.mjs calibrate [--stage plan|automation] [--sample 3]
-node scripts/qe/qe.mjs lessons [--dry-run] [--local] [--if-due] [--resume]
+node scripts/qe/qe.mjs lessons [--dry-run] [--local] [--if-due] [--no-push] [--resume]
 npm run test:pipeline                          # all pipeline tests (fake agent, no LLM)
 ```
 

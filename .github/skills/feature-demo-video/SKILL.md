@@ -30,6 +30,15 @@ Whenever your change affects anything a shopper or admin can see or do in a brow
    testing/teststack up --scenario <scenario>   # see testing/README.md; add a scenario if the flow needs new data
    ```
 
+   Slot 0 (ports 18xxx) is the default and is meant for people. When several agents or worktrees need a stack at once, lease an isolated slot and pass it to every command (see "Slots" in `testing/README.md`):
+
+   ```bash
+   node scripts/stack/slots.mjs lease --owner <id> --wait-sec 600   # prints {"ok":true,"slot":<n>,...}
+   testing/teststack --slot <n> up --scenario <scenario>
+   # run Playwright with TESTSTACK_SLOT=<n>; release when done:
+   node scripts/stack/slots.mjs release --slot <n> --owner <id>
+   ```
+
    On Podman, set `TESTSTACK_DOCKER=podman` (and `ASPIRE_CONTAINER_RUNTIME=podman`). On Windows, run the script from Git Bash. If sign-in hangs on Podman machine (Windows/macOS), the containers can't reach `host.docker.internal`. Fix it once per machine: `podman machine ssh "printf '[containers]\nhost_containers_internal_ip = \"192.168.127.254\"\n' > /etc/containers/containers.conf.d/90-host-gateway.conf; systemctl restart podman.socket"`, then `testing/teststack compose up -d --force-recreate`.
 
 2. **Walk the flow once with `playwright-cli`** (see the `playwright-cli` skill) to discover stable locators. Prefer roles, labels and text over CSS.
@@ -67,7 +76,8 @@ Whenever your change affects anything a shopper or admin can see or do in a brow
 ## Rules
 
 - Every spec imports `test` and `expect` from `e2e/fixtures.ts` (or from `e2e/demo.ts`, which extends it), never from `@playwright/test`. The base `page`/`context` fixtures are always recorded. The shared fixture also records contexts a test opens with `browser.newContext()`, such as one per user in multi-user flows, with one video per page. Contexts opened in `beforeAll`/`afterAll` are setup and are not recorded, so put the flow you want on video inside the test.
-- API-only tests (only the `request` fixture) have no browser and produce no video. That is expected. For a user-facing feature, cover the flow in the UI as well.
+- API-only tests (only the `request` fixture) have no browser and produce no video. That is expected. For a user-facing feature, cover the flow in the UI as well. With `E2E_API_LOG=1` (set in CI) every `request` call is recorded, secrets redacted, in `manifest.json`; the PR's **API changes** section takes its example requests and responses from there.
+- Build URLs from `e2e/teststack/ports.ts` (`WEBAPP_URL`, `CATALOG_URL`, ...) instead of hard-coding 18xxx ports, so the spec also runs on a leased slot.
 - Use seeded users from the scenario (for example `alice` / `Pass123$`) and the `login` helper from `e2e/teststack/scenario.ts`.
 - Wait on `expect(...)`, not on `waitForTimeout`. Use `demo.pause` only for pacing.
 - Don't commit anything under `artifacts/`.

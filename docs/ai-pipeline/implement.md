@@ -35,7 +35,7 @@ node scripts/pipeline/pipeline.mjs implement decisions [--story KEY] [--json]  #
 | **epic** (default) | `implement run --epic <EPIC>` | `epic/<slug>` from the base, one long-lived epic worktree; each story on its own branch from the epic branch, merged back once verified | one PR for the epic (`Closes #N` for every story and bug), or one per [PR group](#bug-epics-pr-groups) for a bug epic |
 | **story** | `implement run --epic <EPIC> --delivery story`, or `implement run <KEY>...` | a branch per story, stacked on its blockers | one PR per story (with `--pr`) |
 
-A single ticket (`implement run <KEY>`) keeps the story path: its own branch from the base and its own PR. If the ticket belongs to an epic with an epic run in progress (its run state in `.agent-state/implement/epics/<epic>.json` is not delivered and its epic branch exists), it **joins** that run instead: it runs from the epic branch (or its PR group's branch), merges back into it and goes to Pending Review naming that branch, without planning the epic again or opening a PR; the epic run (or `implement resume`) opens the PR. `--standalone` opts out. Bugs (`BUG-*` keys or type bug) take the same paths.
+A single ticket (`implement run <KEY>`) keeps the story path: its own branch from the base and its own PR. If the ticket belongs to an epic with an epic run in progress (its run state in `.agent-state/implement/epics/<epic>.json` is not `delivered` or `complete` and its epic or group branch exists), it **joins** that run instead: it runs from the epic branch (or its PR group's branch), merges back into it and goes to Pending Review naming that branch, without planning the epic again or opening a PR; the epic run (or `implement resume`) opens the PR. `--standalone` opts out. Bugs (`BUG-*` keys or type bug) take the same paths.
 
 ### Epic delivery
 
@@ -152,7 +152,7 @@ The harness enforces (pure functions in `scripts/implement/lib/plan.mjs`, unit t
 - no two subtasks' `owns` can match the same file (glob intersection, not just prefixes), no `owns` that covers the whole repo, no absolute or `..` paths;
 - `dependsOn` names other subtasks and has no cycle;
 - at most `maxLargeSubtasks` subtasks with model class `large`, each with a `justification`;
-- `verify: "ui"` (and `uiStory: true`) only for **UI stories**: an `[FE - ...]` title, WebApp, WebAppComponents or Blazor in the title's component list, or a `.razor` file named in the story;
+- `verify: "ui"` (and `uiStory: true`) only for **UI stories**: an `[FE - ...]` title, WebApp, WebAppComponents or Blazor in the title's component list, a `.razor` file named in the story, or mockups (its own, or its epic's when the epic was handed to the run);
 - `self` mode (meant for one service or about `selfModeMaxFiles` files) takes at most one subtask entry; the implicit subtask owns everything and is implemented by the orchestrator in the story worktree, still checked by a verifier.
 
 ## UI verification
@@ -272,7 +272,7 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `implement.worktreeDir` | `../{repo}-worktrees` | Where worktrees go, relative to the repo root (subtask worktrees sit next to their story's, as `<key>--<id>`) |
+| `implement.worktreeDir` | `../{repo}-worktrees` | Where worktrees go, relative to the repo root (subtask worktrees sit next to their story's, as `<key>--<id>`); `IMPLEMENT_WORKTREE_DIR` overrides it |
 | `implement.branchPrefix` | `feat/` | Branch name prefix (subtasks: `feat/<key>--<id>`) |
 | `implement.parallel` | `auto` | Default `--parallel`: a number, or `auto` ([Resources](#resources)) |
 | `implement.delivery` | `epic` | Default `--delivery` for `--epic` runs |
@@ -284,6 +284,7 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 | `implement.maxImplementerRuns` | 8 | Orchestrator runs after the pairs (integration, review fixes and bug fixes) |
 | `implement.maxBugFixCycles` | 2 | Times QE-found bugs go back to the orchestrator |
 | `implement.qeTimeoutSec` | 14400 | How long to wait for QE |
+| `implement.qePollSec` | 5 | How often the runner checks on QE while it waits |
 | the limits above | | See [Limits](#limits) |
 | `implement.maxWorkerRetries` | 2 | Retries of a story whose worker failed (`error`, `qe-not-started`), resuming in its worktree |
 | `implement.retryDelaySec` | 30 | Wait before a retry, times the attempt number |
@@ -296,7 +297,7 @@ An orchestrated story that is resumed does not plan again. Subtasks approved bef
 | `implement.checks` | `dotnet build eShop.Web.slnf` | Commands whose output verifiers get; a failure fails the round |
 | `implement.unitTests` | `tests/{service}.UnitTests`, `dotnet test --project {project}` | Run for each `src/<service>/` with changes, when that project exists |
 | `implement.ui.*` | `slotsCmd`, `teststackCmd`, `leaseWaitSec` 300, `leaseRetrySec` 30, `stackTimeoutSec` 2400, `renewEverySec` 1800, `screenshotsDir` `artifacts/pairs` | Stack slot contract and timing |
-| `implement.lsp.*` | `lspdCmd`, `slnfCmd`, `timeoutSec` 300, `enabled` | Language server tooling |
+| `implement.lsp.*` | `setupCmd`, `lspdCmd`, `slnfCmd`, `timeoutSec` 300, `enabled` | Language server tooling |
 | `implement.decisions.*` | see [Decision log](#decision-log) | Labeling thresholds |
 
 The agent CLI is the pipeline's (`PIPELINE_AGENT_CLI`, Claude Code by default). Every harness agent runs with subagents disabled (Claude's `Agent` and `Task` tools); pair implementers get the implement-mode deny list (no push, reset, checkout, switch, rebase, worktree); verifiers are read mode, the UI verifier verify mode (shell but no file edits or git writes; Codex has no per-tool deny list, so the harness discards whatever a verifier leaves in the worktree). Parallel stories each run their own orchestrator, pairs, reviewer and QE agents, so `--parallel` multiplies LLM usage; `maxConcurrentAgents` caps the total. Implementers must not use the shared teststack; UI verification uses leased slots instead.

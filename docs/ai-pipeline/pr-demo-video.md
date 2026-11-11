@@ -1,6 +1,6 @@
 # PR demo videos
 
-Pull requests that change the frontend get a **Demo video** section in their description: the videos of the e2e specs they add or change, recorded on the test stack, each with an animated preview that plays inline and a link to the full WebM. Reviewers see the feature working without checking out the branch, and the [PR check](pr-check.md#videos)'s video critic reads the same links. Pull requests that change only the backend get an [API changes](#api-changes-backend-only-prs) section instead.
+Pull requests that change the frontend get a **Demo video** section in their description: the videos of the e2e specs they add or change, recorded on the test stack, each with an animated preview that plays inline and a link to the full WebM. Reviewers see the feature working without checking out the branch, the [PR check](pr-check.md#videos)'s video critic reads the same links, and the [story board](board.md#pending-review-evidence) posts the section on the story's issue and its epic as the feature video. Pull requests that change only the backend get an [API changes](#api-changes-backend-only-prs) section instead.
 
 ## Which PRs get what
 

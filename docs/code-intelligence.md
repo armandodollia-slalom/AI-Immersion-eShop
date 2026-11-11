@@ -72,9 +72,9 @@ In a CLI: Claude Code `/mcp` (or `claude mcp get lsp`), Copilot `copilot mcp get
 | GitHub Copilot CLI | reads the same `.mcp.json` (workspace config) | Workspace MCP servers load only in a trusted folder; `-p` in an untrusted worktree needs `--trust-folder`. |
 | Codex | `.codex/config.toml` `[mcp_servers.lsp]` | Project config loads only for trusted projects; otherwise pass the server with `-c` (below). |
 
-Claude Code also runs `scripts/lsp/hook.mjs` after `Edit`, `Write` and `MultiEdit` on `.cs`, `.ts`, `.js`, `.mjs`
-and `.sh` files: when the checkout's daemon runs and reports errors in the edited file, they are shown to the agent
-next to the tool result. It never starts a daemon and stays silent when the server is unavailable.
+Claude Code also runs `scripts/lsp/hook.mjs` after `Edit`, `Write` and `MultiEdit` on `.cs`, `.razor`, `.ts`, `.tsx`,
+`.mts`, `.cts`, `.js`, `.mjs`, `.cjs` and `.sh` files: when the checkout's daemon runs and reports errors in the edited
+file, they are shown to the agent next to the tool result. It never starts a daemon and stays silent when the server is unavailable.
 
 ## Tools
 

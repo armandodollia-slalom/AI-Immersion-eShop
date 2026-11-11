@@ -42,7 +42,7 @@ No separate Aspire workload or Visual Studio component is required; the AppHost 
 
 ### Automated setup
 
-`scripts/setup.sh` (macOS/Linux) installs the pinned .NET SDK, Aspire CLI and [graphify](https://github.com/safishamsi/graphify), builds the local graphify graph (including the shared semantic extraction in `graphify-out/cache/semantic/`) and enables git hooks that keep it fresh, builds the solution and starts the app with `aspire start`. Docker (or Podman) must be installed and running. Use `--no-run` or `--skip-build` to skip those steps.
+`scripts/setup.sh` (macOS/Linux) installs the pinned .NET SDK, Aspire CLI, Node dependencies, the language servers behind the agents' `lsp` MCP server ([docs/code-intelligence.md](docs/code-intelligence.md)) and [graphify](https://github.com/safishamsi/graphify), builds the local graphify graph (including the shared semantic extraction in `graphify-out/cache/semantic/`) and enables git hooks that keep it fresh, builds the solution and starts the app with `aspire start`. Docker (or Podman) must be installed and running. Use `--no-run` or `--skip-build` to skip those steps.
 
 ### Running the solution
 
@@ -106,6 +106,8 @@ npx playwright test -c playwright.teststack.config.ts
 testing/teststack load default
 ```
 
+Several isolated stacks can run side by side: `testing/teststack --slot <n> up` starts slot n with every host port shifted by 1000 × n, and `TESTSTACK_SLOT=<n>` points the Playwright run at it. See [Slots](testing/README.md#slots-parallel-stacks).
+
 ### Optional: AI Chatbot with Microsoft Foundry
 
 This option provisions a Microsoft Foundry resource during local development, so first authenticate to Azure and configure the subscription and location:
@@ -167,7 +169,7 @@ For more information on contributing to this repo, read [the contribution docume
 When you open or push to a pull request, the [PR demo video workflow](.github/workflows/pr-demo-video.yml) adds one of two generated sections to the PR description, depending on what the PR changes:
 
 - **Demo video**, for PRs that change the frontend (`src/WebApp`, `src/WebAppComponents`, `src/WebhookClient`, the client apps, or views, pages and static assets elsewhere in `src/`): videos of the `e2e/teststack/*.spec.ts` specs the PR adds or changes, each with an animated preview. User-facing changes need such a spec.
-- **API changes**, for PRs that change only the backend (the rest of `src/`, with no frontend changes): every HTTP endpoint the PR adds, changes or removes, with its method, route, request (parameters, body type and fields), responses (status codes and types, from OpenAPI) and example request/response pairs recorded from the PR's specs, with secrets redacted.
+- **API changes**, for PRs that change only the backend (the rest of `src/` except the AppHost and ServiceDefaults, with no frontend changes): every HTTP endpoint the PR adds, changes or removes, with its method, route, request (parameters, body type and fields), responses (status codes and types, from OpenAPI) and example request/response pairs recorded from the PR's specs, with secrets redacted.
 
 A PR that changes both gets only the demo video. Tests, docs and CI files don't count either way.
 

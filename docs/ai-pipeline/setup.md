@@ -13,7 +13,7 @@ Part of the [AI development pipeline](README.md). What a Windows or macOS machin
 | graphify | agents' code lookups | see [copilot-setup.md](../copilot-setup.md#3-enable-graphify-for-copilot) |
 | .NET SDK (version in `global.json`), Aspire CLI, Docker Desktop | building the code and the QE teststack | |
 | npm dependencies (Playwright) | e2e tests, video keyframes, PR check frame extraction | `npm ci`, then `npx playwright install chromium` |
-| `gh`, signed in | `implement run --pr`, `pr-check run --pr N` | or set `GITHUB_TOKEN` / `GH_TOKEN` for the PR check |
+| `gh`, signed in | the [story board](board.md) (with the `project` scope: `gh auth refresh -s project`), `implement run --pr`, `pr-check run --pr N` | or set `GITHUB_TOKEN` / `GH_TOKEN` for the PR check |
 | `ffmpeg` | optional, faster video frame extraction in the PR check | falls back to Playwright's Chromium |
 
 ## macOS
@@ -101,7 +101,7 @@ Windows notes:
 
 | Setting | Effect |
 | --- | --- |
-| `git config qe.autoPlan true` | write test plans in the background for stories added or changed by a commit or merge |
+| `git config qe.autoPlan true` | write test plans in the background for stories that `board fetch` brings in new or changed |
 | `git config qe.autoLessons true` | run lessons after merges |
 | `PIPELINE_BASE_REF` | base branch for diffs and new stories (default `origin/main`) |
 | `PIPELINE_DISABLE=1` | turn off every hook, including the story guard |
@@ -118,7 +118,7 @@ Per-stage limits, timeouts and models are in each stage's `scripts/<stage>/confi
 
 ## CI
 
-`.github/workflows/ai-pipeline.yml` runs on pull requests without any LLM calls. Two workflows call agents: `pr-check.yml` (the `ai-pr-check` label) and `qe-lessons.yml` (weekly). Both use `.github/actions/setup-agent-cli`, so they work with any provider. Pick it with repository variables (**Settings → Secrets and variables → Actions → Variables**) and add its credential as a secret:
+`.github/workflows/ai-pipeline.yml` runs on pull requests without any LLM calls. Two workflows call agents: `pr-check.yml` (the `ai-pr-check` label) and `qe-lessons.yml` (manual, `workflow_dispatch`). Both use `.github/actions/setup-agent-cli`, so they work with any provider. Pick it with repository variables (**Settings → Secrets and variables → Actions → Variables**) and add its credential as a secret:
 
 | Provider | Variable | Secret |
 | --- | --- | --- |

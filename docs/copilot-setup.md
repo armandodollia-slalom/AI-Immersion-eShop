@@ -69,7 +69,7 @@ copilot
 
 Follow the device-code prompts in your browser. When asked, trust the repository folder so Copilot can read the project instructions.
 
-Copilot automatically loads this repository's custom instructions ([`.github/copilot-instructions.md`](../.github/copilot-instructions.md) and [`AGENTS.md`](../AGENTS.md)) and the project skills in [`.github/skills`](../.github/skills) (Aspire, Playwright, dotnet-inspect, feature demo video).
+Copilot automatically loads this repository's custom instructions ([`.github/copilot-instructions.md`](../.github/copilot-instructions.md) and [`AGENTS.md`](../AGENTS.md)) and the project skills in [`.github/skills`](../.github/skills) (Aspire, Playwright, dotnet-inspect, feature demo video, graphify). In a trusted folder it also starts the `lsp` MCP server from [`.mcp.json`](../.mcp.json), which gives the agent language-server tools (definitions, references, diagnostics); check it with `copilot mcp get lsp` and see [code-intelligence.md](code-intelligence.md).
 
 To update later, run `copilot update` (or `winget upgrade GitHub.Copilot` / `brew upgrade --cask copilot-cli`).
 
@@ -142,7 +142,7 @@ If `graphify` isn't found after a `pip install --user`, add `$(python3 -m site -
 ### What this does
 
 - `graphify install --platform copilot` copies the graphify skill to `~/.copilot/skills/graphify` (Windows: `%USERPROFILE%\.copilot\skills\graphify`), so `/graphify` works in Copilot.
-- `core.hooksPath .githooks` enables post-commit, post-merge, post-checkout and post-rewrite hooks that run `scripts/graphify-build.sh` in the background to keep your local graph fresh. Nothing is staged or committed, so the graph never causes merge conflicts. The hooks skip quietly if `graphify` isn't on `PATH`. A pre-commit hook also keeps graphify's pruning of `graphify-out/cache/semantic/` out of commits, since other branches still use those entries.
+- `core.hooksPath .githooks` enables post-commit, post-merge, post-checkout and post-rewrite hooks that run `scripts/graphify-build.sh` in the background to keep your local graph fresh. Nothing is staged or committed, so the graph never causes merge conflicts. The hooks skip quietly if `graphify` isn't on `PATH`. A pre-commit hook also lints staged files (`SKIP_LINT=1` bypasses it) and keeps graphify's pruning of `graphify-out/cache/semantic/` out of commits, since other branches still use those entries. A pre-push hook runs the AI pipeline's QE gate (`QE_SKIP=1 git push` bypasses it once).
 - Build the graph once after cloning with `scripts/graphify-build.sh` (Windows: `bash scripts/graphify-build.sh` from Git Bash).
 
 **Restart T3 Code** (and any open terminals) after changing `PATH` so the Copilot agent inherits it.
@@ -166,7 +166,7 @@ The second command should print matching graph nodes. Then, in a T3 Code thread 
 | Copilot says the CLI is disabled | Your organization's Copilot policy blocks the CLI. Ask an org admin to enable it. |
 | Sign-in in T3 Code expires or fails | Retry from **Settings → Providers**, or run `copilot` then `/login` in a terminal on the T3 server machine. |
 | `graphify` not recognized inside T3 Code | The Python Scripts folder isn't on `PATH`, or T3 Code was started before you changed it. Fix `PATH` and restart T3 Code. |
-| Commit prints `[graphify] not installed` | Same cause: the pre-commit hook can't find `graphify` on `PATH`. |
+| Local graph stops refreshing after commits | Same cause: the git hooks skip quietly when `graphify` isn't on `PATH`. Fix `PATH`, then run `scripts/graphify-build.sh` once. |
 
 ## References
 

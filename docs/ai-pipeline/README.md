@@ -15,7 +15,7 @@ Pull requests also get a generated section in their description, written in CI b
 - **Demo video**, for PRs that change the frontend: the videos of the e2e specs the PR adds or changes, recorded on the test stack.
 - **API changes**, for PRs that change only the backend: one entry per HTTP endpoint the PR adds, changes or removes. Each entry gives the method and route (from the route-mapping diff), the request parameters and body, the responses (from the stack's OpenAPI documents) and example calls recorded from the PR's specs (`E2E_API_LOG=1`), with secrets redacted.
 
-Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin).
+Stages run in the order listed in `scripts/pipeline/stages.json`. All of them are Node 20 scripts with no dependencies, and they drive a headless agent CLI: Claude Code by default, or Copilot CLI or Codex (`PIPELINE_AGENT_CLI=copilot|codex`), or any command (`PIPELINE_AGENT_CMD`, prompt on stdin). Every run uses a model from the project's [allowlist](models.md), which has no Codex models today, so Codex runs are refused.
 
 | Guide | For |
 | --- | --- |
@@ -23,6 +23,8 @@ Stages run in the order listed in `scripts/pipeline/stages.json`. All of them ar
 | [writing-stories.md](writing-stories.md) | story authors: the file format and sections the agents rely on |
 | [agents.md](agents.md) | every agent: what starts it, what it sees, its access, model and lessons |
 | [escalations.md](escalations.md) | what to do when a story fails or a loop escalates to a human |
+| [models.md](models.md) | the model allowlist: which models each agent CLI may run, and how to change it |
+| [costs.md](costs.md) | tokens, cache hits and cost per stage, ticket and epic (`pipeline costs`) |
 
 ```mermaid
 flowchart LR
@@ -47,9 +49,12 @@ node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommend
 node scripts/pipeline/pipeline.mjs implement run PROMO-3 PROMO-4 [--parallel 2] [--pr]
 node scripts/pipeline/pipeline.mjs implement status
 node scripts/pipeline/pipeline.mjs implement resume                    # after a crash: continue the last run
+node scripts/pipeline/pipeline.mjs implement run --epic <EPIC> --delivery story   # a branch and PR per story instead of one per epic
+node scripts/pipeline/pipeline.mjs implement cleanup [KEY]             # remove subtask worktrees a failed run kept
+node scripts/pipeline/pipeline.mjs implement decisions [--story KEY]   # how the orchestrator's choices turned out
 ```
 
-Each story gets its own worktree and branch; the implementer plans it into subtasks that verifier pairs implement and check in their own worktrees, then the architecture review loop and verified tests run. A story "Blocked by" another story in the batch runs after it, stacked on its branch. See [implement.md](implement.md).
+Each story gets its own worktree and branch; the implementer plans it into subtasks that verifier pairs implement and check in their own worktrees, then the architecture review loop and verified tests run. A story "Blocked by" another story in the batch runs after it, stacked on its branch. With `--epic`, the default is epic delivery: an epic plan first, every story merged into one `epic/<slug>` branch once verified, and one PR for the epic (a bug epic: one PR per group of bugs). See [implement.md](implement.md) for every option ([delivery modes](implement.md#delivery-modes)).
 
 ## Story board
 
@@ -61,6 +66,8 @@ node scripts/board/board.mjs sync                                     # closed s
 ```
 
 ### One story, end to end
+
+This is story delivery (`implement run <KEY>`); in epic delivery a verified story is merged into the epic branch instead of getting its own PR, and the epic gets one PR at the end.
 
 ```mermaid
 sequenceDiagram
@@ -128,6 +135,9 @@ stateDiagram-v2
   planned --> implementing
   implementing --> blocked: unimplementable / branch conflict
   implementing --> no_changes: no implementation files changed
+  implementing --> plan_rejected: invalid plan twice / too many subtasks
+  implementing --> pair_exhausted: subtask not approved after escalation
+  implementing --> merge_conflict: unresolved merge conflict
   implementing --> reviewing
   reviewing --> implementing: changes requested
   reviewing --> review_escalated: round limit
@@ -163,7 +173,7 @@ node scripts/pipeline/pipeline.mjs status [PROMO-3]
 | `board fetch` brings a changed story | (command) | - | qe plans it in the background, only with `git config qe.autoPlan true` | LLM if opted in |
 | Push | `.githooks/pre-push` | `git-hook pre-push` | qe (existing plans and tests for touched stories are verified and current) | none |
 | Pull request | `.github/workflows/ai-pipeline.yml` | tests, then each stage's reusable workflow (`qe-check.yml`) | all | none |
-| Pull request opened or pushed | `.github/workflows/pr-demo-video.yml` | `pr-video.mjs specs`, test stack + changed specs, `pr-video.mjs publish`, `pr-video.mjs api` ([demo videos](pr-demo-video.md)) | none | none |
+| Pull request opened or pushed | `.github/workflows/pr-demo-video.yml` | `pr-video.mjs specs` and `scope`, test stack + changed specs, `pr-video.mjs publish`, `pr-video.mjs api` ([demo videos](pr-demo-video.md)) | none | none |
 | Manual (local, or `workflow_dispatch`) | `.github/workflows/qe-lessons.yml` | `qe calibrate`, `metrics`, `lessons` (opens a PR) | qe | LLM |
 
 No agent starts on its own when stories or epics are added or changed: agent work starts only from a command (`implement run`, `pipeline start`, `qe plan`, `qe automate`) or from `pipeline done` in a session you started. `scripts/setup.sh` already points `core.hooksPath` at `.githooks`. `PIPELINE_DISABLE=1` turns every hook off. Agents spawned by the pipeline run with `PIPELINE_CHILD=1`, so their own Stop hooks and git hooks do nothing and cannot recurse. Stage-specific switches (for example `QE_SKIP=1 git push`, `git config qe.autoPlan true`) are listed in each stage's docs.
@@ -184,7 +194,7 @@ No agent starts on its own when stories or epics are added or changed: agent wor
 
 ## Story guard
 
-Agents ignore the ticket cache (`storyGuard.folders` in `scripts/pipeline/config.json`: `.agent-state/board/`, plus the legacy story folder until `board migrate --delete-local` removes it) except for what was handed to the pipeline:
+Agents ignore the ticket cache (`storyGuard.folders` in `scripts/pipeline/config.json`: `.agent-state/board/`) except for what was handed to the pipeline:
 
 - the cache folder of the story given to `pipeline start <KEY>` (recorded in `.agent-state/active-story`): its `story.md` and its own `mockups/`, and
 - the tickets given to `pipeline implement run` (their cache folders, and the epic's own folder for `--epic`), passed to every worker and agent it starts as `PIPELINE_STORY_SOURCES` (cache folders, or ticket keys). The implement harness adds each story's own key for every agent of its run.
@@ -233,7 +243,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 
 `scripts/pipeline/lib/` holds what every stage uses: config loading, git helpers, the ticket loader (`tickets.mjs`, story lookup from the board cache), per-story state, escalations, the agent runner and background runs.
 
-- **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
+- **Config:** `scripts/pipeline/config.json` (directories, base ref, agent CLI, the [model allowlist](models.md) and default model, which paths count as implementation) is merged with the stage's own `scripts/<stage>/config.json`. Environment overrides: `PIPELINE_AGENT_CLI`, `PIPELINE_AGENT_CMD`, `PIPELINE_BASE_REF`, `PIPELINE_ROOT`.
 - **State:** `.agent-state/` (not committed) holds the active story, one `stories/<KEY>.json` per story with a section per stage, locks, background logs (`logs/`) and escalations (`escalations/<KEY>-<stage>.md`, which the next agent session is told about).
 - **Recovery:** every stage survives a crash, kill or reboot. Its runs record their pid and the boot they started in, and hold a lock for the whole run, so a pid reused after a reboot is never mistaken for the run. A run that died is found on the next session start or Stop hook, or by `pipeline resume`, and continues from its last saved round. The shared rules are in `scripts/pipeline/lib/recovery.mjs`: each run is retried `recovery.maxAttempts` times (default 3), waiting `recovery.backoffSec` (60 s) and then twice as long each time, then escalated; `pipeline resume <KEY> --force` restarts an escalated run.
 
@@ -259,7 +269,7 @@ Every agent ends its final message with `AGENT_RESULT: {json}`, which the stage 
 ```bash
 node scripts/pipeline/pipeline.mjs start|done|status [KEY]
 node scripts/pipeline/pipeline.mjs resume [KEY] [--force]       # continue every stage's runs that died (crash, kill, reboot)
-node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--parallel N|auto] [--base <ref>] [--pr] [--force] [--dry-run]
+node scripts/pipeline/pipeline.mjs implement [run] <KEY|dir|story.md>... | --epic <EPIC> [--delivery epic|story] [--grouping auto|epic|ticket] [--standalone] [--parallel N|auto] [--base <ref>] [--pr] [--force] [--takeover] [--dry-run]
 node scripts/pipeline/pipeline.mjs implement resume [--parallel N|auto] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential] [--base <ref>]  # see experiments.md
@@ -270,7 +280,7 @@ node scripts/pipeline/pipeline.mjs costs [KEY] [--epic <epic>] [--since <date>] 
 node scripts/pipeline/pipeline.mjs hook stop|session-start [--nested]|pre-tool
 node scripts/pipeline/pipeline.mjs git-hook post-commit|post-merge|pre-push
 node scripts/pr-check/pr-check.mjs run --pr 42 [--no-fix]   # adversarial PR check until 10/10
-node scripts/pr-video/pr-video.mjs specs|backend|publish|api|cleanup  # PR demo videos and API summary (pr-demo-video.yml)
-node scripts/board/board.mjs setup|pick|mine|move|review|status   # see board.md
+node scripts/pr-video/pr-video.mjs specs|scope|publish|api|cleanup  # PR demo videos and API summary (pr-demo-video.yml)
+node scripts/board/board.mjs setup|sync|fetch|publish|new|mine|claim|move|review|status   # see board.md
 npm run test:pipeline                     # dispatcher and stage tests (fake agent, no LLM)
 ```

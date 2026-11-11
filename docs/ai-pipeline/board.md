@@ -80,13 +80,14 @@ node scripts/board/board.mjs mine                                               
 - Closed story issues move to Done, and their section on the epic's evidence comment shows Done.
 - Their late outcome is recorded for the [implement decision log](implement.md#decision-log): whether the PR merged, how many commits and lines humans added on the branch before merge, and which BUG-* stories name the story (`type: "late"` in `.agent-metrics/decision-outcomes.jsonl` of the checkout, left uncommitted). Only stories this machine implemented have a run record to compare with.
 - Every epic card moves to the lane its stories call for.
+- Feature videos the PR demo video workflow published after a story (or an epic PR) reached Pending Review are posted on the story issue and linked from the epic's evidence comment.
 
 ## Pending Review evidence
 
 When a story reaches Pending Review, the issue gets a comment with the PR link and:
 
 - **API stories** (`[BE - ...]` in the title): the requests and responses of the story's verified Playwright tests. The stage re-runs the tests whose names carry the story's case ids (`TC-<KEY>-`) against the test stack with tracing on, reads the API calls from each trace, and posts them grouped by test case. Secrets (`token`, `password`, `secret`, ... keys) are redacted, bodies and the comment are capped (`evidence` in the config), and the full log stays in `.agent-state/evidence/<KEY>/api-evidence.md`. Stories with only .NET tests point to the PR instead. The test stack must be up (`testing/teststack up`), as it is for QE.
-- **UI stories** (`[FE - ...]`): the feature video. The PR demo video workflow adds the recording to the PR; until `featureVideo()` in `scripts/board/lib/evidence.mjs` returns its URL, the comment points to the PR.
+- **UI stories** (`[FE - ...]`): the feature video, read from the **Demo video** section the [PR demo video](pr-demo-video.md) workflow keeps in the PR description (`featureVideo()` in `scripts/board/lib/evidence.mjs`). The workflow records after the PR opens, so the comment usually says the video is pending; `board sync` posts it on the issue and links it from the epic once it is published.
 
 ## Epic evidence
 
@@ -130,7 +131,7 @@ An epic's lane follows its stories; the first rule that matches wins:
 
 Every story transition, `board sync` and `setup` recompute it, so moving an epic card by hand is undone.
 
-**Assigning an epic assigns its stories.** The `board-epic-assign` workflow runs when an epic is assigned or unassigned, and `board sync-epic <issue>` gives every open story of the epic exactly the epic's assignees. A story can still be reassigned on its own afterwards; the next change to the epic's assignees overrides it. The workflow runs from the default branch, so it works once this lands on main; until then run `sync-epic` by hand.
+**Assigning an epic assigns its stories.** The `board-epic-assign` workflow runs when an epic is assigned or unassigned, and `board sync-epic <issue>` gives every open story of the epic exactly the epic's assignees. A story can still be reassigned on its own afterwards; the next change to the epic's assignees overrides it. The workflow runs from the default branch; run `sync-epic` by hand for an epic assigned before it was there.
 
 Mockups belong to a ticket: they are its assets on the `board-assets` branch, shown in its **Mockups** section (images inline, other files linked, pinned to one commit) and downloaded into its cache folder by `board fetch` (see [Assets](#assets)). Attach mockups to a new ticket with `board new --mockups <dir>`.
 
@@ -255,14 +256,14 @@ node scripts/board/board.mjs fetch <KEY>... | --epic <EPIC> | --all [--refresh] 
 node scripts/board/board.mjs new <file.md|-> [--type story|bug|epic|spike] [--key KEY] [--epic <epic-key>] [--mockups <dir>] [--dry-run]
 node scripts/board/board.mjs publish <KEY> [--force]       # the cached story back to its issue
 node scripts/board/board.mjs migrate [--apply|--verify [--allow-unplaced]|--delete-local [--dry-run]]
-node scripts/board/board.mjs sync                          # closed stories to Done, late outcomes, epic lanes
+node scripts/board/board.mjs sync                          # closed stories to Done, late outcomes, epic lanes, feature videos
 node scripts/board/board.mjs mine
 node scripts/board/board.mjs claim <KEY>... [--force] [--takeover]  # claim for this machine (implement run does this)
 node scripts/board/board.mjs event <KEY> claim|testing|product-bug|verified|failed|closed [--id <id>] [--force] [--takeover]
 node scripts/board/board.mjs fail <KEY>                    # Failed + needs-human from the implement run record
 node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|testing|review|failed|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>] [--epic-branch <branch>]   # Pending Review + evidence
-node scripts/board/board.mjs epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>]
+node scripts/board/board.mjs epic-pr <epic issue> --pr <url> [--branch <name>] [--video <url>] [--group <id> [--title <text>] [--tickets K1,K2]]
 node scripts/board/board.mjs status [KEY]                  # lane and last event (number, owner)
 node scripts/board/board.mjs sync-epic <issue>             # give an epic's open stories its assignees
 node scripts/board/board.mjs hook story-start <KEY> | hook stop   # called by the dispatcher
