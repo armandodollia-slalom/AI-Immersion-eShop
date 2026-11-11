@@ -10,7 +10,6 @@
       "backlog": "Backlog",
       "ready": "Ready",
       "inProgress": "In Progress",
-      "testing": "Testing",
       "review": "Pending Review",
       "done": "Done"
     },

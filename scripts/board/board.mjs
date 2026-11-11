@@ -133,7 +133,7 @@ function requireActive(config) {
 
 // ---------------------------------------------------------------------------------------------
 // Hooks: In Progress when a story starts, Pending Review once the tests are verified (interactive
-// sessions; headless runs report after the PR exists). Testing is set by hand.
+// sessions; headless runs report after the PR exists).
 // ---------------------------------------------------------------------------------------------
 
 function hook(config, [event, key]) {

@@ -16,12 +16,12 @@ test('cards only move forward unless forced', () => {
   assert.ok(isForward(null, 'inProgress'));
   assert.ok(isForward('backlog', 'ready'));
   assert.ok(!isForward('ready', 'backlog'));
-  assert.ok(isForward('inProgress', 'testing'));
-  assert.ok(!isForward('review', 'testing'));
-  assert.ok(!isForward('testing', 'testing'));
+  assert.ok(isForward('inProgress', 'review'));
+  assert.ok(!isForward('review', 'inProgress'));
+  assert.ok(!isForward('review', 'review'));
 });
 
-test('the stop hook never sets Testing; it asks for Pending Review once verified (interactive only)', () => {
+test('the stop hook asks for Pending Review once verified (interactive only)', () => {
   assert.equal(columnForState({ automation: { status: 'idle' } }), null);
   assert.equal(columnForState({ automation: { status: 'running' } }), null);
   assert.equal(columnForState({ automation: { status: 'idle', requestedHash: 'h' } }), null);

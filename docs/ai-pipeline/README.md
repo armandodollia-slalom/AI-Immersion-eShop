@@ -33,7 +33,7 @@ Each story gets its own worktree and branch, the implementer agent, the architec
 
 ## Story board
 
-Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Testing, Pending Review, Done). Stories wait in Backlog until they are ready; assign one to yourself, move it to Ready and run the picker on your machine; it runs the whole pipeline and moves the card as it goes. See [board.md](board.md).
+Every story has an issue on the [eShop Story Board](https://github.com/users/armandodollia-slalom/projects/1) (Backlog, Ready, In Progress, Pending Review, Done). Stories wait in Backlog until they are ready; assign one to yourself, move it to Ready and run the picker on your machine; it runs the whole pipeline and moves the card as it goes. See [board.md](board.md).
 
 ```bash
 node scripts/board/board.mjs pick            # implement the stories assigned to you, polling the board

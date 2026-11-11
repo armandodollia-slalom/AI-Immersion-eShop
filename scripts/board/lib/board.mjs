@@ -5,10 +5,12 @@ import { readJson, writeJson } from '../../pipeline/lib/util.mjs';
 import { gh, ghJson, graphql } from './github.mjs';
 
 // Columns in board order. Hooks only move a story forward; `board move` can move it anywhere.
-// Backlog is never picked up; Ready is the picker's lane. Testing is set by hand (no hook moves there).
-export const COLUMNS = ['backlog', 'ready', 'inProgress', 'testing', 'review', 'done'];
+// Backlog is never picked up; Ready is the picker's lane.
+export const COLUMNS = ['backlog', 'ready', 'inProgress', 'review', 'done'];
 // Earlier names of a column: `setup` renames them in place and keeps their cards.
 const FORMER_NAMES = { ready: ['Todo'] };
+// Removed columns: `setup` deletes them and moves their cards to the given column.
+const RETIRED = { Testing: 'inProgress' };
 const KEY_TITLE = /^([A-Z][A-Z0-9]*-\d+):/;
 
 export const storyKeyOf = (title) => KEY_TITLE.exec(title ?? '')?.[1] ?? null;
@@ -145,7 +147,7 @@ export function listItems(config) {
 }
 
 // Column a story's pipeline state calls for in the stop hook: Pending Review once its tests are
-// verified (headless runs report after the PR exists instead). Testing is only ever set by hand.
+// verified (headless runs report after the PR exists instead).
 export function columnForState(state, { headless = false } = {}) {
   const a = state.automation ?? {};
   if (a.status === 'verified' && !a.requestedHash) return state.done && !headless ? 'review' : null;
@@ -183,7 +185,6 @@ const COLUMN_STYLE = {
   backlog: ['GRAY', 'Not ready for implementation; the pipeline never picks these up, even when assigned'],
   ready: ['PURPLE', 'Ready for implementation; your local `board pick` picks up the ones assigned to you'],
   inProgress: ['YELLOW', 'The pipeline is implementing the story'],
-  testing: ['ORANGE', 'Set by hand while someone is testing the story'],
   review: ['BLUE', 'Implemented and verified; the PR is waiting for a human review'],
   done: ['GREEN', 'Merged'],
 };
@@ -265,17 +266,20 @@ function run_(fn) {
   }
 }
 
-// New projects come with Todo / In Progress / Done; the board needs every configured column. Options are
-// replaced as a list, so existing ones keep their names (cards keep their column).
+// New projects come with Todo / In Progress / Done; the board needs every configured column. Replacing the
+// options clears every card's status, so each card's column is noted first and set again afterwards.
 function ensureColumns(config, log) {
   const p = project(config);
   const wanted = COLUMNS.map((c) => config.board.columns[c]);
-  if (wanted.every((name) => p.options[name])) return log('columns ready');
+  if (wanted.every((name) => p.options[name]) && !Object.keys(RETIRED).some((name) => p.options[name])) return log('columns ready');
   const singleSelectOptions = COLUMNS.map((c) => ({ name: config.board.columns[c], color: COLUMN_STYLE[c][0], description: COLUMN_STYLE[c][1] }));
-  // Options are matched by name, so a renamed column would drop its cards: note them and put them back.
+  // Renamed and removed columns send their cards to the column that replaces them.
   const renamed = new Map();
   for (const c of COLUMNS) for (const old of FORMER_NAMES[c] ?? []) if (p.options[old] && !p.options[config.board.columns[c]]) renamed.set(old, c);
-  const moving = renamed.size ? listItems(config).filter((i) => renamed.has(i.status)) : [];
+  for (const [old, c] of Object.entries(RETIRED)) if (p.options[old]) renamed.set(old, c);
+  const restore = listItems(config)
+    .map((i) => ({ itemId: i.itemId, column: i.column ?? renamed.get(i.status) }))
+    .filter((i) => i.column);
   const extras = Object.keys(p.options).filter((name) => !wanted.includes(name) && !renamed.has(name));
   for (const name of extras) singleSelectOptions.push({ name, color: 'GRAY', description: '' });
   const input = JSON.stringify({
@@ -284,8 +288,8 @@ function ensureColumns(config, log) {
   });
   gh(['api', 'graphql', '--input', '-'], { input });
   resetMemo();
-  for (const i of moving) setColumn(config, i.itemId, renamed.get(i.status));
-  log(`columns set: ${wanted.join(' | ')}${moving.length ? `; ${moving.length} card(s) kept through the rename` : ''}`);
+  for (const i of restore) setColumn(config, i.itemId, i.column);
+  log(`columns set: ${wanted.join(' | ')}; ${restore.length} card(s) kept in their columns`);
 }
 
 function ensureBoardView(config) {

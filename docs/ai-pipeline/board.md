@@ -18,7 +18,6 @@ flowchart LR
 | Backlog | `board setup` (new stories). Not ready for implementation: the picker never takes these, even when they are assigned |
 | Ready | you, when a story is ready for implementation (`board move <KEY> ready --force` to retry a parked one) |
 | In Progress | `board pick` when it grabs the story; also `pipeline start <KEY>` (story-start hook) |
-| Testing | you, by hand. No hook moves cards here; the pipeline's QE work happens while the card is In Progress |
 | Pending Review | `pipeline implement --pr` after it opens the PR (headless); the Stop hook once tests are verified (interactive sessions, no PR) |
 | Done | `board pick`, on every poll: story issues that are closed move to Done. The PR body gets `Closes #<issue>`, so merging the PR closes the issue. (The project's built-in "Item closed" workflow does the same instantly if you turn it on under the project's Workflows; GitHub has no API for that.) |
 
@@ -63,7 +62,7 @@ The board is active only when `scripts/board/config.json` has a `projectNumber`,
 node scripts/board/board.mjs setup
 node scripts/board/board.mjs pick [--once] [--parallel N] [--interval <sec>] [--dry-run]
 node scripts/board/board.mjs mine
-node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|testing|review|done [--force]
+node scripts/board/board.mjs move <KEY> backlog|ready|inProgress|review|done [--force]
 node scripts/board/board.mjs review <KEY> [--pr <url>]   # Pending Review + evidence by hand
 node scripts/board/board.mjs status [KEY]
 node scripts/board/board.mjs hook story-start <KEY> | hook stop   # called by the dispatcher
