@@ -6,7 +6,7 @@ Each section lists responsibilities, interfaces, data ownership, and notable des
 
 - **Role:** OpenID Connect / OAuth2 authority for all clients and APIs.
 - **Tech:** Duende IdentityServer 7 on ASP.NET Core Identity (`ApplicationUser`), Razor Pages UI for login/consent.
-- **Data:** `identitydb` (users only). Clients, scopes, and API resources are configured in memory (`Config.cs`) using callback URLs injected by the AppHost (`WebAppClient`, `BasketApiClient`, `OrderingApiClient`, etc.).
+- **Data:** `identitydb` (users and roles; the seeder adds an `Admin` role and an `admin` user, and access tokens carry the user's `role` claims). Clients, scopes, and API resources are configured in memory (`Config.cs`) using callback URLs injected by the AppHost (`WebAppClient`, `BasketApiClient`, `OrderingApiClient`, etc.).
 - **Signing key:** `AddDeveloperSigningCredential()` (development key).
 - **Health:** `/health`.
 
@@ -26,6 +26,7 @@ Each section lists responsibilities, interfaces, data ownership, and notable des
 | PUT | `/items` (v1) / `/items/{id}` (v2) | 1, 2 |
 | DELETE | `/items/{id}` | 1, 2 |
 
+- **Auth:** JWT bearer from identity-api (`AddDefaultAuthentication`, audience/scope `catalog`). POST, PUT and DELETE require the `CatalogAdmin` policy (`Admin` role, read from the raw `role` claim); every GET stays anonymous.
 - **Data:** `catalogdb` (EF Core `CatalogContext` + `vector` column via pgvector), plus outbox table.
 - **AI:** `CatalogAI` generates embeddings with an `IEmbeddingGenerator` (Foundry/OpenAI or Ollama). When unconfigured, semantic search falls back to name search.
 - **Events:** publishes `ProductPriceChangedIntegrationEvent` (on price update), `OrderStockConfirmed/RejectedIntegrationEvent`; consumes `OrderStatusChangedToAwaitingValidation` and `OrderStatusChangedToPaid` (decrements stock).
