@@ -50,6 +50,23 @@ function logPrecheck(config, stage, story, round, errors) {
   });
 }
 
+// The linters the repo's pre-commit hook runs (config precheck.lint, by file extension), so a lint error in
+// the agent's files comes back to it as feedback instead of failing the harness's commit afterwards. A
+// linter that is not installed in the checkout (a local node_modules/.bin path that is missing) is skipped,
+// like the hook does.
+export function lintFiles(config, files, { runner = run } = {}) {
+  const errors = [];
+  for (const [ext, template] of Object.entries(config.precheck.lint ?? {})) {
+    const matching = files.filter((f) => f.endsWith(ext));
+    if (!matching.length || !template?.length) continue;
+    if (template[0].includes('/') && !fs.existsSync(path.join(config.root, template[0]))) continue;
+    const argv = expand(template, { files: matching });
+    const result = runner(argv[0], argv.slice(1), { cwd: config.root, timeoutSec: 300 });
+    if (result.status !== 0 && result.status !== 127) errors.push(`\`${argv[0]}\` (the commit hook's linter) failed on ${matching.join(', ')}:\n${tail(`${result.stdout ?? ''}${result.stderr ?? ''}`, 3000)}`);
+  }
+  return errors;
+}
+
 // Finds the version of the story the plan was written against (the ticket cache keeps every version it
 // fetched, by story sha; else the issue's edit history) and diffs it with the current story, so an update
 // can edit the affected cases in place instead of rewriting the plan.
@@ -176,6 +193,7 @@ export async function planLoop(config, story, { force = false, resume = false, s
       }
       stampIndex(config, story, { 'plan-sha': undefined, 'verified-score': undefined, 'verified-at': undefined, 'verified-by': undefined });
       const pre = precheckPlan(config, story);
+      if (!pre.errors.length) pre.errors.push(...lintFiles(config, [...(pre.plan.index ? [`${story.planDir}/${INDEX}`] : []), ...pre.plan.cases.map((c) => c.file)]));
       if (pre.errors.length) {
         logPrecheck(config, 'plan', story, round, pre.errors);
         feedback = `Structural check failed:\n${pre.errors.map((e) => `- ${e}`).join('\n')}`;
@@ -252,6 +270,7 @@ export async function precheckAutomation(config, story, { skipTests = false } = 
     }
   }
   if (errors.length) return { errors, tests };
+  errors.push(...lintFiles(config, [...tests.keys()]));
 
   const validate = config.precheck.validateScenario;
   if (validate?.length && fs.existsSync(path.join(config.root, validate[0]))) {
