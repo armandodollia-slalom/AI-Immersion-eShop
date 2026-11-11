@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coupon</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0;background:#ffffff;font-family:system-ui,sans-serif}</style>
+</helmet>
+<div style="min-height: 200px; padding: 16px;">
+  <h1 id="title">{{title}}</h1>
+  <table>
+    <tbody>
+      <sc-for list="{{rows}}" as="row" hint-placeholder-count="2">
+        <tr><td class="row">{{row.name}}</td></tr>
+      </sc-for>
+    </tbody>
+  </table>
+  <sc-if value="{{showError}}" hint-placeholder-val="{{false}}">
+    <p id="error" style="background:#b32121;color:#ffffff;padding:24px;">That coupon has expired.</p>
+  </sc-if>
+  <sc-if value="{{applied}}" hint-placeholder-val="{{false}}">
+    <p id="applied" style="background:#1f7a34;color:#ffffff;padding:24px;">Coupon applied</p>
+  </sc-if>
+  <button type="button" onClick="{{apply}}">Apply coupon</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"showError":{"editor":"boolean","default":false,"section":"State"},"$preview":{"width":480,"height":320}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { applied: false, code: 'FALL10' };
+  }
+  renderVals() {
+    return {
+      title: 'Apply a coupon (' + this.state.code + ')',
+      rows: [{ name: 'Trekking boots' }, { name: 'Jacket' }],
+      showError: this.props.showError ?? false,
+      applied: this.state.applied,
+      apply: () => this.setState({ applied: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -326,6 +326,144 @@ test('ui subtasks lease one stack slot for the whole pair, rebuild only changes 
   assert.equal(fs.readFileSync(path.join(env.repo, 'src/WebApp/Page.razor'), 'utf8'), 'v2', "the verifier's edit was discarded");
 });
 
+test('ui subtasks see the mockups; the verifier compares renders with the app every round and design findings reach the implementer with both screenshots', async () => {
+  const story = '# DEMO-1: [FE - WebApp] - Coupon page\n\n## Acceptance Criteria\n\n- it works\n';
+  const env = makeRepo(story);
+  seedTicket(env.repo, { key: 'DEMO-1', slug: 'DEMO-1-thing', text: story, mockups: { 'DEMO-1-coupon/README.md': '# Screens\n', 'DEMO-1-coupon/Main.dc.html': '<x-dc></x-dc>' } });
+  const mockDir = path.join(env.repo, '.agent-state', 'board', 'DEMO-1', 'mockups', 'DEMO-1-coupon');
+  const stack = { leaseUntil: async () => ({ ok: true, slot: 1, webappUrl: 'http://localhost:5111' }), teststack: async () => ({ status: 0, stdout: '', stderr: '' }), release: async () => {}, renew: async () => true };
+  const renders = [];
+  const renderMockups = async (o) => {
+    renders.push(o);
+    fs.mkdirSync(o.outDir, { recursive: true });
+    const png = path.join(o.outDir, 'DEMO-1-coupon__Main.png');
+    fs.writeFileSync(png, 'png');
+    return { ok: true, sha: 'abc', cached: renders.length > 1, entries: [{ kind: 'screen', source: path.join(mockDir, 'Main.dc.html'), screen: 'Main.dc.html', title: 'Coupon', state: 'default', png }] };
+  };
+  const agents = fakeAgents({
+    implementer: [async () => plan([sub('web', ['src/WebApp/**'], { verify: 'ui' })])],
+    'pair-implementer': [
+      async (o) => (write(o.cwd, 'src/WebApp/Page.razor', 'v1'), result({ status: 'done', reason: 'ok', mockupScreens: ['Main.dc.html (default)'] })),
+      writeIn('src/WebApp/Page.razor', 'v2'),
+    ],
+    'pair-ui-verifier': [
+      async (o) => {
+        const dir = /Save every screenshot under (\S+?) \(/.exec(o.task)[1];
+        const mockup = /- Main\.dc\.html \(Coupon\), state default: (\S+)/.exec(o.task)[1];
+        fs.writeFileSync(path.join(dir, 'actual-Main.png'), 'png');
+        return result({ verdict: 'CHANGES_REQUESTED', summary: 'label differs', findings: [{ severity: 'blocking', category: 'design', file: 'src/WebApp/Page.razor', mockup, actual: path.join(dir, 'actual-Main.png'), issue: 'button says Apply, mockup says Apply coupon', fix: 'use the mockup copy' }] });
+      },
+      async () => approve(),
+    ],
+  });
+  const ctx = context(env, makeConfig(env.repo), agents, { stack });
+  ctx.deps.renderMockups = renderMockups;
+  const r = await orchestrate(ctx);
+  assert.ok(r.ok, JSON.stringify(r));
+
+  const planner = agents.calls.find((c) => c.name === 'implementer');
+  assert.match(planner.task, /### Mockups/);
+  assert.ok(planner.task.includes(path.join(mockDir, 'Main.dc.html')), 'the planner gets the absolute mockup files');
+  assert.match(planner.task, /name the mockup screens and states it builds in its acceptance criteria/);
+  const [first, second] = agents.calls.filter((c) => c.name === 'pair-implementer');
+  assert.ok(first.task.includes(path.join(mockDir, 'README.md')) && first.task.includes(path.join(mockDir, 'Main.dc.html')));
+  assert.match(first.task, /Match them: layout, copy, labels, states/);
+  assert.match(first.task, /"mockupScreens"/);
+  assert.equal(first.extraEnv.PIPELINE_STORY_SOURCES.split(path.delimiter).at(-1), 'DEMO-1', "the story's own ticket is handed to every agent");
+
+  const v = agents.calls.find((c) => c.name === 'pair-ui-verifier');
+  assert.match(v.task, /### Mockups: compare the app with the design/);
+  assert.match(v.task, /The implementer says it built: Main\.dc\.html \(default\)/);
+  assert.match(v.task, /"category": "design"/);
+  assert.match(v.task, /node scripts\/implement\/mockups\.mjs diff/);
+
+  // Rendered once per round into the round's mockup/ folder, from one cache.
+  assert.deepEqual(renders.map((o) => path.relative(env.repo, o.outDir)), [path.join('artifacts/pairs/DEMO-1/web/round-1/mockup'), path.join('artifacts/pairs/DEMO-1/web/round-2/mockup')]);
+  assert.equal(new Set(renders.map((o) => o.cacheDir)).size, 1);
+  assert.deepEqual(renders[0].files.map((f) => path.basename(f)).sort(), ['Main.dc.html', 'README.md']);
+
+  // The design finding goes to the next round with the mockup render and the app screenshot.
+  assert.match(second.task, /\[design\] src\/WebApp\/Page\.razor button says Apply/);
+  assert.match(second.task, /Mockup: .*round-1\/mockup\/DEMO-1-coupon__Main\.png/);
+  assert.match(second.task, /Actual: .*round-1\/actual-Main\.png/);
+  assert.match(second.task, /Renders of the mockup screens the UI verifier compared with last round:\n- .*DEMO-1-coupon__Main\.png/);
+  assert.doesNotMatch(second.task, /Screenshots the UI verifier took[^\n]*\n- [^\n]*mockup\n/, 'the mockup folder is not a screenshot');
+
+  const run = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0];
+  assert.deepEqual(run.rounds.map((x) => x.designFindings), [1, 0]);
+  assert.equal(run.designFindings, 1);
+  const verdicts = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl')).filter((d) => d.stage === 'implement-verify');
+  assert.deepEqual(verdicts.map((d) => d.design_findings), [1, 0]);
+  assert.match(verdicts[0].items[0].mockup, /DEMO-1-coupon__Main\.png$/);
+});
+
+test('code subtasks and non-UI stories get no mockups', async () => {
+  const env = makeRepo();
+  seedTicket(env.repo, { key: 'DEMO-1', slug: 'DEMO-1-thing', text: '# DEMO-1: [BE - Catalog.API] - Thing\n', mockups: { 'DEMO-1-x/Main.dc.html': '<x-dc></x-dc>' } });
+  const agents = fakeAgents({ implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])])], 'pair-implementer': [writeIn('src/Catalog.API/A.cs', 'x')], 'pair-verifier': [async () => approve()] });
+  const r = await orchestrate(context(env, makeConfig(env.repo), agents));
+  assert.ok(r.ok, JSON.stringify(r));
+  for (const c of agents.calls) assert.doesNotMatch(c.task, /### Mockups/, c.name);
+});
+
+test('nits and scope: disputes go to the next verifier, accepted ones stop blocking, re-asserted twice stays blocking, follow-ups are recorded', async () => {
+  const env = makeRepo();
+  const bug = { severity: 'blocking', category: 'correctness', file: 'src/Catalog.API/Api.cs', line: 3, issue: 'the owner check is missing', fix: 'add it' };
+  const nit = { severity: 'blocking', category: 'style', file: 'src/Catalog.API/Api.cs', line: 1, issue: 'rename x to total', fix: 'rename' };
+  const label = { severity: 'blocking', category: 'correctness', file: 'src/Catalog.API/Api.cs', line: 2, issue: 'the response field must be Total', fix: 'rename the field' };
+  const agents = fakeAgents({
+    implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])]), async () => result({ action: 'fail', reason: 'give up' })],
+    'pair-implementer': [
+      writeIn('src/Catalog.API/Api.cs', 'v1'),
+      async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v2'), result({ status: 'done', reason: 'fixed the bug', disputes: [{ finding: 'api-r1-2', kind: 'nit', reason: 'AC 1 says nothing about naming' }, { finding: 'the response field must be Total', kind: 'out-of-scope', reason: 'no AC names the field' }], followUps: [{ title: 'Rename legacy totals', reason: 'confusing names across Catalog.API' }] })),
+      async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v3'), result({ status: 'done', reason: 'no', disputes: [{ finding: 'api-r1-3', kind: 'out-of-scope', reason: 'still no AC' }] })),
+      async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v4'), result({ status: 'done', reason: 'no', disputes: [{ finding: 'api-r1-3', kind: 'out-of-scope', reason: 'still no AC' }] })),
+    ],
+    'pair-verifier': [
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'three', findings: [bug, nit, label] }),
+      // Accepts the nit, re-asserts the field name with evidence.
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'field', disputes: [{ finding: 'api-r1-2', decision: 'accepted' }, { finding: 'api-r1-3', decision: 'reasserted', evidence: 'AC 2: the API returns Total' }], findings: [{ ...label, id: 'api-r1-3', evidence: 'AC 2: the API returns Total' }] }),
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'field', findings: [{ ...label, id: 'api-r1-3', evidence: 'AC 2 again' }] }),
+      // After two re-assertions the dispute is overruled: raised again without evidence, it still blocks.
+      async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'field', findings: [{ ...label, id: 'api-r1-3' }] }),
+    ],
+  });
+  const r = await orchestrate(context(env, makeConfig(env.repo, { maxPairRounds: 4 }), agents));
+  assert.equal(r.ok, false);
+  const impl = agents.calls.filter((c) => c.name === 'pair-implementer');
+  const ver = agents.calls.filter((c) => c.name === 'pair-verifier');
+  assert.match(impl[1].task, /\[id api-r1-2\] src\/Catalog\.API\/Api\.cs:1 rename x to total/);
+  assert.match(impl[1].task, /Do not act on nits/);
+  assert.match(impl[1].task, /"disputes": \[\{"finding"/);
+  assert.match(ver[1].task, /### Disputes from the implementer[\s\S]*- api-r1-2 \(nit\): "rename x to total"\n {2}Implementer: AC 1 says nothing about naming/);
+  assert.match(ver[1].task, /- api-r1-3 \(out-of-scope\)/);
+  assert.match(impl[2].task, /Re-asserted after your dispute \(1x\): AC 2: the API returns Total/);
+  assert.match(impl[3].task, /Re-asserted after your dispute \(2x\): AC 2 again It can no longer be disputed/);
+  assert.match(ver[3].task, /api-r1-3: "the response field must be Total" was re-asserted 2 times; the implementer's new dispute is overruled/);
+
+  const run = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0];
+  assert.deepEqual(run.rounds.map((x) => [x.verdict, x.disputes.accepted, x.disputes.reasserted, x.disputes.overruled, x.disputes.followUps]), [['CHANGES_REQUESTED', 0, 0, 0, 0], ['CHANGES_REQUESTED', 1, 1, 0, 1], ['CHANGES_REQUESTED', 0, 1, 0, 0], ['CHANGES_REQUESTED', 0, 0, 1, 0]]);
+  assert.deepEqual(run.followUps.map((u) => [u.title, u.subtask, u.round]), [['Rename legacy totals', 'api', 2]]);
+  const verdicts = readJsonl(path.join(env.repo, '.agent-metrics/decisions.jsonl')).filter((d) => d.stage === 'implement-verify');
+  assert.deepEqual(verdicts[1].disputes.map((d) => [d.finding, d.kind, d.ruling]), [['api-r1-2', 'nit', 'accepted'], ['api-r1-3', 'out-of-scope', 'reasserted']]);
+  assert.deepEqual(verdicts[1].follow_ups, [{ title: 'Rename legacy totals', reason: 'confusing names across Catalog.API' }]);
+  assert.deepEqual(verdicts[1].items[0].dispute, { kind: 'out-of-scope', ruling: 'reasserted' });
+});
+
+test('a disputed nit the verifier raises again without evidence does not block', async () => {
+  const env = makeRepo();
+  const nit = { severity: 'blocking', category: 'style', file: 'src/Catalog.API/Api.cs', line: 1, issue: 'rename x to total', fix: 'rename' };
+  const agents = fakeAgents({
+    implementer: [async () => plan([sub('api', ['src/Catalog.API/**'])])],
+    'pair-implementer': [writeIn('src/Catalog.API/Api.cs', 'v1'), async (o) => (write(o.cwd, 'src/Catalog.API/Api.cs', 'v2'), result({ status: 'done', reason: 'ok', disputes: [{ finding: 'api-r1-1', kind: 'nit', reason: 'naming is not in any AC' }] }))],
+    'pair-verifier': [async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'nit', findings: [nit] }), async () => result({ verdict: 'CHANGES_REQUESTED', summary: 'nit', findings: [{ ...nit, id: 'api-r1-1' }] })],
+  });
+  const r = await orchestrate(context(env, makeConfig(env.repo), agents));
+  assert.ok(r.ok, JSON.stringify(r));
+  const run = readJsonl(path.join(env.repo, '.agent-metrics/subtask-runs.jsonl'))[0];
+  assert.deepEqual(run.rounds.map((x) => [x.verdict, x.disputes.nit, x.disputes.accepted]), [['CHANGES_REQUESTED', 0, 0], ['APPROVED', 1, 1]]);
+});
+
 test('verify "ui" is rejected for a non-UI story', async () => {
   const env = makeRepo();
   const agents = fakeAgents({ implementer: [async () => plan([sub('web', ['src/WebApp/**'], { verify: 'ui' })])] });

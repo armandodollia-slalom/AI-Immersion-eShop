@@ -35,7 +35,8 @@ export function parseVerdict(text, { ui = false } = {}) {
   const raw = extractResult(text ?? '');
   if (!raw || !['APPROVED', 'CHANGES_REQUESTED'].includes(raw.verdict)) return null;
   if (raw.findings != null && !Array.isArray(raw.findings)) return null;
-  const findings = (raw.findings ?? []).map((f) => ({ ...f, severity: f?.severity === 'minor' ? 'minor' : 'blocking' }));
+  // A design finding's app screenshot (`actual`) is its screenshot when the verifier gave no other.
+  const findings = (raw.findings ?? []).map((f) => ({ ...f, ...(ui && typeof f?.actual === 'string' && typeof f?.screenshot !== 'string' ? { screenshot: f.actual } : {}), severity: f?.severity === 'minor' ? 'minor' : 'blocking' }));
   const blocking = findings.filter((f) => f.severity === 'blocking');
   for (const f of blocking) {
     if (typeof f.issue !== 'string' || !f.issue.trim()) return null;
@@ -43,16 +44,19 @@ export function parseVerdict(text, { ui = false } = {}) {
   }
   const verdict = blocking.length ? 'CHANGES_REQUESTED' : raw.verdict === 'CHANGES_REQUESTED' ? null : 'APPROVED';
   if (!verdict) return null; // changes requested without a single blocking finding
-  return { verdict, summary: String(raw.summary ?? ''), findings };
+  return { verdict, summary: String(raw.summary ?? ''), findings, ...(Array.isArray(raw.disputes) ? { disputes: raw.disputes } : {}) };
 }
 
 export function formatFindings(findings) {
   return findings
     .map((f, i) => {
       const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ''} ` : '';
-      const shot = f.screenshot ? `\n   Screenshot: ${f.screenshot}` : '';
+      const design = [f.mockup && `Mockup: ${f.mockup}`, f.actual && `Actual: ${f.actual}`, f.diff && `Pixel diff (evidence only): ${f.diff}`].filter(Boolean).map((l) => `\n   ${l}`).join('');
+      const shot = `${f.screenshot && f.screenshot !== f.actual ? `\n   Screenshot: ${f.screenshot}` : ''}${design}`;
       const detail = f.detail ? `\n   ${String(f.detail).split('\n').join('\n   ')}` : '';
-      return `${i + 1}. [${f.severity ?? 'blocking'}] ${where}${f.issue ?? ''}${f.fix ? `\n   Fix: ${f.fix}` : ''}${shot}${detail}`;
+      const tag = `${f.id ? `[id ${f.id}] ` : ''}${f.category === 'design' ? '[design] ' : ''}`;
+      const again = f.reasserted ? `\n   Re-asserted after your dispute (${f.reasserted}x): ${f.evidence ?? ''}${f.reasserted >= 2 ? ' It can no longer be disputed: fix it, or report blocked.' : ''}` : '';
+      return `${i + 1}. [${f.severity ?? 'blocking'}] ${tag}${where}${f.issue ?? ''}${f.fix ? `\n   Fix: ${f.fix}` : ''}${again}${shot}${detail}`;
     })
     .join('\n');
 }

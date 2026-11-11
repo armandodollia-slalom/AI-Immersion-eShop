@@ -129,6 +129,8 @@ Every story transition, `board sync` and `setup` recompute it, so moving an epic
 
 Mockups belong to a ticket: they are its assets on the `board-assets` branch, shown in its **Mockups** section (images inline, other files linked, pinned to one commit) and downloaded into its cache folder by `board fetch` (see [Assets](#assets)). Attach mockups to a new ticket with `board new --mockups <dir>`.
 
+Who sees them: the agents implementing a story read its own mockups (and, in an `implement run --epic`, the epic's) from the start, the UI verifier compares renders of every mockup screen and state with the running app each pair round, and the PR check's design lens holds the finished branch to them ([implement](implement.md#mockups), [PR check](pr-check.md#mockup-renders)). The [story guard](README.md#story-guard) keeps every other ticket's mockups closed. Keep the mockup folder's `README.md` listing the screens and their states: builders and verifiers use it to match each screen to a page.
+
 ## Tickets: the issue is the source of truth
 
 Stories, bugs, epics and research spikes are GitHub issues on the board repo, and the issue body holds the **complete** source Markdown. There is no story folder in the repository: every stage reads a ticket through one loader (`scripts/pipeline/lib/tickets.mjs`) from a local cache that `board fetch` (or the loader, on demand) fills from the issues.

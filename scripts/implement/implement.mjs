@@ -12,7 +12,7 @@ import { metricsFile } from '../pipeline/lib/state.mjs';
 import { epicTickets, loadTicket } from '../pipeline/lib/tickets.mjs';
 import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
 import { collectStories } from './lib/batch.mjs';
-import { DECISIONS_FILE, OUTCOMES_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
+import { DECISIONS_FILE, OUTCOMES_FILE, PR_CHECKS_FILE, SUBTASK_RUNS_FILE, formatDecisionReport, labelDecisions } from './lib/decisions.mjs';
 import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
 import { boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
 import { batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir } from './lib/implement.mjs';
@@ -224,7 +224,9 @@ async function main() {
 
     case 'decisions': {
       const read = (f) => readJsonl(metricsFile(config, f)).filter((r) => !flags.story || r.story === flags.story);
-      const rows = labelDecisions({ decisions: read(DECISIONS_FILE), runs: read(SUBTASK_RUNS_FILE), outcomes: read(OUTCOMES_FILE) }, config.implement.decisions);
+      // PR check records of an epic check list every ticket in `stories`.
+      const prChecks = readJsonl(metricsFile(config, PR_CHECKS_FILE)).filter((r) => !flags.story || r.story === flags.story || r.stories?.includes(flags.story));
+      const rows = labelDecisions({ decisions: read(DECISIONS_FILE), runs: read(SUBTASK_RUNS_FILE), outcomes: read(OUTCOMES_FILE), prChecks }, config.implement.decisions);
       if (flags.json) console.log(JSON.stringify(rows, null, 2));
       else console.log(formatDecisionReport(rows));
       return 0;
