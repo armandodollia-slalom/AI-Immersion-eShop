@@ -213,6 +213,8 @@ function finishRun(config, invocation, { name, mode, alias, modelId, usageFile, 
   return { output, seconds, usage: summarizeUsage(records) };
 }
 
+const shellQuote = (a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+
 const usageFileFor = () => path.join(os.tmpdir(), `pipeline-usage-${process.pid}-${randomUUID()}.json`);
 
 function prepare(config, { name, task, mode, model, cli, noSubagents, cwd, promptFile }) {
@@ -224,6 +226,8 @@ function prepare(config, { name, task, mode, model, cli, noSubagents, cwd, promp
   // goes under the agent's own working directory: headless Copilot trusts only `cwd` and refuses to
   // read a file outside it (a pair in a subtask worktree whose config.root is the story worktree).
   if (promptFile !== false && !config.agent.cmd && cli === 'copilot') {
+    // Write it inside the agent's own working directory: a headless Copilot only reads its trusted folder,
+    // so a prompt in another worktree (a subtask's parent) would go unread.
     const file = promptFile ?? path.join(cwd, config.stateDir, 'prompts', `${name}-${process.pid}-${Date.now()}-${randomUUID().slice(0, 8)}.md`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, prompt);
@@ -258,13 +262,17 @@ const finalize = (config, prepared, { name, mode, usage }, { stdout, stderr, sta
 // `usage` ({ stage, story, round, step }) attributes the run's tokens and cost; see usage.mjs. The
 // result's `usage` sums what was recorded ({ tokens, costUsd, premiumRequests, ... }).
 export function runAgent(config, { name, task, mode = 'read', model = null, cli = null, noSubagents = false, cwd = config.root, timeoutSec = 900, extraEnv = {}, usage = {} }) {
-  const prepared = prepare(config, { name, task, mode, model, cli, noSubagents, cwd, promptFile: false });
+  // On Windows, npm-installed CLIs are .cmd shims that only start through a shell, and a Copilot
+  // prompt must go through a file (see prepare), exactly as in runAgentAsync.
+  const useShell = process.platform === 'win32' && !config.agent.cmd;
+  const prepared = prepare(config, { name, task, mode, model, cli, noSubagents, cwd, promptFile: useShell ? null : false });
   const { invocation, usageFile } = prepared;
   const started = Date.now();
-  const result = run(invocation.cmd, invocation.args, {
+  const result = run(useShell ? [invocation.cmd, ...invocation.args].map(shellQuote).join(' ') : invocation.cmd, useShell ? [] : invocation.args, {
     cwd,
     input: invocation.input,
     timeoutSec,
+    shell: useShell,
     env: childEnv({ PIPELINE_AGENT_NAME: name, PIPELINE_AGENT_MODE: mode, PIPELINE_USAGE_FILE: usageFile, ...extraEnv }),
   });
   return finalize(config, prepared, { name, mode, usage }, result, started);
@@ -284,12 +292,11 @@ export function runAgentAsync(config, { name, task, mode = 'read', model = null,
   const env = childEnv({ PIPELINE_AGENT_NAME: name, PIPELINE_AGENT_MODE: mode, PIPELINE_USAGE_FILE: usageFile, ...extraEnv });
   // On Windows, npm-installed CLIs are .cmd shims that only start through a shell.
   const useShell = process.platform === 'win32' && !config.agent.cmd;
-  const quote = (a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
   const started = Date.now();
   return new Promise((resolve) => {
     const child = useShell
-      ? spawn([invocation.cmd, ...invocation.args].map(quote).join(' '), { cwd, shell: true, env })
-      : spawn(invocation.cmd, invocation.args, { cwd, env });
+      ? spawn([invocation.cmd, ...invocation.args].map(shellQuote).join(' '), { cwd, shell: true, env, windowsHide: true })
+      : spawn(invocation.cmd, invocation.args, { cwd, env, windowsHide: true });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -297,7 +304,7 @@ export function runAgentAsync(config, { name, task, mode = 'read', model = null,
     const kill = () => {
       // Through a shell the agent is a grandchild that holds the output pipes open, so kill the whole
       // tree and stop waiting on the pipes.
-      if (useShell) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      if (useShell) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
       child.kill('SIGKILL');
       child.stdout.destroy();
       child.stderr.destroy();

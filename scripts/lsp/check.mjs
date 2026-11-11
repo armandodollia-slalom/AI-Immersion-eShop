@@ -27,7 +27,7 @@ const PROBES = [
   ['yaml', '.github/dependabot.yml', 0, 0],
 ].filter(([lang]) => !only?.length || only.includes(lang));
 
-const child = spawn(process.execPath, [path.join(root, 'scripts/lsp/mcp.mjs')], { cwd: root, stdio: ['pipe', 'pipe', 'inherit'] });
+const child = spawn(process.execPath, [path.join(root, 'scripts/lsp/mcp.mjs')], { cwd: root, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
 let buffer = '';
 let nextId = 1;
 const pending = new Map();

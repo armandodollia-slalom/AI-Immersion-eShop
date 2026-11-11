@@ -205,7 +205,7 @@ export function startWorker(config, story, { pr, script }) {
   const fd = fs.openSync(logPath, 'a');
   const env = { ...process.env };
   delete env.PIPELINE_ROOT;
-  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, stdio: ['ignore', fd, fd], env });
+  const child = spawn(process.execPath, [script, ...args], { cwd: config.root, stdio: ['ignore', fd, fd], env, windowsHide: true });
   fs.closeSync(fd);
   return new Promise((resolve) => {
     child.on('exit', (code) => {
