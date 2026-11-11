@@ -9,6 +9,7 @@ import { experimentReport, formatReport, gradeExperiment, runExperiment } from '
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { botSetup, botStatus } from './lib/bot-setup.mjs';
 import { mockupsDir } from './lib/tickets.mjs';
 import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { nowIso } from './lib/util.mjs';
@@ -32,6 +33,9 @@ Pipeline
                                 and branch; claims each story's board card (--force takes it over)
   implement resume [--parallel N] [--pr]
                                 continue the last implement run that did not finish
+  implement requeue [--requeue-only] [--dry-run] [--parallel N|auto] [--no-pr]
+                                run the Failed tickets a human resolved on GitHub (escalation-resolved)
+                                in one batch; safe on a timer (scripts/implement/requeue-schedule.mjs)
   implement status [story]      progress of the latest implement run
   implement cleanup [story...]  remove subtask worktrees a failed run left behind
   implement decisions [--story KEY] [--json]
@@ -51,13 +55,21 @@ Pipeline
                                 epic itemized by ticket and stage, or (no story) the overview by epic,
                                 ticket, stage, model and month
 
+PR bot (docs/ai-pipeline/setup.md#the-pipelines-pr-bot)
+  bot setup [--force] [--org <org>] [--public]
+                                create your dev-bot-<gh login> GitHub App (click "Create", then "Install"
+                                on the repo); the pipeline then opens its PRs as the bot, so you can
+                                approve them
+  bot status                    bot name, configured, installed on the repo, token can be minted
+                                (exit 1 when not configured or installed)
+
 Hooks (called by agent tool configs and .githooks)
   hook stop | hook session-start [--nested] | hook pre-tool
   git-hook post-commit | post-merge | pre-push`;
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel', 'org']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -69,7 +81,7 @@ async function main() {
     case 'implement': {
       const stage = stages.find((s) => s.name === 'implement');
       const args = process.argv.slice(3);
-      if (args[0] && !['run', 'resume', 'story', 'status', 'cleanup', 'decisions', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
+      if (args[0] && !['run', 'resume', 'requeue', 'story', 'status', 'cleanup', 'decisions', 'metrics', 'help', '--help'].includes(args[0])) args.unshift('run');
       return runStage(config, stage, args, { inherit: true }).status;
     }
 
@@ -163,6 +175,14 @@ async function main() {
       const report = experimentReport(implConfig, id);
       console.log(flags.json ? JSON.stringify(report, null, 2) : formatReport(report));
       return 0;
+    }
+
+    case 'bot': {
+      const sub = positional[0];
+      if (sub === 'setup') return botSetup(config, { force: Boolean(flags.force), org: typeof flags.org === 'string' ? flags.org : null, isPublic: Boolean(flags.public) });
+      if (sub === 'status') return botStatus(config);
+      console.error('Usage: pipeline bot setup [--force] [--org <org>] [--public] | bot status');
+      return 2;
     }
 
     case 'stages': {

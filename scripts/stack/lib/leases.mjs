@@ -194,10 +194,10 @@ export async function renew(slot, opts = {}) {
  */
 export function memoryWarning({ config = loadConfig(), docker = process.env.TESTSTACK_DOCKER || 'docker' } = {}) {
   try {
-    const info = spawnSync(docker, ['info', '--format', '{{.MemTotal}}'], { encoding: 'utf8', timeout: 5000 });
+    const info = spawnSync(docker, ['info', '--format', '{{.MemTotal}}'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
     const totalMb = Number(info.stdout.trim()) / 1024 / 1024;
     if (info.status !== 0 || !totalMb) return null;
-    const ls = spawnSync(docker, ['compose', 'ls', '--format', 'json'], { encoding: 'utf8', timeout: 5000 });
+    const ls = spawnSync(docker, ['compose', 'ls', '--format', 'json'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
     const running = ls.status === 0
       ? JSON.parse(ls.stdout || '[]').filter(p => p.Name?.startsWith(config.project) && /running/.test(p.Status ?? '')).length
       : 0;

@@ -14,7 +14,7 @@ public class IdentityConfigurationTests
         var scopes = Config.GetApiScopes().Select(scope => scope.Name).Order().ToArray();
 
         CollectionAssert.AreEqual(resources, scopes);
-        CollectionAssert.AreEquivalent(new[] { "basket", "orders", "webhooks" }, scopes);
+        CollectionAssert.AreEquivalent(new[] { "basket", "orders", "promotions", "webhooks" }, scopes);
     }
 
     [TestMethod]

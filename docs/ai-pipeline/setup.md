@@ -13,7 +13,7 @@ Part of the [AI development pipeline](README.md). What a Windows or macOS machin
 | graphify | agents' code lookups | see [copilot-setup.md](../copilot-setup.md#3-enable-graphify-for-copilot) |
 | .NET SDK (version in `global.json`), Aspire CLI, Docker Desktop | building the code and the QE teststack | |
 | npm dependencies (Playwright) | e2e tests, video keyframes, PR check frame extraction | `npm ci`, then `npx playwright install chromium` |
-| `gh`, signed in | `implement run --pr`, `pr-check run --pr N` | or set `GITHUB_TOKEN` / `GH_TOKEN` for the PR check |
+| `gh`, signed in | `implement run --pr`, `pr-check run --pr N` | or set `GITHUB_TOKEN` / `GH_TOKEN` for the PR check. The pipeline's PRs are opened by your [PR bot](#the-pipelines-pr-bot) once it is set up |
 | `ffmpeg` | optional, faster video frame extraction in the PR check | falls back to Playwright's Chromium |
 
 ## macOS
@@ -97,6 +97,57 @@ Windows notes:
    node scripts/pipeline/pipeline.mjs implement run --epic promotions-and-recommendations --dry-run
    ```
 
+## The pipeline's PR bot
+
+GitHub never lets a PR's author approve it. So the pipeline does not open its PRs with your `gh` login: it pushes their branches and opens them as **`dev-bot-<your gh login>`** (here `dev-bot-armandodollia-slalom`), a GitHub App each developer creates once. You then approve the pipeline's PRs with GitHub's normal review flow, like your teammates, and `review-quorum` counts your approval. Only the PR's author changes: commits keep their authors, and every other `gh` call (board, labels, reviews, review requests) stays yours. The code is `scripts/pipeline/lib/bot.mjs`.
+
+It covers every PR the pipeline opens: single-ticket PRs (`implement run --pr`), bug-epic group PRs and epic PRs, the push of a reopened bug fix onto its open group PR, and the lessons PR. With `implement.autoMerge.identity: "bot"` the [review gate](review-gate.md#auto-merge) also merges with it.
+
+### One-time setup (per developer)
+
+```bash
+node scripts/pipeline/pipeline.mjs bot setup
+```
+
+It needs your `gh` login and two clicks in the browser; GitHub does not let a script do either:
+
+1. **Create.** The command starts a local page on `127.0.0.1` that sends GitHub the App's manifest: the name `dev-bot-<login>`, private, no webhook, the permissions Contents, Pull requests and Issues (read and write) and Metadata (read), no events. Click **Create GitHub App**. GitHub sends you back to the local page, which saves the App's credentials.
+2. **Install.** The command then opens the App's install page: choose **Only select repositories**, pick this repository and click **Install**. The command waits (up to 10 minutes) until the installation works, mints a test token and says so.
+
+Then check it at any time (exit code 0 when it is configured, installed and can mint a token, 1 otherwise):
+
+```bash
+node scripts/pipeline/pipeline.mjs bot status
+```
+
+Until the bot is set up, every PR the pipeline opens logs a warning naming `pipeline bot setup` and uses your own `gh` login, as before. The same happens, with a warning, when the bot cannot get a token (for example it is not installed on the repository).
+
+Notes:
+
+- **Name.** `bot.namePattern` (`dev-bot-{login}`), lowercased. GitHub App names are global and at most 34 characters: a longer name keeps its first 27 characters (without a trailing hyphen) and ends with `-` and 6 characters of a hash of the full name. If GitHub says the name is taken, change it on the Create page; the pipeline uses the App it gets back.
+- **Owner.** A private App can be installed only on the account that owns it. When the repository belongs to an organization or another user, run `bot setup --org <org>` (an organization admin creates the App there) or `bot setup --public` (anyone may install it; it still acts only where it is installed).
+- `bot setup --force` creates a new App even when credentials exist.
+
+### Where the credentials live
+
+Outside the repository, in `bot.credentialsDir` (`~/.config/eshop-pipeline`; `%USERPROFILE%\.config\eshop-pipeline` on Windows): `dev-bot-<login>.json` (`appId`, `slug`, `owner`, `privateKeyFile`) and the App's private key `dev-bot-<login>.private-key.pem`, both readable only by you (0600). Nothing else is kept: the App's client secret is not saved. The pipeline signs a short-lived JWT with the key, asks GitHub for an installation token limited to this repository (valid for an hour, kept in memory and renewed 5 minutes before it expires), and gives it to `gh` as `GH_TOKEN` and to `git push` as an HTTP header from the environment, so the token never appears on a command line, in a URL, in a log or in an error.
+
+### Settings
+
+| Setting | Effect |
+| --- | --- |
+| `bot.enabled` in `scripts/pipeline/config.json` (default `true`), or `PIPELINE_BOT=0` | off: the pipeline's PRs are opened with your `gh` login, without a warning |
+| `bot.namePattern` (`dev-bot-{login}`) | the App's name |
+| `bot.credentialsDir` (`~/.config/eshop-pipeline`), or `PIPELINE_BOT_CREDENTIALS_DIR` | where the credentials are read and written |
+| `PIPELINE_BOT_APP_ID` with `PIPELINE_BOT_PRIVATE_KEY` (the PEM text; `\n` escapes are accepted) or `PIPELINE_BOT_PRIVATE_KEY_FILE` | CI or a scheduled runner: the App's id and key from the environment instead of the credentials file (store the key as a secret) |
+| `PIPELINE_BOT_LOGIN` | the login used for the name instead of asking `gh` |
+
+### Rotate or revoke
+
+- **Rotate the key:** on GitHub, Settings → Developer settings → GitHub Apps → `dev-bot-<login>` → Private keys → **Generate a private key**. Replace the `.pem` file in the credentials folder with the downloaded one (keep its name, `chmod 600` it), then delete the old key on the same page. `bot status` confirms it.
+- **Stop using it on one machine:** delete the two files; the pipeline falls back to your `gh` login (with the warning), or set `PIPELINE_BOT=0`.
+- **Revoke:** uninstall the App from the repository (Settings → Integrations → GitHub Apps, or the App's Install page), or delete the App (its settings → Advanced → **Delete GitHub App**), which revokes its keys and tokens at once. PRs it already opened keep it as their author.
+
 ## Optional settings
 
 | Setting | Effect |
@@ -115,6 +166,18 @@ Setting a variable for one command:
 | `export PIPELINE_DISABLE=1` (rest of the session) | `$env:PIPELINE_DISABLE = '1'` (rest of the session) |
 
 Per-stage limits, timeouts and models are in each stage's `scripts/<stage>/config.json`; see the stage pages and the [agent catalog](agents.md).
+
+## Review gate for bug-fix PRs
+
+The [review gate](review-gate.md) needs nothing extra to assess PRs and request reviews (the pipeline machine's `gh` login with the `project` scope; run `board setup` once to create its board fields). Repository settings it relies on are the owner's call, and the gate never changes them:
+
+| Setting | Where | Why |
+| --- | --- | --- |
+| `review-quorum` as a required status check on `main` | Settings → Rules → Rulesets → `main` → Require status checks to pass | enforces each PR's `approvals:N`; until then it is a visible check only |
+| Allow auto-merge | Settings → General → Pull Requests | `gh pr merge --auto` waits for GitHub's own requirements instead of failing |
+| A GitHub App with a ruleset bypass, its token in `REVIEW_GATE_APP_TOKEN`, and `implement.autoMerge.identity: "app"` (or the [PR bot](#the-pipelines-pr-bot) on the bypass list and `identity: "bot"`) | the App's settings; the ruleset's bypass list | only once `main` requires approvals from people: a Low PR that needs none can then merge only through a bypass |
+
+Auto-merge is on (`implement.autoMerge.enabled` in `scripts/implement/config.json`); set it to `false` to stop it.
 
 ## CI
 

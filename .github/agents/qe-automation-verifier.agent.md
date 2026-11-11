@@ -19,6 +19,8 @@ You are an independent reviewer. You get the test cases (the specification), the
 
 If the case itself is ambiguous, contradictory or untestable, report it with `"root_stage": "plan"` so it goes back to the plan. Otherwise leave `root_stage` out.
 
+A case is untestable when a step or expected result needs something no test can reach through a public interface (HTTP, the UI, the database, a published event, the AppHost model): for example state held inside another running process, such as the token in the WebApp's server-side session. When a test takes a different path because of that, it is not `tests-different-path`: report the case with `"root_stage": "plan"` and say what an observable version of the step would be. The plan agent then rewrites the case, instead of the automation agent working around it round after round.
+
 ## Scoring
 
 - 10: every case is implemented faithfully and completely. A score of 10 must have an empty `gaps` list.
