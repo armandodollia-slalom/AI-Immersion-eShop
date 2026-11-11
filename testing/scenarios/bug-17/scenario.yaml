@@ -1,0 +1,4 @@
+description: >
+  BUG-17 (catalog create without a name returns 500): catalog-edge already has what the cases
+  need (14 items, brands and types 1-4, admin user), so this scenario only extends it.
+extends: catalog-edge
