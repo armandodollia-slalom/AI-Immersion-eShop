@@ -338,6 +338,23 @@ test('bug epic: a grouping that stays invalid falls back to one PR per bug; a fa
   assert.equal(r.epic.outcome, 'stories-failed');
 });
 
+test('bug epic: a stacked group gets the tickets of the groups below it synced before its PR check and push', async () => {
+  const env = makeRepo({ bugs: true });
+  const worker = fakeWorker({ notes: true });
+  // BUG-2 is blocked by BUG-1, so group two stacks on group one and its branch carries BUG-1's plan.
+  const note = { stories: [], prGroups: [{ id: 'one', title: 'One', tickets: ['BUG-1'] }, { id: 'two', title: 'Two', tickets: ['BUG-2'] }, { id: 'three', title: 'Three', tickets: ['BUG-3'] }] };
+  const seen = {};
+  const prCheck = async (uenv) => {
+    const p = path.join(ticketDir(uenv.wtConfig, 'BUG-1'), 'story.md');
+    seen[uenv.unit.id] = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+    return { verdict: 'PASS', score: 10, openFindings: [] };
+  };
+  const f = fakeDeps(note, { startWorker: worker.startWorker, prCheck });
+  await runEpic(env.config, { epic: env.epic, tickets: env.tickets, inputs: env.inputs, base: 'main', parallel: 1, pr: true, deps: f.deps, log: () => {} });
+  assert.match(seen.two ?? '', /## Implementation Notes/, "the stacked group's worktree has BUG-1's ticket with its notes");
+  assert.equal(seen.three, null, 'an independent group gets no other tickets');
+});
+
 test('singleGroups: one group per ticket', () => {
   assert.deepEqual(singleGroups([{ key: 'BUG-1', title: 'a' }]).map((g) => [g.id, g.tickets]), [['bug-1', ['BUG-1']]]);
 });

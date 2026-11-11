@@ -501,7 +501,18 @@ async function deliverUnit(env, unit, units, epicWt) {
     if (qe.status !== 'verified') return finish(`epic-qe-${qe.status}`, { reason: `epic-level QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}` });
   }
 
-  syncTickets(uenv, unit.keys, state);
+  // A stacked group's branch also carries the plans of the groups it stacks on, which the pre-push
+  // QE check verifies too.
+  const stacked = new Set();
+  const addStack = (u) => {
+    for (const d of u?.deps ?? []) {
+      if (stacked.has(d)) continue;
+      stacked.add(d);
+      addStack(units.find((x) => x.id === d));
+    }
+  };
+  addStack(unit);
+  syncTickets(uenv, [...unit.keys, ...units.filter((u) => stacked.has(u.id)).flatMap((u) => u.keys)], state);
 
   // The PR check for the whole unit, in one run: every ticket (frontend ones get the design lens) and
   // the journeys. Each ticket's row in the PR body shows the unit's result.
