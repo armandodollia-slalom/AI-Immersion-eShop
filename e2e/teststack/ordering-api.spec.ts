@@ -289,8 +289,6 @@ test.describe('create order', () => {
   });
 
   test('an order is created for the signed-in buyer, not the userId in the body', async ({ request }) => {
-    // BUG: CreateOrderAsync trusts request.UserId, so bob can place an order on alice's account.
-    test.fixme(true, 'create order uses the userId from the request body instead of the token');
     const before = (await listOrders(request, alice)).length;
     await request.post(`${ORDERING_URL}?${V1}`, {
       headers: bearer(bob, { 'x-requestid': randomUUID() }),
