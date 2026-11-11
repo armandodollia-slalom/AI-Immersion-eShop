@@ -42,7 +42,7 @@ Pipeline events move a card only along these transitions; any other event is ign
 | `claim` | `implement run` (each story it runs), `pipeline start` (story-start hook) | no lane, Backlog, Ready, Failed, In Progress; Testing, Pending Review or Done only with `--force`; a card another machine holds only with `--takeover` | In Progress |
 | `testing` | the runner after the review approves; the Stop hook (interactive) | In Progress | Testing |
 | `product-bug` | the runner when QE reports bugs and a bug-fix cycle starts; the Stop hook | Testing, In Progress | In Progress |
-| `verified` | the runner after it opens the PR (`board review`); the Stop hook | In Progress, Testing | Pending Review |
+| `verified` | the runner after it opens the PR (`board review`); the Stop hook | In Progress, Testing, Failed (a story that failed in an earlier run and is verified, or only merged, by a later one) | Pending Review |
 | `failed` | `implement run` for every story that did not finish (`board fail`) | no lane, Backlog, Ready, In Progress, Testing | Failed |
 | `closed` | `board sync` | any lane but Done | Done |
 
