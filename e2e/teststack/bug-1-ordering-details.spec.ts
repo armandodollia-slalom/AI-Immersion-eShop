@@ -72,8 +72,12 @@ test('TC-BUG-1-04 bob cannot read alice\'s order', async ({ request }) => {
   });
 });
 
-test('TC-BUG-1-07 ordering API spec passes with the fixme removed from the order-details test', async () => {
+test('TC-BUG-1-07 ordering API spec passes with the fixme removed from the order-details test', async ({ request }) => {
   test.setTimeout(10 * 60 * 1000);
+  // the stack must be serving before the nested run starts re-seeding it
+  await expect
+    .poll(async () => (await request.get(`${API}/4?${V1}`, { headers: bearer(alice) })).status(), { timeout: 60_000 })
+    .toBe(200);
   const runSpec = () =>
     spawnSync(
       'npx',
@@ -81,14 +85,26 @@ test('TC-BUG-1-07 ordering API spec passes with the fixme removed from the order
         '--reporter=json', 'e2e/teststack/ordering-api.spec.ts'],
       { cwd: path.resolve(__dirname, '..', '..'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, E2E_KEEP_VIDEOS: '' } },
     );
-  // the nested run re-seeds the stack and restarts ordering-api; retry once if it was still coming up
-  const run = await test.step('run ordering-api.spec.ts', () => {
-    const first = runSpec();
-    return first.status === 0 ? first : runSpec();
+  // the nested run re-seeds the stack and restarts ordering-api; retry up to twice if it was still coming up
+  const run = await test.step('run ordering-api.spec.ts', async () => {
+    let result = runSpec();
+    for (let attempt = 1; attempt < 3 && result.status !== 0; attempt++) {
+      // wait until the restarted ordering-api serves the seeded order again before retrying
+      await expect
+        .poll(async () => (await request.get(`${API}/4?${V1}`, { headers: bearer(alice) }).catch(() => null))?.status(), { timeout: 60_000 })
+        .toBe(200);
+      result = runSpec();
+    }
+    return result;
   });
   await test.step('the run exits 0 and the details test passed, not skipped', () => {
-    expect(run.status, run.stderr).toBe(0);
-    const report = JSON.parse(run.stdout);
+    const report = JSON.parse(run.stdout.slice(run.stdout.indexOf('{')));
+    const failures = JSON.stringify(
+      (report.errors ?? []).concat(
+        JSON.stringify(report.suites).match(/"error":\{"message":"[^"]{0,600}/g) ?? [],
+      ),
+    );
+    expect(run.status, failures).toBe(0);
     const specs: { title: string; ok: boolean; tests: { status: string; results: { status: string }[] }[] }[] = [];
     const collect = (suite: any) => {
       specs.push(...(suite.specs ?? []));
