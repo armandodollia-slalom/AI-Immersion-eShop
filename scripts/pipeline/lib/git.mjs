@@ -112,8 +112,15 @@ export function implChanges(config) {
   const newFiles = untracked(config.root, config.implExclude);
   const newHashes = newFiles.map((f) => `${f}:${git(config.root, ['hash-object', f]).stdout.trim()}`);
   const files = [...new Set([...names, ...newFiles])].sort();
-  if (files.length === 0) return { base, hash: '', files };
-  return { base, hash: sha(`${diff}\n${newHashes.join('\n')}`), files };
+  // Each file's git status against the base (A, M, D; untracked files are A), so checks such as the
+  // policy pack's "applied migrations are immutable" can tell a new file from an edited one.
+  const statuses = Object.fromEntries(newFiles.map((f) => [f, 'A']));
+  for (const line of git(config.root, ['diff', '--name-status', '--no-renames', base, ...excludeSpecs(config.implExclude)]).stdout.split('\n')) {
+    const [status, file] = line.split('\t');
+    if (status && file) statuses[file] = status[0];
+  }
+  if (files.length === 0) return { base, hash: '', files, statuses };
+  return { base, hash: sha(`${diff}\n${newHashes.join('\n')}`), files, statuses };
 }
 
 export function implDiff(config, maxChars = 200_000) {

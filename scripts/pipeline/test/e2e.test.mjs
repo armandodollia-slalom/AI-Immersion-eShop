@@ -349,7 +349,7 @@ test('the Architecture Policy Pack gates each review round for code agents and l
     assert.deepEqual(jsonl('arch-reviews.jsonl').at(-1).findings, [{ severity: 'blocking', category: 'security', rule: 'SEC-001', file: 'src/Basket/Coupons.cs', line: 1, issue: 'SEC-001 Rule title: violation (repeat mistake: this agent was denied for this rule before)' }]);
     assert.equal(calls()['architecture-reviewer'], undefined, 'a policy BLOCK ends the round without an LLM review');
     assert.deepEqual([requests()[0].requester, requests()[0].checkpoint], [{ agent: 'implementer', task_id: 'DEMO-1', iteration: 1 }, 'code_review']);
-    assert.ok(requests()[0].changed_files.includes('src/Basket/Coupons.cs'));
+    assert.equal(requests()[0].changed_files['src/Basket/Coupons.cs'], 'M', 'changed files go to the policy pack with their git status (A for a new file), not a plain list that marks every file modified');
 
     write('src/Basket/Coupons.cs', '// coupons v5 logs a masked id\n');
     const approved = stop();
