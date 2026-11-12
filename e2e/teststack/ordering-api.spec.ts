@@ -217,9 +217,7 @@ test.describe('cancel and ship', () => {
   });
 
   test('invalid transitions return a client error, not 500', async ({ request }) => {
-    // BUG: IdentifiedCommandHandler swallows the OrderingDomainException and the endpoint maps any failure to
-    // 500 "Cancel order failed to process." A business-rule violation should be 400/409 and an unknown order 404.
-    test.fixme(true, 'rejected status changes are reported as 500 Internal Server Error');
+    // A broken status rule (OrderingDomainException) is a 409 Conflict; an unknown order is 404.
     expect((await changeStatus(request, alice, 'cancel', 5)).status()).toBeGreaterThanOrEqual(400);
     expect((await changeStatus(request, alice, 'cancel', 5)).status()).toBeLessThan(500);
     expect((await changeStatus(request, admin, 'ship', 2)).status()).toBeLessThan(500);

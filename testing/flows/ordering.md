@@ -8,7 +8,7 @@ until the bug is fixed.
 | Spec | Scenario | Tests |
 | --- | --- | --- |
 | `ordering-checkout.spec.ts` | `ordering-two-buyers` | 6 pass |
-| `ordering-api.spec.ts` | `ordering-two-buyers` | 16 pass, 3 fixme |
+| `ordering-api.spec.ts` | `ordering-two-buyers` | 17 pass, 2 fixme |
 | `ordering-pipeline.spec.ts` | `ordering-stock` | 5 pass |
 | `webhooks-subscriptions.spec.ts` | `webhooks-subscriptions` | 11 pass, 2 fixme |
 
@@ -132,7 +132,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | Ship a Paid order; cancelling it afterwards fails | Positive | `ordering-api` › shipping a Paid order moves it to Shipped, after which it cannot be cancelled |
 | Missing, malformed or empty-GUID `x-requestid` returns 400 | Negative | `ordering-api` › cancel and ship require a valid, non-empty x-requestid header |
 | Cancel a Paid or Shipped order, ship a Submitted or Cancelled order, or act on an unknown order: fails, nothing changes | Negative | `ordering-api` › invalid transitions and unknown orders fail and leave orders unchanged |
-| Invalid transitions return 4xx, not 500 | Negative | `ordering-api` › invalid transitions return a client error, not 500 (**fixme**, bug 6) |
+| Invalid transitions return 4xx, not 500 | Negative | `ordering-api` › invalid transitions return a client error, not 500 |
 | A buyer cannot cancel or ship another buyer's order | Negative | `ordering-api` › a buyer cannot cancel or ship another buyer's order |
 | A stock-rejected (Cancelled) order cannot be shipped | Negative | `ordering-pipeline` › a stock-rejected order cannot be shipped, a pipeline-paid order can |
 | Cancel or ship from the WebApp | Edge | Not covered: the WebApp has no cancel or ship buttons |
@@ -228,5 +228,4 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | --- | --- | --- |
 | 3 | `POST /api/orders` returns 200 when the command fails validation | An order with no items returns 200, and no order is created |
 | 5 | `POST /api/orders/draft` without a body returns 500 | The response is 500, where 400 is expected |
-| 6 | Domain rule violations return 500 | Cancelling a Shipped order returns 500 "Cancel order failed to process." |
 | 7 | Webhooks.API accepts numeric event names | `event: "99"` returns 201 and stores subscription type 99 |
