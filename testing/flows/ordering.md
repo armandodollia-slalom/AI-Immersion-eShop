@@ -8,7 +8,7 @@ until the bug is fixed.
 | Spec | Scenario | Tests |
 | --- | --- | --- |
 | `ordering-checkout.spec.ts` | `ordering-two-buyers` | 6 pass |
-| `ordering-api.spec.ts` | `ordering-two-buyers` | 16 pass, 3 fixme |
+| `ordering-api.spec.ts` | `ordering-two-buyers` | 18 pass, 1 fixme |
 | `ordering-pipeline.spec.ts` | `ordering-stock` | 5 pass |
 | `webhooks-subscriptions.spec.ts` | `webhooks-subscriptions` | 11 pass, 2 fixme |
 
@@ -99,7 +99,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | --- | --- | --- |
 | Items and total are computed; the order list is unchanged | Positive | `ordering-api` › a draft computes items and total from the basket without creating an order |
 | An empty item list returns no items and a total of 0 | Edge | `ordering-api` › a draft computes items and total from the basket without creating an order |
-| A request without a body returns 400 | Negative | `ordering-api` › a draft request without a body is rejected with 400 (**fixme**, bug 5) |
+| A request without a body returns 400 | Negative | `ordering-api` › a draft request without a body is rejected with 400 |
 
 ## Create order through the API
 
@@ -114,7 +114,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | Posting the same request id twice creates exactly one order | Positive | `ordering-api` › posting the same x-requestid twice creates exactly one Submitted order |
 | Missing, malformed or empty-GUID `x-requestid` returns 400 | Negative | `ordering-api` › creating an order requires x-requestid |
 | An order with no items, a malformed card number, an expired card or a blank city is not created | Negative | `ordering-api` › an order without items or with an invalid card is not created |
-| An invalid order returns 400 instead of 200 | Negative | `ordering-api` › an invalid order is rejected with 400 (**fixme**, bug 3) |
+| An invalid order returns 400 instead of 200 | Negative | `ordering-api` › an invalid order is rejected with 400 |
 | `userId` in the body cannot place an order for another buyer | Negative | `ordering-api` › an order is created for the signed-in buyer, not the userId in the body |
 
 ## Cancel and ship
@@ -132,7 +132,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | Ship a Paid order; cancelling it afterwards fails | Positive | `ordering-api` › shipping a Paid order moves it to Shipped, after which it cannot be cancelled |
 | Missing, malformed or empty-GUID `x-requestid` returns 400 | Negative | `ordering-api` › cancel and ship require a valid, non-empty x-requestid header |
 | Cancel a Paid or Shipped order, ship a Submitted or Cancelled order, or act on an unknown order: fails, nothing changes | Negative | `ordering-api` › invalid transitions and unknown orders fail and leave orders unchanged |
-| Invalid transitions return 4xx, not 500 | Negative | `ordering-api` › invalid transitions return a client error, not 500 (**fixme**, bug 6) |
+| Invalid transitions return 4xx, not 500 | Negative | `ordering-api` › invalid transitions return a client error, not 500 |
 | A buyer cannot cancel or ship another buyer's order | Negative | `ordering-api` › a buyer cannot cancel or ship another buyer's order |
 | A stock-rejected (Cancelled) order cannot be shipped | Negative | `ordering-pipeline` › a stock-rejected order cannot be shipped, a pipeline-paid order can |
 | Cancel or ship from the WebApp | Edge | Not covered: the WebApp has no cancel or ship buttons |
@@ -226,7 +226,4 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 
 | # | Issue | Evidence |
 | --- | --- | --- |
-| 3 | `POST /api/orders` returns 200 when the command fails validation | An order with no items returns 200, and no order is created |
-| 5 | `POST /api/orders/draft` without a body returns 500 | The response is 500, where 400 is expected |
-| 6 | Domain rule violations return 500 | Cancelling a Shipped order returns 500 "Cancel order failed to process." |
 | 7 | Webhooks.API accepts numeric event names | `event: "99"` returns 201 and stores subscription type 99 |

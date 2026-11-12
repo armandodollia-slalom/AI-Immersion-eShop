@@ -149,8 +149,6 @@ test.describe('draft orders', () => {
   });
 
   test('a draft request without a body is rejected with 400', async ({ request }) => {
-    // BUG: Ordering.API answers a POST /api/orders/draft without a JSON body with 500 instead of 400.
-    test.fixme(true, 'missing draft body returns 500');
     const response = await request.post(`${ORDERING_URL}/draft?${V1}`, { headers: bearer(alice) });
     expect(response.status()).toBe(400);
   });
@@ -217,9 +215,7 @@ test.describe('cancel and ship', () => {
   });
 
   test('invalid transitions return a client error, not 500', async ({ request }) => {
-    // BUG: IdentifiedCommandHandler swallows the OrderingDomainException and the endpoint maps any failure to
-    // 500 "Cancel order failed to process." A business-rule violation should be 400/409 and an unknown order 404.
-    test.fixme(true, 'rejected status changes are reported as 500 Internal Server Error');
+    // A broken status rule (OrderingDomainException) is a 409 Conflict; an unknown order is 404.
     expect((await changeStatus(request, alice, 'cancel', 5)).status()).toBeGreaterThanOrEqual(400);
     expect((await changeStatus(request, alice, 'cancel', 5)).status()).toBeLessThan(500);
     expect((await changeStatus(request, admin, 'ship', 2)).status()).toBeLessThan(500);
@@ -283,9 +279,6 @@ test.describe('create order', () => {
   });
 
   test('an invalid order is rejected with 400', async ({ request }) => {
-    // BUG: OrdersApi.CreateOrderAsync returns 200 OK even when CreateOrderCommand fails validation
-    // (the result of mediator.Send is only logged), so clients believe the order was placed.
-    test.fixme(true, 'create order returns 200 for an order that was not created');
     const response = await request.post(`${ORDERING_URL}?${V1}`, {
       headers: bearer(alice, { 'x-requestid': randomUUID() }),
       data: createOrderBody(ALICE_ID, 'alice', []),

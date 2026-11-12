@@ -1,0 +1,6 @@
+description: >
+  BUG-10 (broken order status rules answer 409 instead of 500): ordering-two-buyers already has what the cases
+  need. alice owns Submitted orders 1 and 2 (2099, untouched by the background processor), Paid order 4,
+  Shipped order 5 and Cancelled order 6; bob owns Paid order 7. The Identity user "admin" (role Admin,
+  password Pass123$) is seeded by ordering-two-buyers. There is no order 999.
+extends: ordering-two-buyers

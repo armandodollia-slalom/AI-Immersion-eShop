@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using CardType = eShop.Ordering.API.Application.Queries.CardType;
 using Order = eShop.Ordering.API.Application.Queries.Order;
 
@@ -47,7 +48,15 @@ public static class OrdersApi
             requestCancelOrder.Command.OrderNumber,
             requestCancelOrder);
 
-        var commandResult = await services.Mediator.Send(requestCancelOrder);
+        bool commandResult;
+        try
+        {
+            commandResult = await services.Mediator.Send(requestCancelOrder);
+        }
+        catch (OrderingDomainException ex)
+        {
+            return OrderStatusConflict(ex);
+        }
 
         if (!commandResult)
         {
@@ -81,7 +90,15 @@ public static class OrdersApi
             requestShipOrder.Command.OrderNumber,
             requestShipOrder);
 
-        var commandResult = await services.Mediator.Send(requestShipOrder);
+        bool commandResult;
+        try
+        {
+            commandResult = await services.Mediator.Send(requestShipOrder);
+        }
+        catch (OrderingDomainException ex)
+        {
+            return OrderStatusConflict(ex);
+        }
 
         if (!commandResult)
         {
@@ -90,6 +107,10 @@ public static class OrdersApi
 
         return TypedResults.Ok();
     }
+
+    // An order status rule (e.g. "Shipped orders can't be cancelled") was broken: the request conflicts with the order's state.
+    private static ProblemHttpResult OrderStatusConflict(OrderingDomainException ex) =>
+        TypedResults.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
 
     private static async Task<bool> IsOwnOrderAsync(int orderNumber, OrderServices services)
     {
@@ -131,8 +152,27 @@ public static class OrdersApi
         return TypedResults.Ok(cardTypes);
     }
 
-    public static async Task<OrderDraftDTO> CreateOrderDraftAsync(CreateOrderDraftCommand command, [AsParameters] OrderServices services)
+    // The body may be empty so a missing body or missing items gets a 400 ValidationProblem instead of a binding failure.
+    public static async Task<Results<Ok<OrderDraftDTO>, ValidationProblem>> CreateOrderDraftAsync(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateOrderDraftCommand command,
+        [AsParameters] OrderServices services)
     {
+        if (command is null)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [string.Empty] = ["A request body with the basket items is required."]
+            });
+        }
+
+        if (command.Items is null)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(CreateOrderDraftCommand.Items)] = ["Items is required."]
+            });
+        }
+
         services.Logger.LogInformation(
             "Sending command: {CommandName} - {IdProperty}: {CommandId} ({@Command})",
             command.GetGenericTypeName(),
@@ -140,10 +180,23 @@ public static class OrdersApi
             command.BuyerId,
             command);
 
-        return await services.Mediator.Send(command);
+        return TypedResults.Ok(await services.Mediator.Send(command));
     }
 
-    public static async Task<Results<Ok, BadRequest<string>>> CreateOrderAsync(
+    // The order was not created: the command failed validation (the validator's messages, grouped by property)
+    // or broke a domain rule (the exception's message).
+    private static ValidationProblem CreateOrderValidationProblem(OrderingDomainException ex)
+    {
+        var errors = ex.InnerException is ValidationException { Errors: var failures } && failures.Any()
+            ? failures
+                .GroupBy(failure => failure.PropertyName)
+                .ToDictionary(group => group.Key, group => group.Select(failure => failure.ErrorMessage).ToArray())
+            : new Dictionary<string, string[]> { [string.Empty] = [ex.Message] };
+
+        return TypedResults.ValidationProblem(errors);
+    }
+
+    public static async Task<Results<Ok, BadRequest<string>, ValidationProblem>> CreateOrderAsync(
         [FromHeader(Name = "x-requestid")] Guid requestId,
         CreateOrderRequest request,
         [AsParameters] OrderServices services)
@@ -182,17 +235,25 @@ public static class OrdersApi
                 requestCreateOrder.Id,
                 requestCreateOrder);
 
-            var result = await services.Mediator.Send(requestCreateOrder);
-
-            if (result)
+            bool result;
+            try
             {
-                services.Logger.LogInformation("CreateOrderCommand succeeded - RequestId: {RequestId}", requestId);
+                result = await services.Mediator.Send(requestCreateOrder);
             }
-            else
+            catch (OrderingDomainException ex)
+            {
+                services.Logger.LogWarning("CreateOrderCommand failed - RequestId: {RequestId} - {Reason}", requestId, ex.Message);
+                return CreateOrderValidationProblem(ex);
+            }
+
+            if (!result)
             {
                 services.Logger.LogWarning("CreateOrderCommand failed - RequestId: {RequestId}", requestId);
+                return TypedResults.ValidationProblem(
+                    new Dictionary<string, string[]> { [string.Empty] = ["The order could not be created."] });
             }
 
+            services.Logger.LogInformation("CreateOrderCommand succeeded - RequestId: {RequestId}", requestId);
             return TypedResults.Ok();
         }
     }
