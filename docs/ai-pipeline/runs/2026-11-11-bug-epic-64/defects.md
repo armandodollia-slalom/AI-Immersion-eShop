@@ -538,3 +538,7 @@ new PRs are never touched, but the re-delivery is wasted work and logs "no
 PR: push failed". Follow-up: a group whose recorded PR is closed or merged, or
 whose remote branch moved past the local one, should be reported and skipped,
 not re-delivered.
+
+O7 follow-up: after the background model was pinned to sonnet at 10:18, 14 more
+`claude-haiku-5.5` records came from QE automation and automation-verify runs
+(Claude Code's own helpers pick their model); $0.06 in total for the run.

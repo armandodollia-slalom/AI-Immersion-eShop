@@ -70,6 +70,19 @@ The seven group PRs were resubmitted at 15:50 as the GitHub App
 (`catalog-item-validation`), **#124** (`basket-cart`). The table above keeps the
 original numbers, with the new ones after the arrow.
 
+## Final outcome (23:21)
+
+**All 21 bugs verified, epic #64 `done`, every card in Pending Review.** After
+Armando answered BUG-1's question (Q1 → C) and two more pipeline defects were
+fixed (D23, D24), the last two groups were delivered as gated GitHub App PRs:
+[#125](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/125)
+`ordering-ownership` (BUG-1, 2, 3: severity Severe, 1 approval) and
+[#126](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/126)
+`ordering-error-handling` (BUG-9, 10, 15: Medium, 1 approval). Of the seven
+resubmitted group PRs, #118 (BUG-16, Low) was auto-merged by the gate; the
+others wait for one approval. Totals at the end: 417 agent runs, $115.09, 24
+pipeline defects fixed (D1–D24, plus D13b), 11 observations.
+
 ## Totals
 
 | Metric | Value |

@@ -4,7 +4,7 @@ Running numbers and slide material for the presentation about the first real
 end-to-end run of the agent factory on bug epic #64. Updated at every
 checkpoint; `summary.md` gets the final version. Times are local (CST).
 
-## Headline numbers (final, 11:49)
+## Headline numbers (final, 23:21; the first epic run ended at 11:49 with 15 of 21)
 
 | Metric | Value |
 | --- | --- |
@@ -14,10 +14,10 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | PR groups chosen by the supervisor | 9 (timeline 04:19) |
 | Group PRs opened | 7: #70, #71, #72, #97, #100 (6 bugs), #102 (3 bugs), #103; resubmitted as the GitHub App at 15:50: #119, #120, #121, #122, #123, #124, #118 (all gated; #118 Low) |
 | Group PR CI | #72 green; #70/#71/#97/#100 fail on BUG-4's compose drift and scopes test; #100 MD012; #102 a cross-ticket test assumption |
-| Tickets verified | **18**: BUG-1 (15:21, after the human decision), BUG-2, BUG-3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
+| Tickets verified | **21 of 21** (epic done at 23:21): BUG-1 (15:21, after the human decision), BUG-2, BUG-3, BUG-9, BUG-10, BUG-15, 4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
 | Escalated to a human | 1: BUG-1 (QE meta-test); 5 more wait behind it (BUG-2, 3, 9, 10, 15) |
-| Agent runs | 309 |
-| Token cost (list price) | **$75.63**: Copilot $38.08, Claude Code $37.56 |
+| Agent runs | 309 at 11:49; **417** at the end |
+| Token cost (list price) | $75.63 at 11:49 (Copilot $38.08, Claude Code $37.56); **$115.09** at the end |
 | Cost by model | Opus 5.5 $46.79, Sonnet 5.5 $28.81, Haiku 5.5 $0.03 (CLI background), Sol 6.1 $0 |
 | Copilot premium requests | 1,037 (Opus 930, Sonnet 107), then the monthly quota ran out |
 | Pipeline defects found and fixed | **24** (D1–D24, plus D13b); D16 superseded by main's fix (#99) |
@@ -44,12 +44,14 @@ the Resolved box, the Action that checks the answers, and `implement requeue`.
 
 ## Review gate (#110, #112: merged at 14:26)
 
+First auto-merge: [#118](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/118) (BUG-16, Low, green checks) merged by the gate at 22:05 without a person.
+
 | Item | Value |
 | --- | --- |
 | Merged into the run | 14:35 (`2a0d3ac`), 2 conflicted files, all checks green (367 tests) |
 | Defect found in the gate's integration | D23: a group PR finishing across restarts would be gated on part of its tickets (with auto-merge on) |
 | Group PRs opened before the gate | #70, #71, #72, #97, #100, #102, #103: resubmitted as the GitHub App with main merged in (#119, #120, #121, #122, #123, #124, #118) and gated by Armando's session |
-| Gated PRs opened by this run | [#125](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/125) `ordering-ownership` (BUG-1, 2, 3), 22:16, opened by the GitHub App: severity **Severe**, review with 1 approval, confidence 82/100 (CI unknown), CODEOWNERS reviewers requested |
+| Gated PRs opened by this run | [#126](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/126) `ordering-error-handling` (BUG-9, 10, 15), 23:11: severity **Medium**, review with 1 approval; [#125](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/125) `ordering-ownership` (BUG-1, 2, 3), 22:16, opened by the GitHub App: severity **Severe**, review with 1 approval, confidence 82/100 (CI unknown), CODEOWNERS reviewers requested |
 
 Slide idea: "Who merges a bug fix?": triage ratings → severity and confidence
 → auto-merge for Low, approvals for the rest; why a group's gate must see
@@ -65,6 +67,7 @@ every ticket (D23).
 | 09:47 | 0 | 12 | 3 | 7 | 0 |
 | 10:18 | 0 | 9 | 6 | 7 | 0 |
 | 11:49 | 0 | 0 | 0 | 15 | 6 |
+| 23:21 | 0 | 0 | 0 | 21 | 0 |
 
 ## Cost by stage
 
