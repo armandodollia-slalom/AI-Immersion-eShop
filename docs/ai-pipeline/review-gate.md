@@ -52,7 +52,7 @@ The agent's usage is recorded like every other run (stage `bug-triage` in `token
 | **wait** | everything qualifies but the checks are still running (or none reported yet) | the label `approvals:0` and the notice; `board sync` evaluates the PR again ([Re-evaluation](#re-evaluation)) |
 | **review** | anything else: Medium, High or Severe, low confidence, a human reopen, failing checks, a ticket that was not assessed, auto-merge switched off | **1 required approval** (the [approvals policy](#approvals-policy) table; never fewer than 1), the labels `approvals:N` and `needs-human`, review requests, and the notice. The card stays in Pending Review |
 
-Reviewers are requested from each ticket's **assignees**, or, for a ticket without one, the **CODEOWNERS** of the files it touches (`.github/CODEOWNERS` as on the PR's base branch, as GitHub reads it, so a fix branch cut before the file existed still gets owners); never the PR's author. CODEOWNERS stay optional reviewers on every PR, and the team can bring in more reviewers themselves: the gate only sets the **number** of required approvals.
+Reviewers are requested from each ticket's **assignees**, or, for a ticket without one, the **CODEOWNERS** of the files it touches (`.github/CODEOWNERS` as on the PR's base branch, as GitHub reads it, so a fix branch cut before the file existed still gets owners); never the PR's author. The pipeline's PRs are authored by the developer's [PR bot](setup.md#the-pipelines-pr-bot) `dev-bot-<login>`, so the developer who ran the pipeline is not the author and can be requested like anyone else. CODEOWNERS stay optional reviewers on every PR, and the team can bring in more reviewers themselves: the gate only sets the **number** of required approvals.
 
 The **review notice** is one PR comment, edited in place. It has a row per ticket (the three fields, Severity, Confidence, systems), each ticket's reasoning and confidence signals collapsed, the PR severity with its explanation, and says exactly what triggered review, for example "**What triggered review:** BUG-7 is Medium (Identity.API; Impact Medium, Fix risk Low → Medium). BUG-3 and BUG-9 would have auto-merged." Its hidden marker (`<!-- review-gate:{...} -->`) carries the gate's state on the PR: the decision, the approvals, the triggers, the head it was assessed on and the "changes requested" reviews already counted as reopens.
 
@@ -60,7 +60,7 @@ A PR that needed people stays that way: later evaluations never auto-merge it, e
 
 ### Enforcement: the review-quorum check
 
-GitHub rulesets set one approval count per branch, not per PR, so `.github/workflows/review-quorum.yml` enforces the count per PR. It runs on `pull_request` (opened, pushed, labeled, ...) and `pull_request_review` (submitted, edited, dismissed), and passes when approvals from **distinct people**, not the author, given on the **latest push** (an approval from before it is stale), reach the PR's `approvals:N` label. Each reviewer's latest approving or "changes requested" review counts; a comment does not change a verdict. A PR without the label, or with `approvals:0`, passes. The check runs `scripts/review-gate/quorum.mjs` from the **base branch**, so a PR cannot change how its own approvals are counted; changes to `.github/workflows/`, `.github/CODEOWNERS` and `scripts/review-gate/` are severity floor paths for the same reason.
+GitHub rulesets set one approval count per branch, not per PR, so `.github/workflows/review-quorum.yml` enforces the count per PR. It runs on `pull_request` (opened, pushed, labeled, ...) and `pull_request_review` (submitted, edited, dismissed), and passes when approvals from **distinct people**, not the author, given on the **latest push** (an approval from before it is stale), reach the PR's `approvals:N` label. The author of a pipeline PR is the [PR bot](setup.md#the-pipelines-pr-bot) `dev-bot-<login>`, so the developer who ran the pipeline approves it with GitHub's normal review flow and that approval counts. (A PR opened before the bot was set up keeps the developer as its author, and GitHub will not let them approve it.) Each reviewer's latest approving or "changes requested" review counts; a comment does not change a verdict. A PR without the label, or with `approvals:0`, passes. The check runs `scripts/review-gate/quorum.mjs` from the **base branch**, so a PR cannot change how its own approvals are counted; changes to `.github/workflows/`, `.github/CODEOWNERS` and `scripts/review-gate/` are severity floor paths for the same reason.
 
 **Making it required is a repository setting**, armando's call: Settings → Rules → Rulesets → the ruleset for `main` → "Require status checks to pass" → add `review-quorum`. Until then it is a visible check that nothing blocks on. `main` has no branch protection and no required approvals today; the gate does not change any repository setting.
 
@@ -72,6 +72,7 @@ A PR the gate clears is merged with `gh pr merge --auto --squash` (`implement.au
 | --- | --- | --- |
 | `gh-user` (default) | the `gh` CLI's logged-in user on the pipeline machine | today: `main` requires no approvals from people |
 | `app` | a GitHub App with a ruleset bypass, its installation token in the variable named by `appTokenEnv` (`REVIEW_GATE_APP_TOKEN`) becomes `GH_TOKEN` for the merge | once `main` requires approvals from people, a PR that needs none can only merge through a bypass |
+| `bot` | the developer's [PR bot](setup.md#the-pipelines-pr-bot) `dev-bot-<login>`, with an installation token it mints itself; a merge is refused (and the PR reviewed) when the bot is not set up | the bot is on the ruleset's bypass list |
 
 `implement.autoMerge.enabled` is the **kill switch**, **on** (`true`). Set it to `false` in `scripts/implement/config.json` to stop all auto-merges: every PR that would auto-merge is then reviewed instead, and its notice says "auto-merge is switched off; it would have auto-merged". A merge GitHub refuses (auto-merge not allowed on the repo, a missing App token) sends the PR to review with the reason.
 
@@ -143,7 +144,7 @@ From them it **proposes** changes to the approvals policy table, computed in cod
 | --- | --- |
 | `implement.reviewGate.enabled: false`, or `REVIEW_GATE=0` | The gate does nothing; PRs stay as the pipeline opened them |
 | `implement.autoMerge.enabled` (default `true`) | The auto-merge kill switch: off, a PR that qualifies is reviewed (1 approval) instead |
-| `implement.autoMerge.identity` | `gh-user` or `app` ([Auto-merge](#auto-merge)) |
+| `implement.autoMerge.identity` | `gh-user`, `app` or `bot` ([Auto-merge](#auto-merge)) |
 | `PIPELINE_NO_PR=1` (experiments) | No PRs, so nothing to gate |
 | board inactive (no project, a fork, a test repo, `PIPELINE_BOARD=0`) | The gate does nothing |
 

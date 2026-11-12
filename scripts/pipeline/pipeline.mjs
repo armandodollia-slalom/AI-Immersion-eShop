@@ -9,6 +9,7 @@ import { experimentReport, formatReport, gradeExperiment, runExperiment } from '
 import { implChanges } from './lib/git.mjs';
 import { listEscalations, loadState, setActiveStory, updateState } from './lib/state.mjs';
 import { activeStory } from './lib/stories.mjs';
+import { botSetup, botStatus } from './lib/bot-setup.mjs';
 import { mockupsDir } from './lib/tickets.mjs';
 import { denyOutput, storyGuard } from './lib/story-guard.mjs';
 import { loadUsageAcrossWorktrees } from './lib/usage.mjs';
@@ -55,13 +56,21 @@ Pipeline
                                 epic itemized by ticket and stage, or (no story) the overview by epic,
                                 ticket, stage, model and month
 
+PR bot (docs/ai-pipeline/setup.md#the-pipelines-pr-bot)
+  bot setup [--force] [--org <org>] [--public]
+                                create your dev-bot-<gh login> GitHub App (click "Create", then "Install"
+                                on the repo); the pipeline then opens its PRs as the bot, so you can
+                                approve them
+  bot status                    bot name, configured, installed on the repo, token can be minted
+                                (exit 1 when not configured or installed)
+
 Hooks (called by agent tool configs and .githooks)
   hook stop | hook session-start [--nested] | hook pre-tool
   git-hook post-commit | post-merge | pre-push`;
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel']));
+  const { positional, flags } = parseArgs(rest, new Set(['since', 'epic', 'modes', 'repeat', 'base', 'parallel', 'org']));
   if (!command || command === 'help' || flags.help) {
     console.log(USAGE);
     return 0;
@@ -167,6 +176,14 @@ async function main() {
       const report = experimentReport(implConfig, id);
       console.log(flags.json ? JSON.stringify(report, null, 2) : formatReport(report));
       return 0;
+    }
+
+    case 'bot': {
+      const sub = positional[0];
+      if (sub === 'setup') return botSetup(config, { force: Boolean(flags.force), org: typeof flags.org === 'string' ? flags.org : null, isPublic: Boolean(flags.public) });
+      if (sub === 'status') return botStatus(config);
+      console.error('Usage: pipeline bot setup [--force] [--org <org>] [--public] | bot status');
+      return 2;
     }
 
     case 'stages': {

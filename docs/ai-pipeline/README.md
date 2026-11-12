@@ -115,7 +115,7 @@ sequenceDiagram
 
   Run->>Git: commit test plan, tests and metrics
   opt --pr
-    Run->>Git: push + gh pr create (stacked on blocker)
+    Run->>Git: push + gh pr create as dev-bot-login (stacked on blocker)
     Note over Git: pr-demo-video.yml records the changed specs<br/>and adds the videos (and API summary) to the PR description
     opt a bug fix
       Run->>Git: review gate: triage, severity, confidence;<br/>auto-merge (Low) or approvals:N + reviewers
@@ -188,6 +188,7 @@ No agent starts on its own when stories or epics are added or changed: agent wor
 | `PIPELINE_CHILD=1` | spawned agents re-triggering hooks recursively |
 | `pre-push` hook and CI | unverified plans or tests reaching the remote |
 | Lessons via pull request | unreviewed changes to agent behavior (and to the review gate's approvals policy) |
+| [PR bot](setup.md#the-pipelines-pr-bot): PRs authored by `dev-bot-<login>` | a developer unable to approve the pipeline's PRs (GitHub never lets a PR's author approve it), so they merge without a real review |
 | [Review gate](review-gate.md): harness-computed severity, `review-quorum`, sticky review | a bug fix merging without a person unless it is Low risk with high confidence; an agent rating its way past review |
 | `PIPELINE_DISABLE=1`, `QE_SKIP=1`, `PR_CHECK_SKIP=1` | escape hatches for humans |
 
@@ -273,6 +274,7 @@ node scripts/pipeline/pipeline.mjs implement resume [--parallel N|auto] [--pr]
 node scripts/pipeline/pipeline.mjs implement status [KEY]
 node scripts/pipeline/pipeline.mjs experiment run --epic <EPIC> [--modes epic,story] [--repeat N] [--sequential] [--base <ref>]  # see experiments.md
 node scripts/pipeline/pipeline.mjs experiment grade|report <id> [--json]
+node scripts/pipeline/pipeline.mjs bot setup|status          # the PR bot dev-bot-<gh login> (see setup.md#the-pipelines-pr-bot)
 node scripts/pipeline/pipeline.mjs stages
 node scripts/pipeline/pipeline.mjs metrics [--json] [--since 2026-01-01]
 node scripts/pipeline/pipeline.mjs costs [KEY] [--epic <epic>] [--since <date>] [--json|--markdown]  # tokens, cache hits and cost per stage, ticket and epic

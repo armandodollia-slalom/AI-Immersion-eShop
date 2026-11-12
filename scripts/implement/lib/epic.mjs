@@ -15,6 +15,7 @@ import path from 'node:path';
 import { runAgentAsync } from '../../pipeline/lib/agents.mjs';
 import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { logDecision } from '../../pipeline/lib/decisions.mjs';
+import { openPullRequest, prPublisher } from '../../pipeline/lib/bot.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
@@ -310,19 +311,31 @@ export async function prCheckUnit(env, keys, { fix = false } = {}) {
   }
 }
 
-// Pushes the unit branch and opens its PR; a unit re-delivered on resume keeps the PR it already has
-// (its body is refreshed).
-function openPr(env, { title, body, existing = null }) {
+// A unit's PR (a bug-epic group or the feature epic), pushed and opened as the pipeline's PR bot
+// (dev-bot-<login>, lib/bot.mjs), or as the developer's gh login when the bot is not set up. A unit
+// re-delivered by a later run keeps the PR it already has (its body is refreshed) and reports it as
+// existing, so the review gate does not assess it again (D9, D23).
+export async function openPr(env, { title, body, existing = null }, deps = {}) {
   const { worktree, branch, prBase } = env;
-  const push = git(worktree, ['push', '-u', 'origin', branch]);
-  if (push.status !== 0) return { url: null, reason: `push failed: ${tail(`${push.stderr ?? ''}\n${push.stdout ?? ''}`.trim(), 600)}` };
-  const prior = existing ?? (run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url'], { cwd: worktree }).stdout ?? '').trim();
-  if (prior) {
-    run('gh', ['pr', 'edit', prior, '--body', body], { cwd: worktree });
-    return { url: prior, existing: true };
+  const publisher = deps.publisher ?? (await prPublisher(env.wtConfig ?? env.config));
+  const r = deps.run ?? run;
+  const refresh = (url) => {
+    r('gh', ['pr', 'edit', url, '--body', body], { cwd: worktree, env: publisher.env });
+    return { url, existing: true };
+  };
+  if (existing) {
+    const push = publisher.push(worktree, branch);
+    if (push.status !== 0) return { url: null, reason: `push failed: ${tail(`${push.stderr ?? ''}\n${push.stdout ?? ''}`.trim(), 600)}` };
+    return refresh(existing);
   }
-  const created = run('gh', ['pr', 'create', '--base', prBase.replace(/^origin\//, ''), '--head', branch, '--title', title, '--body', body], { cwd: worktree });
-  return created.status === 0 ? { url: created.stdout.trim() } : { url: null, reason: `gh pr create failed: ${tail(created.stderr, 300)}` };
+  const opened = openPullRequest(publisher, { cwd: worktree, branch, base: prBase.replace(/^origin\//, ''), title, body }, { run: deps.run });
+  if (opened.url) return { url: opened.url };
+  // The PR exists but this run has no record of it (an earlier run crashed after opening it).
+  if (opened.pushed && /already exists/.test(opened.reason ?? '')) {
+    const prior = (r('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url'], { cwd: worktree, env: publisher.env }).stdout ?? '').trim();
+    if (prior) return refresh(prior);
+  }
+  return { url: null, reason: opened.reason };
 }
 
 export const defaultDeps = (config, log) => ({
@@ -523,7 +536,8 @@ async function deliverUnit(env, unit, units, epicWt) {
     // PR through the review gate again.
     const merged = results.filter((x) => DONE.has(x.outcome) && loadEpicRun(config, epic.key).stories?.[x.key]?.merged);
     if (merged.length) {
-      const push = git(unit.worktree, ['push', 'origin', unit.branch]);
+      // As the PR's author (the PR bot when it is set up).
+      const push = (await prPublisher(wtConfig)).push(unit.worktree, unit.branch, { upstream: false });
       if (push.status !== 0) log(`push of ${unit.branch} failed: ${tail(push.stderr, 300)}`);
       else {
         for (const r of merged) reportStory(uenv, r, openPr);
@@ -607,7 +621,7 @@ async function deliverUnit(env, unit, units, epicWt) {
     return finish('done', { prBody: body });
   }
   const title = feature ? `Epic: ${(epic.title ?? epic.key).replace(/^Epic:\s*/i, '')}` : `Fix ${unit.keys.join(', ')}: ${unit.group.title}`;
-  const opened = deps.openPr(uenv, { title, body, existing: state.units?.[unit.id]?.pr ?? null });
+  const opened = await deps.openPr(uenv, { title, body, existing: state.units?.[unit.id]?.pr ?? null });
   if (!opened.url) {
     log(`no PR: ${opened.reason}`);
     if (!feature) for (const r of delivered) reportStory(uenv, r);

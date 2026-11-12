@@ -12,9 +12,9 @@ export const reopenedLabel = (config) => config.implement?.reviewGate?.labels?.r
 // A planned story carries its issue's labels as `labels`; a loaded ticket as `issue.labels`.
 export const isReopened = (config, s) => Boolean((s.labels ?? s.issue?.labels)?.includes(reopenedLabel(config)));
 
-// The open PR of a branch on GitHub, or null.
-export function openPrFor(config, branch) {
-  const r = run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '1'], { cwd: config.root, timeoutSec: 60 });
+// The open PR of a branch on GitHub, or null. `env`: the identity to ask as (the PR bot's, lib/bot.mjs).
+export function openPrFor(config, branch, env) {
+  const r = run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '1'], { cwd: config.root, timeoutSec: 60, env });
   try {
     return JSON.parse(r.stdout || '[]')[0]?.url ?? null;
   } catch {
