@@ -149,8 +149,6 @@ test.describe('draft orders', () => {
   });
 
   test('a draft request without a body is rejected with 400', async ({ request }) => {
-    // BUG: Ordering.API answers a POST /api/orders/draft without a JSON body with 500 instead of 400.
-    test.fixme(true, 'missing draft body returns 500');
     const response = await request.post(`${ORDERING_URL}/draft?${V1}`, { headers: bearer(alice) });
     expect(response.status()).toBe(400);
   });

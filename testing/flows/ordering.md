@@ -99,7 +99,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | --- | --- | --- |
 | Items and total are computed; the order list is unchanged | Positive | `ordering-api` › a draft computes items and total from the basket without creating an order |
 | An empty item list returns no items and a total of 0 | Edge | `ordering-api` › a draft computes items and total from the basket without creating an order |
-| A request without a body returns 400 | Negative | `ordering-api` › a draft request without a body is rejected with 400 (**fixme**, bug 5) |
+| A request without a body returns 400 | Negative | `ordering-api` › a draft request without a body is rejected with 400 |
 
 ## Create order through the API
 
@@ -226,5 +226,4 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 
 | # | Issue | Evidence |
 | --- | --- | --- |
-| 5 | `POST /api/orders/draft` without a body returns 500 | The response is 500, where 400 is expected |
 | 7 | Webhooks.API accepts numeric event names | `event: "99"` returns 201 and stores subscription type 99 |
