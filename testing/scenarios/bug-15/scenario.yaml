@@ -1,0 +1,4 @@
+description: >
+  BUG-15 (order draft without a body must answer 400): ordering-two-buyers already has what the cases need
+  (alice, identity a11ce000-..., owns orders 1-6), so this scenario only extends it. No case changes data.
+extends: ordering-two-buyers
