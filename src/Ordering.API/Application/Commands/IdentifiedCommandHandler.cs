@@ -96,6 +96,11 @@ public abstract class IdentifiedCommandHandler<T, R> : IRequestHandler<Identifie
 
                 return result;
             }
+            catch (OrderingDomainException)
+            {
+                // A broken business rule is the caller's error, not a failure to process: let the API map it.
+                throw;
+            }
             catch
             {
                 return default;

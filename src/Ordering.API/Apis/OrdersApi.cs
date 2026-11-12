@@ -47,7 +47,15 @@ public static class OrdersApi
             requestCancelOrder.Command.OrderNumber,
             requestCancelOrder);
 
-        var commandResult = await services.Mediator.Send(requestCancelOrder);
+        bool commandResult;
+        try
+        {
+            commandResult = await services.Mediator.Send(requestCancelOrder);
+        }
+        catch (OrderingDomainException ex)
+        {
+            return OrderStatusConflict(ex);
+        }
 
         if (!commandResult)
         {
@@ -81,7 +89,15 @@ public static class OrdersApi
             requestShipOrder.Command.OrderNumber,
             requestShipOrder);
 
-        var commandResult = await services.Mediator.Send(requestShipOrder);
+        bool commandResult;
+        try
+        {
+            commandResult = await services.Mediator.Send(requestShipOrder);
+        }
+        catch (OrderingDomainException ex)
+        {
+            return OrderStatusConflict(ex);
+        }
 
         if (!commandResult)
         {
@@ -90,6 +106,10 @@ public static class OrdersApi
 
         return TypedResults.Ok();
     }
+
+    // An order status rule (e.g. "Shipped orders can't be cancelled") was broken: the request conflicts with the order's state.
+    private static ProblemHttpResult OrderStatusConflict(OrderingDomainException ex) =>
+        TypedResults.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
 
     private static async Task<bool> IsOwnOrderAsync(int orderNumber, OrderServices services)
     {
@@ -182,7 +202,16 @@ public static class OrdersApi
                 requestCreateOrder.Id,
                 requestCreateOrder);
 
-            var result = await services.Mediator.Send(requestCreateOrder);
+            bool result;
+            try
+            {
+                result = await services.Mediator.Send(requestCreateOrder);
+            }
+            catch (OrderingDomainException)
+            {
+                // IdentifiedCommandHandler now surfaces domain errors; keep this endpoint's response unchanged (BUG-9 owns it).
+                result = false;
+            }
 
             if (result)
             {
