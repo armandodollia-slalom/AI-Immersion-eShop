@@ -10,7 +10,7 @@ until the bug is fixed.
 | `ordering-checkout.spec.ts` | `ordering-two-buyers` | 6 pass |
 | `ordering-api.spec.ts` | `ordering-two-buyers` | 13 pass, 6 fixme |
 | `ordering-pipeline.spec.ts` | `ordering-stock` | 5 pass |
-| `webhooks-subscriptions.spec.ts` | `webhooks-subscriptions` | 11 pass, 2 fixme |
+| `webhooks-subscriptions.spec.ts` | `webhooks-subscriptions` | 13 pass |
 
 Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer tokens. The helpers in
 `ordering-helpers.ts` get them from Identity through the implicit Swagger clients `orderingswaggerui` and
@@ -180,7 +180,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | Reading another user's subscription or an unknown id returns 404 | Negative | `webhooks-subscriptions` › each user lists and reads only their own subscriptions |
 | Invalid URL, invalid grant URL or unknown event returns 400 with field errors | Negative | `webhooks-subscriptions` › registration validates the URLs, the event name and the grant URL |
 | Grant URL on another origin, or a grant URL that is unreachable or does not echo the token, returns 400 and stores nothing | Negative | `webhooks-subscriptions` › registration validates the URLs, the event name and the grant URL |
-| A numeric event name outside the enum returns 400 | Negative | `webhooks-subscriptions` › event names outside WebhookType are rejected, including numeric ones (**fixme**, bug 7) |
+| A numeric event name outside the enum returns 400 | Negative | `webhooks-subscriptions` › event names outside WebhookType are rejected, including numeric ones |
 | Deleting another user's subscription, or one already deleted, returns 404 | Negative | `webhooks-subscriptions` › a subscription can be deleted by its owner only |
 
 ## WebhooksClient app
@@ -232,4 +232,3 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | 4 | `POST /api/orders` trusts `userId` from the body | bob's token creates an order on alice's account |
 | 5 | `POST /api/orders/draft` without a body returns 500 | The response is 500, where 400 is expected |
 | 6 | Domain rule violations return 500 | Cancelling a Shipped order returns 500 "Cancel order failed to process." |
-| 7 | Webhooks.API accepts numeric event names | `event: "99"` returns 201 and stores subscription type 99 |

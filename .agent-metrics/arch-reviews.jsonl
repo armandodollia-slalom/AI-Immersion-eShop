@@ -1,1 +1,5 @@
+{"ts":"2026-11-11T11:02:22.247Z","story":"BUG-16","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
+{"ts":"2026-11-11T16:24:16.480Z","story":"BUG-16","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
+{"ts":"2026-11-11T17:09:42.786Z","story":"BUG-16","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
+{"ts":"2026-11-11T17:19:53.018Z","story":"BUG-16","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[]}
 {"ts":"2026-11-11T15:39:24.535Z","story":"PROMO-1","round":1,"verdict":"APPROVED","reviewer_ver":"8fe97ef0","findings":[{"severity":"minor","category":"security","file":"src/Promotions.API/Apis/PromotionsApi.cs","line":30,"issue":"GET /api/promotions requires only an authenticated user, not the promotions scope; it matches other services but the story says the token must have the scope."},{"severity":"minor","category":"fit","file":"src/Promotions.API/Properties/launchSettings.json","line":6,"issue":"Hard-coded applicationUrl port 5231 with launchBrowser true may collide with or diverge from other services' launch settings."}]}

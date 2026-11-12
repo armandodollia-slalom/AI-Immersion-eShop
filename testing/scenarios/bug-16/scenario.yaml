@@ -1,0 +1,4 @@
+description: >
+  BUG-16: webhooks subscription event validation. Reuses the webhooks-subscriptions data (alice owns
+  subscriptions 1 and 2, bob owns 3); the cases only POST new subscriptions, so no extra rows are needed.
+extends: webhooks-subscriptions
