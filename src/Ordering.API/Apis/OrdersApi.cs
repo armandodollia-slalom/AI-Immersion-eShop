@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using CardType = eShop.Ordering.API.Application.Queries.CardType;
 using Order = eShop.Ordering.API.Application.Queries.Order;
 
@@ -151,8 +152,27 @@ public static class OrdersApi
         return TypedResults.Ok(cardTypes);
     }
 
-    public static async Task<OrderDraftDTO> CreateOrderDraftAsync(CreateOrderDraftCommand command, [AsParameters] OrderServices services)
+    // The body may be empty so a missing body or missing items gets a 400 ValidationProblem instead of a binding failure.
+    public static async Task<Results<Ok<OrderDraftDTO>, ValidationProblem>> CreateOrderDraftAsync(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateOrderDraftCommand command,
+        [AsParameters] OrderServices services)
     {
+        if (command is null)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [string.Empty] = ["A request body with the basket items is required."]
+            });
+        }
+
+        if (command.Items is null)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(CreateOrderDraftCommand.Items)] = ["Items is required."]
+            });
+        }
+
         services.Logger.LogInformation(
             "Sending command: {CommandName} - {IdProperty}: {CommandId} ({@Command})",
             command.GetGenericTypeName(),
@@ -160,7 +180,7 @@ public static class OrdersApi
             command.BuyerId,
             command);
 
-        return await services.Mediator.Send(command);
+        return TypedResults.Ok(await services.Mediator.Send(command));
     }
 
     // The order was not created: the command failed validation (the validator's messages, grouped by property)
