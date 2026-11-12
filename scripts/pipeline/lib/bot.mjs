@@ -285,7 +285,8 @@ export async function prPublisher(config, deps = {}) {
 // the push or `gh pr create` failed (an already open PR for the branch also fails `gh pr create`).
 export function openPullRequest(publisher, { cwd, branch, base, title, body }, { run: r = run } = {}) {
   const push = publisher.push(cwd, branch);
-  if (push.status !== 0) return { url: null, pushed: false, env: publisher.env, reason: `push failed: ${tail(push.stderr, 300)}` };
+  // The pre-push QE hook prints its FAIL lines on stdout, so the reason carries both streams.
+  if (push.status !== 0) return { url: null, pushed: false, env: publisher.env, reason: `push failed: ${tail(`${push.stderr ?? ''}\n${push.stdout ?? ''}`.trim(), 600)}` };
   const created = r('gh', ['pr', 'create', ...(base ? ['--base', base] : []), '--head', branch, '--title', title, '--body', body], { cwd, env: publisher.env });
   return created.status === 0
     ? { url: created.stdout.trim(), pushed: true, env: publisher.env }

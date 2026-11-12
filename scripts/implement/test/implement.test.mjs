@@ -137,6 +137,7 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   const edit = (file, patch) => fs.writeFileSync(path.join(runs, file), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(runs, file), 'utf8')), ...patch }));
   edit('batch.json', { pid: 2 ** 22 + 7, finishedAt: null });
   edit('DEMO-3.json', { status: 'running', outcome: null });
+  edit('DEMO-4.json', { findings: [{ issue: 'from an earlier attempt' }], agentRuns: 9 }); // DEMO-4 starts fresh, not resumed
   assert.match(pipeline(['implement', 'status']).stdout, /last implement run was interrupted.*implement resume/);
   assert.match(JSON.parse(pipeline(['hook', 'session-start']).stdout).additionalContext, /last implement run was interrupted[\s\S]*pipeline.mjs resume/, 'the next session is told');
   assert.match(pipeline(['implement', 'resume', 'DEMO-9', '--background']).stdout, /does not include DEMO-9/, 'a story-scoped resume leaves other batches alone');
@@ -157,6 +158,8 @@ test('implement run: each story gets a worktree and branch, loops with the revie
   assert.match(resumed.stdout, /DEMO-1 +skip: done in a previous run[\s\S]*DEMO-3 +feat\/demo-3-loyalty <- main {2}\(resume\)[\s\S]*DEMO-4 +feat\/demo-4-loyalty-tiers <- feat\/demo-3-loyalty/);
   assert.match(resumed.stdout, /DEMO-3 +done[\s\S]*DEMO-4 +done/);
   assert.equal(calls().implementer, 2, 'only the unfinished stories run again');
+  const demo4 = JSON.parse(fs.readFileSync(path.join(runs, 'DEMO-4.json'), 'utf8'));
+  assert.ok(!demo4.findings && demo4.agentRuns === undefined, "a fresh start drops the earlier attempt's findings and metrics");
   assert.match(prompts(), /=== implementer #1[\s\S]*previous run of this story was interrupted/);
   assert.match(pipeline(['implement', 'resume']).stdout, /DEMO-4 +skip: done in a previous run/, 'a finished run resumes to nothing');
   assert.match(pipeline(['resume']).stdout, /\[implement\]\nNo interrupted implement run\./);
@@ -174,4 +177,15 @@ test('implement run --epic: epic delivery by default (one epic branch), --delive
   assert.equal(perStory.status, 0, perStory.stderr);
   assert.match(perStory.stdout, /2\. DEMO-8 +feat\/demo-8-promo-page <- feat\/demo-7-banner/);
   assert.equal(pipeline(['implement', 'run', '--epic', 'promos', '--delivery', 'nope', '--dry-run']).status, 2);
+});
+
+test('implement run --epic on a bug epic: the dry run names group delivery, not the epic branch', () => {
+  seedTicket(repo, { key: 'epic-fixes', type: 'epic', text: '# Epic: Fixes\n' });
+  seedTicket(repo, { key: 'BUG-71', slug: 'BUG-71-paging', type: 'bug', parent: 'epic-fixes', text: '# BUG-71 Paging\n\nRule.\n' });
+  seedTicket(repo, { key: 'BUG-72', slug: 'BUG-72-auth', type: 'bug', parent: 'epic-fixes', text: '# BUG-72 Auth\n\nRule.\n' });
+  const r = pipeline(['implement', 'run', '--epic', 'fixes', '--dry-run', '--parallel', '1']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Delivery: bug groups\. Bug epic: the orchestrator groups the tickets into PRs\./);
+  assert.match(r.stdout, /BUG-71 +feat\/bug-71-paging <- its group branch/);
+  assert.doesNotMatch(r.stdout, /the epic's branch/);
 });

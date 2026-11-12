@@ -1,6 +1,7 @@
 // Stack slots for the QE stage's e2e runs. On slot 0 every story's specs take turns behind one
-// machine-wide lock. When `implement run` works on several tickets at once (IMPLEMENT_PARALLEL > 1) and
-// `qe.useSlots` is on (the default), a story's run leases an isolated slot instead (scripts/stack/
+// machine-wide lock. Under `implement run` (IMPLEMENT_PARALLEL is set, even to 1: the ticket's worktree
+// is never what slot 0 was built from) and with `qe.useSlots` on (the default), a story's run leases an
+// isolated slot instead (scripts/stack/
 // slots.mjs), brings that slot's stack up from the story's worktree, runs its specs with TESTSTACK_SLOT
 // and TESTSTACK_URL pointing at it, and tears it down. Specs with hard-coded slot-0 ports (18xxx) stay on
 // slot 0, and so does a run that finds no free slot. See docs/ai-pipeline/qe.md#stack-slots.
@@ -16,7 +17,7 @@ export const slotAware = (texts) => texts.every((t) => !SLOT0_PORT.test(t));
 
 export function wantsSlot(config, env = process.env) {
   if (config.useSlots === false || env.QE_USE_SLOTS === '0') return false;
-  return Number(env.IMPLEMENT_PARALLEL ?? 1) > 1 || env.QE_USE_SLOTS === '1';
+  return Number(env.IMPLEMENT_PARALLEL ?? 0) >= 1 || env.QE_USE_SLOTS === '1';
 }
 
 const slotsCli = () => path.join(INSTALL_ROOT, 'scripts/stack/slots.mjs');

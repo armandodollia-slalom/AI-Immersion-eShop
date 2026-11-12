@@ -19,6 +19,7 @@ import { openPullRequest, prPublisher } from '../../pipeline/lib/bot.mjs';
 import { git, revExists } from '../../pipeline/lib/git.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { readOutage } from '../../pipeline/lib/outage.mjs';
 import { acquireLock, appendJsonl, log as defaultLog, nowIso, readJson, releaseLock, run, sleep, tail, writeJson } from '../../pipeline/lib/util.mjs';
 import { ticketDir, writeTicket } from '../../board/lib/source.mjs';
 import { metaFor } from '../../board/lib/ticket-format.mjs';
@@ -27,7 +28,7 @@ import { boardEvent } from './board-events.mjs';
 import { OUTCOMES_FILE } from './decisions.mjs';
 import { EPIC_PLAN_STAGE, deliveryShape, epicDeps, epicPlanDecision, epicPlanTask, epicPrBody, epicSlug, epicTestKey, groupDeps, groupOutcome, groupsDecision, journeyTicket, nextStories, noteMarkdown, singleGroups, validateNote } from './epic-plan.mjs';
 import { commitAll, commitEnv, headSha, mergeInProgress, mustGit, unmergedFiles } from './gitops.mjs';
-import { plan as planStories, runsDir, startWorker } from './implement.mjs';
+import { plan as planStories, runsDir, skippedOutcome, startWorker } from './implement.mjs';
 import { lspAdapter } from './lsp.mjs';
 import { waitForMemory } from './resources.mjs';
 import { agentSettings, createContext, runSelf } from './orchestrate.mjs';
@@ -204,6 +205,9 @@ export async function mergeStory(env, story) {
   const lock = path.join(epicsDir(config), `${epic.key}--${env.unit.id}.merge.lock`);
   while (!acquireLock(lock)) await sleep(1000);
   try {
+    // Agents that ran in the unit worktree (an earlier conflict resolution) leave their usage and decision
+    // records uncommitted there, and git refuses to merge over them.
+    commitAll(worktree, `${env.unit?.id ?? branch}: Record metrics`, [wtConfig.metricsDir]);
     const r = git(worktree, ['merge', '--no-ff', '--no-edit', '-m', `${story.key}: Merge into ${branch}`, story.branch], { env: commitEnv });
     if (r.status === 0) return { ok: true, sha: headSha(worktree) };
     const files = unmergedFiles(worktree);
@@ -226,6 +230,21 @@ export async function mergeStory(env, story) {
     return { ok: true, sha: headSha(worktree), conflicts: files };
   } finally {
     releaseLock(lock);
+  }
+}
+
+// Each ticket's cached text in its story worktree (with the implementer's Implementation Notes, which
+// its plan's story-sha covers) replaces the unit worktree's copy taken before the story ran, so the
+// unit's PR check and the pre-push QE check read the text the plan was verified against.
+export function syncTickets(env, keys, state) {
+  for (const key of keys) {
+    const storyWt = state.stories?.[key]?.worktree ?? worktreeFor(env.config, { key });
+    const src = ticketDir(loadConfig('implement', storyWt), key);
+    if (!fs.existsSync(path.join(src, 'story.md'))) continue;
+    const dst = ticketDir(env.wtConfig, key);
+    fs.rmSync(dst, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.cpSync(src, dst, { recursive: true });
   }
 }
 
@@ -260,6 +279,24 @@ export async function epicQe(env, { key, note }) {
   return { status: state().automation?.status ?? 'unknown', bugs: state().automation?.bugs ?? [] };
 }
 
+// The tickets on a unit branch whose verified tests went stale because other tickets edited the same
+// spec files (`qe check`: "tests or scenario edited after verification"); QE automates each again in
+// the unit worktree, which re-runs its verifier, and the result is committed.
+const STALE_TESTS = /^FAIL\s+(\S+)\s.*tests or scenario edited after verification/;
+export async function reverifyStale(env, keys) {
+  const { wtConfig, worktree, base, log = () => {} } = env;
+  const checked = cli(QE_CLI, worktree, base, ['check', '--changed-from', wtConfig.baseRef], { sources: keys.map((k) => ticketDir(wtConfig, k)) });
+  const stale = (checked.stdout ?? '').split('\n').map((l) => STALE_TESTS.exec(l)?.[1]).filter((k) => k && keys.includes(k));
+  const failed = [];
+  for (const key of stale) {
+    log(`${key}: its verified tests changed with later tickets' spec edits; re-verifying them in ${env.branch}`);
+    const r = cli(QE_CLI, worktree, base, ['automate', key], { timeoutSec: wtConfig.implement.qeTimeoutSec, sources: [ticketDir(wtConfig, key)] });
+    commitAll(worktree, `${key}: Re-verify automated tests after later tickets edited their spec files`);
+    if (r.status !== 0) failed.push(key);
+  }
+  return { stale, failed };
+}
+
 // The PR check of a whole unit (its tickets, and the journey ticket) against the unit diff, in one run of
 // the PR check's multi-ticket mode (`run --stories K1,K2`): every frontend ticket gets the design lens.
 // Report only unless `fix` (fixes are committed on the unit branch).
@@ -275,17 +312,36 @@ export async function prCheckUnit(env, keys, { fix = false } = {}) {
 }
 
 // A unit's PR (a bug-epic group or the feature epic), pushed and opened as the pipeline's PR bot
-// (dev-bot-<login>, lib/bot.mjs), or as the developer's gh login when the bot is not set up.
-export async function openPr(env, { title, body }, deps = {}) {
+// (dev-bot-<login>, lib/bot.mjs), or as the developer's gh login when the bot is not set up. A unit
+// re-delivered by a later run keeps the PR it already has (its body is refreshed) and reports it as
+// existing, so the review gate does not assess it again (D9, D23).
+export async function openPr(env, { title, body, existing = null }, deps = {}) {
   const { worktree, branch, prBase } = env;
   const publisher = deps.publisher ?? (await prPublisher(env.wtConfig ?? env.config));
+  const r = deps.run ?? run;
+  const refresh = (url) => {
+    r('gh', ['pr', 'edit', url, '--body', body], { cwd: worktree, env: publisher.env });
+    return { url, existing: true };
+  };
+  if (existing) {
+    const push = publisher.push(worktree, branch);
+    if (push.status !== 0) return { url: null, reason: `push failed: ${tail(`${push.stderr ?? ''}\n${push.stdout ?? ''}`.trim(), 600)}` };
+    return refresh(existing);
+  }
   const opened = openPullRequest(publisher, { cwd: worktree, branch, base: prBase.replace(/^origin\//, ''), title, body }, { run: deps.run });
-  return opened.url ? { url: opened.url } : { url: null, reason: opened.reason };
+  if (opened.url) return { url: opened.url };
+  // The PR exists but this run has no record of it (an earlier run crashed after opening it).
+  if (opened.pushed && /already exists/.test(opened.reason ?? '')) {
+    const prior = (r('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url'], { cwd: worktree, env: publisher.env }).stdout ?? '').trim();
+    if (prior) return refresh(prior);
+  }
+  return { url: null, reason: opened.reason };
 }
 
 export const defaultDeps = (config, log) => ({
   runAgent: runAgentAsync,
   startWorker,
+  reverifyStale,
   lsp: lspAdapter(config, { log }),
   board: (root, key, args, opts) => boardEvent(root, key, args, opts),
   planEpic,
@@ -379,7 +435,7 @@ async function epicFlow(env) {
     ? [epicUnit]
     : (() => {
         const groups = note?.prGroups?.length ? note.prGroups : singleGroups(stories);
-        const gdeps = groupDeps(groups, stories);
+        const gdeps = groupDeps(groups, stories, note);
         return groups.map((g) => ({ id: g.id, kind: 'group', group: g, branch: groupBranchFor(config, epic.key, g.id), worktree: groupWorktreeFor(config, epic.key, g.id), keys: g.tickets, deps: gdeps.get(g.id) ?? [] }));
       })();
   for (const u of units) saveUnit(config, epic.key, u.id, { id: u.id, kind: u.kind, branch: u.branch, worktree: u.worktree, keys: u.keys, deps: u.deps, ...(u.group ? { title: u.group.title, reason: u.group.reason, risk: u.group.risk } : {}) });
@@ -401,8 +457,12 @@ async function epicFlow(env) {
   const groupParallel = feature ? 1 : env.parallel;
   const pending = [...targets];
   const running = new Map();
+  const unitsStarted = Date.now();
   while (pending.length || running.size) {
-    for (let i = 0; i < pending.length; i++) {
+    // An agent provider outage (outage.mjs): start no more groups and skip none for it.
+    const outage = readOutage(unitsStarted);
+    if (outage && !running.size) break;
+    for (let i = 0; !outage && i < pending.length; i++) {
       const u = pending[i];
       const failedDep = u.deps.find((d) => unitResults.has(d) && unitResults.get(d).outcome !== 'done');
       if (failedDep && !only) {
@@ -431,6 +491,7 @@ async function epicFlow(env) {
       const hit = r.results?.find((x) => x.key === s.key);
       if (hit) return hit;
     }
+    if (!only && readOutage(unitsStarted)) return { key: s.key, outcome: null, reason: 'not started: the agent provider is unavailable' };
     return { key: s.key, outcome: 'skipped', reason: only ? 'not part of this run' : 'its group never ran' };
   }).filter((r) => !only || only.includes(r.key));
   if (only) {
@@ -487,6 +548,9 @@ async function deliverUnit(env, unit, units, epicWt) {
   }
   if (only) return { outcome: 'joined', results };
   const state = loadEpicRun(config, epic.key);
+  // Every ticket merged into the unit, in this run or an earlier one: a group PR opened by a later run
+  // moves the cards of the tickets merged before it too.
+  const delivered = results.filter((x) => state.stories?.[x.key]?.merged);
   const open = results.filter((r) => !(DONE.has(r.outcome) && state.stories?.[r.key]?.merged) && !(r.outcome === 'skipped' && !/^blocker /.test(r.reason ?? '')));
   const finish = (outcome, extra = {}) => {
     saveUnit(config, epic.key, unit.id, { status: outcome === 'done' ? 'done' : 'failed', outcome, ...extra });
@@ -496,7 +560,7 @@ async function deliverUnit(env, unit, units, epicWt) {
   if (open.length) {
     const reason = `${feature ? 'epic' : `group ${unit.id}`} not delivered: ${open.map((r) => `${r.key} ${r.outcome}`).join(', ')}`;
     log(`no PR: ${reason}`);
-    if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome) && state.stories?.[x.key]?.merged)) reportStory(uenv, r);
+    if (!feature) for (const r of delivered) reportStory(uenv, r);
     return finish('stories-failed', { reason, failed: open.filter((r) => r.outcome !== 'skipped').map((r) => r.key) });
   }
 
@@ -512,6 +576,25 @@ async function deliverUnit(env, unit, units, epicWt) {
     saveUnit(config, epic.key, unit.id, { qe });
     if (qe.status !== 'verified') return finish(`epic-qe-${qe.status}`, { reason: `epic-level QE ended ${qe.status}${qe.bugs?.length ? `: ${qe.bugs.length} bug(s)` : ''}` });
   }
+
+  // A stacked group's branch also carries the plans of the groups it stacks on, which the pre-push
+  // QE check verifies too.
+  const stacked = new Set();
+  const addStack = (u) => {
+    for (const d of u?.deps ?? []) {
+      if (stacked.has(d)) continue;
+      stacked.add(d);
+      addStack(units.find((x) => x.id === d));
+    }
+  };
+  addStack(unit);
+  const branchKeys = [...unit.keys, ...units.filter((u) => stacked.has(u.id)).flatMap((u) => u.keys)];
+  syncTickets(uenv, branchKeys, state);
+  // Tickets of one branch add cases to the same spec files, so a later ticket changes the files an
+  // earlier ticket's verified tests live in and that ticket's automation hash goes stale. Its QE runs
+  // again in the unit worktree (verifier gate unchanged) before the pre-push check sees it.
+  const reverified = await deps.reverifyStale(uenv, branchKeys);
+  if (reverified.failed.length) return finish('qe-reverify-failed', { reason: `re-verifying the tests of ${reverified.failed.join(', ')} after later tickets edited their spec files failed` });
 
   // The PR check for the whole unit, in one run: every ticket (frontend ones get the design lens) and
   // the journeys. Each ticket's row in the PR body shows the unit's result.
@@ -533,22 +616,27 @@ async function deliverUnit(env, unit, units, epicWt) {
   if (followUps.length) saveUnit(config, epic.key, unit.id, { followUps });
   const body = epicPrBody({ followUps, epic, branch: unit.branch, stories: uenv.stories, results: runs, qe, prChecks, foundation: feature ? loadEpicRun(config, epic.key).foundation : null, noteFile: path.relative(config.root, env.noteFile), group: feature ? null : unit.group });
   if (!env.pr || prsDisabled()) {
-    if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
+    if (!feature) for (const r of delivered) reportStory(uenv, r);
     log(`every ticket verified and merged into ${unit.branch}${env.pr ? ' (PRs disabled)' : '; --pr opens the PR'}`);
     return finish('done', { prBody: body });
   }
   const title = feature ? `Epic: ${(epic.title ?? epic.key).replace(/^Epic:\s*/i, '')}` : `Fix ${unit.keys.join(', ')}: ${unit.group.title}`;
-  const opened = await deps.openPr(uenv, { title, body });
+  const opened = await deps.openPr(uenv, { title, body, existing: state.units?.[unit.id]?.pr ?? null });
   if (!opened.url) {
-    if (!feature) for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r);
+    log(`no PR: ${opened.reason}`);
+    if (!feature) for (const r of delivered) reportStory(uenv, r);
     return finish('done', { reason: opened.reason });
   }
   if (feature) {
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch]);
   } else {
-    for (const r of results.filter((x) => DONE.has(x.outcome))) reportStory(uenv, r, opened.url);
+    for (const r of delivered) reportStory(uenv, r, opened.url);
     if (epic.number) deps.board(config.root, epic.key, ['epic-pr', String(epic.number), '--pr', opened.url, '--branch', unit.branch, '--group', unit.id, '--title', unit.group.title, '--tickets', unit.keys.join(',')]);
-    await deps.reviewGate(uenv, { pr: opened.url, keys: results.filter((x) => DONE.has(x.outcome)).map((x) => x.key) });
+    // The gate rates every ticket on the PR, including those merged into the group by an earlier run (a
+    // group can finish across restarts), or a Low rating could auto-merge fixes it never saw. A PR that
+    // already existed is not re-gated when a later run re-delivers its group: it was gated when it
+    // opened, or predates the gate.
+    if (!opened.existing) await deps.reviewGate(uenv, { pr: opened.url, keys: delivered.map((x) => x.key) });
   }
   log(`PR: ${opened.url}`);
   return finish('done', { pr: opened.url });
@@ -588,11 +676,12 @@ async function runUnitStories(env, { parallel, deferReview }) {
   const outcome = new Map();
   const pending = new Set();
   for (const s of planned) {
-    if (s.skip) outcome.set(s.key, { outcome: 'skipped', reason: s.skip });
+    if (s.skip) outcome.set(s.key, skippedOutcome(s));
     else pending.add(s.key);
   }
   const merged = new Set(planned.filter((s) => state.stories?.[s.key]?.merged).map((s) => s.key));
-  const failed = new Set();
+  // A standing escalation counts as failed, so its dependents are skipped for it.
+  const failed = new Set(planned.filter((s) => s.escalatedBefore && !merged.has(s.key)).map((s) => s.key));
   const running = new Map();
   const order = planned.map((s) => s.key);
   const finishStory = async (s, result) => {
@@ -616,9 +705,11 @@ async function runUnitStories(env, { parallel, deferReview }) {
     return { ...result, mergedSha: m.sha };
   };
 
+  const storiesStarted = Date.now();
   for (;;) {
     const skippedByBlocker = [...outcome].filter(([, r]) => r.outcome === 'skipped' && /^blocker /.test(r.reason ?? '')).map(([k]) => k);
-    const { start, skip } = nextStories({ order, deps: sdeps, owns, pending, running: new Set(running.keys()), merged, failed: new Set([...failed, ...skippedByBlocker]), slots: parallel });
+    // An agent provider outage (outage.mjs): start no more stories and skip none for it.
+    const { start, skip } = readOutage(storiesStarted) ? { start: [], skip: [] } : nextStories({ order, deps: sdeps, owns, pending, running: new Set(running.keys()), merged, failed: new Set([...failed, ...skippedByBlocker]), slots: parallel });
     for (const { key, blocker } of skip) {
       pending.delete(key);
       const r = { outcome: 'skipped', reason: `blocker ${blocker} ended ${outcome.get(blocker)?.outcome ?? 'failed'}` };
@@ -643,7 +734,8 @@ async function runUnitStories(env, { parallel, deferReview }) {
     log(`${key}: ${r.outcome}${r.reason ? ` (${r.reason})` : ''}`);
   }
   // Stories that could never start (a dependency outside the epic that never merged) are reported too.
-  for (const key of pending) outcome.set(key, { outcome: 'skipped', reason: 'its dependencies were never merged' });
+  const outage = readOutage(storiesStarted);
+  for (const key of pending) outcome.set(key, outage ? { outcome: null, reason: 'not started: the agent provider is unavailable' } : { outcome: 'skipped', reason: 'its dependencies were never merged' });
   return planned.map((s) => ({ ...s, ...outcome.get(s.key) }));
 }
 

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { INSTALL_ROOT } from './config.mjs';
+import { providerOutage, recordOutage } from './outage.mjs';
 import { parseClaudeJson, parseCodexJsonl, parseCopilotUsage, parseUsageFile, readUsageFile, recordUsage, summarizeUsage } from './usage.mjs';
 import { log, parseFrontMatter, run, sha } from './util.mjs';
 
@@ -221,11 +222,13 @@ function prepare(config, { name, task, mode, model, cli, noSubagents, cwd, promp
   cli = cli || config.agent.cli;
   let prompt = buildPrompt(definition, task);
   // Copilot takes its prompt as a command-line argument (capped at 32K chars on Windows, and cmd.exe
-  // mangles newlines), so its prompt is written to a file and the agent is told to read it.
+  // mangles newlines), so its prompt is written to a file and the agent is told to read it. The file
+  // goes under the agent's own working directory: headless Copilot trusts only `cwd` and refuses to
+  // read a file outside it (a pair in a subtask worktree whose config.root is the story worktree).
   if (promptFile !== false && !config.agent.cmd && cli === 'copilot') {
     // Write it inside the agent's own working directory: a headless Copilot only reads its trusted folder,
     // so a prompt in another worktree (a subtask's parent) would go unread.
-    const file = promptFile ?? path.join(cwd, config.stateDir, 'prompts', `${name}-${process.pid}-${Date.now()}.md`);
+    const file = promptFile ?? path.join(cwd, config.stateDir, 'prompts', `${name}-${process.pid}-${Date.now()}-${randomUUID().slice(0, 8)}.md`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, prompt);
     prompt = `Read the file ${path.relative(cwd, file).replace(/\\/g, '/')} and follow the instructions in it exactly; it is your complete task.`;
@@ -244,7 +247,13 @@ const finalize = (config, prepared, { name, mode, usage }, { stdout, stderr, sta
   const { output, seconds, usage: used } = finishRun(config, invocation, { name, mode, alias, modelId, usageFile, usage, version: definition.version, stdout, status, timedOut, started });
   log(`agent ${name} finished in ${seconds}s (exit ${status}${timedOut ? ', timed out' : ''})`);
   if (status !== 0 && stderr.trim()) log(stderr.trim().slice(-2000));
-  return { ok: status === 0, status, timedOut, output, version: definition.version, seconds, usage: used };
+  // A quota or usage limit fails every later agent too: record it for the run (see outage.mjs).
+  const outage = timedOut ? null : providerOutage({ output, stderr, status });
+  if (outage) {
+    log(`agent ${name}: the ${invocation.cli} provider is unavailable: ${outage}`);
+    recordOutage({ cli: invocation.cli, agent: name, reason: outage });
+  }
+  return { ok: status === 0 && !outage, status, timedOut, output, version: definition.version, seconds, usage: used, outage };
 };
 
 // Every call is a brand-new headless process, so each agent (and each verifier round) starts with a

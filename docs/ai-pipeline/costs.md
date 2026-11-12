@@ -10,6 +10,7 @@ node scripts/pipeline/pipeline.mjs costs PROMO-3              # one ticket, item
 node scripts/pipeline/pipeline.mjs costs --epic promotions    # one epic: per ticket, per stage, and each ticket by stage
 node scripts/pipeline/pipeline.mjs costs --since 2026-07-01   # any view, limited to runs on or after a date
 node scripts/pipeline/pipeline.mjs costs PROMO-3 --markdown   # Markdown tables, for a PR body or a report
+node scripts/pipeline/pipeline.mjs costs --worktrees          # include every git worktree: live spend of a running implement run
 node scripts/pipeline/pipeline.mjs costs --epic promotions --json
 ```
 

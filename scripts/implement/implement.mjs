@@ -9,6 +9,7 @@ import { spawnBackground } from '../pipeline/lib/background.mjs';
 import { parseArgs, runMain } from '../pipeline/lib/cli.mjs';
 import { isDisabled, loadConfig } from '../pipeline/lib/config.mjs';
 import { git } from '../pipeline/lib/git.mjs';
+import { clearOutage, readOutage } from '../pipeline/lib/outage.mjs';
 import { metricsFile } from '../pipeline/lib/state.mjs';
 import { epicTickets, loadTicket } from '../pipeline/lib/tickets.mjs';
 import { bootId, isProcessAlive, log, nowIso, readJson, readJsonl, selfProcess, setLogTag, writeJson } from '../pipeline/lib/util.mjs';
@@ -18,7 +19,7 @@ import { listSubtaskWorktrees, removeWorktree } from './lib/gitops.mjs';
 import { board, boardEvent, claimStories, failedResults, skipRefused, syncBoard } from './lib/board-events.mjs';
 import { epicBranchFor, epicToJoin, formatEpicStatus, listEpicRuns, loadEpicRun, runEpic } from './lib/epic.mjs';
 import { GROUPINGS, deliveryShape } from './lib/epic-plan.mjs';
-import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, runBatch, runsDir, startResolvedReruns } from './lib/implement.mjs';
+import { applyEnv, batchFile, describePlan, formatSummary, implementStory, loadRun, plan, recordUnrun, runBatch, runsDir, startResolvedReruns } from './lib/implement.mjs';
 import { parallelFor } from './lib/resources.mjs';
 import { requeue } from './lib/requeue.mjs';
 import { lspAdapter } from './lib/lsp.mjs';
@@ -95,14 +96,18 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
   if (epicRun) {
     const { epic, only } = epicRun;
     const join = only ? ` (joining the in-progress run of ${epic.key})` : '';
-    console.log(`Delivery: epic${join}. ${epicRun.groups ? 'Bug epic: the orchestrator groups the tickets into PRs.' : `One branch ${epicBranchFor(config, epic.key)} and one PR for ${epic.key}.`}`);
-    console.log(stories.map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- the epic's branch`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`).join('\n'));
+    console.log(`Delivery: ${epicRun.groups ? 'bug groups' : 'epic'}${join}. ${epicRun.groups ? 'Bug epic: the orchestrator groups the tickets into PRs.' : `One branch ${epicBranchFor(config, epic.key)} and one PR for ${epic.key}.`}`);
+    console.log(stories.map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${epicRun.groups ? 'its group branch' : "the epic's branch"}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`).join('\n'));
   } else console.log(describePlan(stories));
   if (dryRun || stories.every((s) => s.skip)) return 0;
   // Agents may read only the tickets handed to this run (scripts/pipeline/lib/story-guard.mjs): a cached
   // ticket's whole folder (story and its own mockups), or the files and folders given.
   // An epic run also hands over the epic's own ticket (its body and mockups).
   process.env.PIPELINE_STORY_SOURCES = [...inputs.map((p) => (path.basename(p) === 'story.md' ? path.dirname(path.resolve(p)) : path.resolve(p))), ...extraSources].join(path.delimiter);
+  // One marker for the whole run, shared by its worker and QE processes (outage.mjs). A new run starts
+  // clean: the operator resumes once the provider is back.
+  process.env.PIPELINE_OUTAGE_FILE = path.join(runsDir(config), 'agent-outage.json');
+  clearOutage();
   const batch = { inputs: inputs.map((p) => path.resolve(p)), extraSources, base, parallel, pr, delivery, epic: epicRun ? { key: epicRun.epic.key, only: epicRun.only ?? null, grouping: epicRun.grouping ?? null } : null, ...selfProcess(), startedAt: nowIso(), finishedAt: null };
   writeJson(batchFile(config), batch);
   let results;
@@ -112,10 +117,21 @@ async function runStories(config, inputs, { base, force = false, takeover = fals
     results = r.results;
     epicSummary = r.epic;
   } else results = await runBatch(config, stories, { parallel, pr, script: SCRIPT });
+  // An agent provider outage interrupts the run: no card moves to Failed, and the batch stays
+  // unfinished so `implement resume` continues it.
+  const outage = readOutage(Date.parse(batch.startedAt));
+  if (outage) {
+    console.log(`\n${formatSummary(results)}`);
+    console.log(`\nStopped: the agent provider is unavailable (${outage.cli}, ${outage.agent}: ${outage.reason}).\nUnfinished stories keep their cards. Run \`node scripts/pipeline/pipeline.mjs implement resume\` once it is back.`);
+    return 75;
+  }
   writeJson(batchFile(config), { ...batch, finishedAt: nowIso() });
   // Every story that did not finish goes to Failed with its outcome, reason and findings.
   // (Epic delivery has no PR per story, so a done story is never failed for a missing PR.)
-  for (const r of failedResults(results, { pr: pr && !epicRun })) boardEvent(config.root, r.key, ['fail', r.key]);
+  for (const r of failedResults(results, { pr: pr && !epicRun })) {
+    recordUnrun(config, r);
+    boardEvent(config.root, r.key, ['fail', r.key]);
+  }
   console.log(`\n${formatSummary(results)}`);
   if (epicSummary) console.log(`\n${epicSummary.key}: ${epicSummary.outcome}${epicSummary.prs?.length ? `  ${epicSummary.prs.join(' ')}` : ''}${epicSummary.reason ? `\n           ${epicSummary.reason}` : ''}`);
   const storiesOk = results.every((r) => ['done', 'skipped'].includes(r.outcome)) && results.some((r) => r.outcome === 'done');
@@ -204,7 +220,7 @@ async function main() {
         if (join) {
           const epic = loadTicket(config, join.state.epic, { fetch: false });
           if (epic) epicDir = config.abs(epic.dir);
-          epicRun = { epic: epicInfo(epic, join.state.epic), tickets: given, only: given.map((t) => t.key) };
+          epicRun = { epic: epicInfo(epic, join.state.epic), tickets: given, only: given.map((t) => t.key), groups: join.unit.kind === 'group' };
         }
       }
       if (!flags['dry-run'] && config.baseRef.startsWith('origin/') && git(config.root, ['fetch', '-q', 'origin']).status !== 0) log('git fetch origin failed; using the local refs.');
@@ -237,7 +253,7 @@ async function main() {
       if (batch.epic?.key) {
         const epic = loadTicket(config, batch.epic.key, { fetch: false });
         const tickets = collectStories(inputs).map((s) => loadTicket(config, s.key, { fetch: false })).filter(Boolean);
-        epicRun = { epic: epicInfo(epic, batch.epic.key), tickets, only: batch.epic.only ?? null, grouping: batch.epic.grouping ?? null };
+        epicRun = { epic: epicInfo(epic, batch.epic.key), tickets, only: batch.epic.only ?? null, grouping: batch.epic.grouping ?? null, groups: deliveryShape(tickets, batch.epic.grouping ?? config.implement.epic?.grouping ?? 'auto').kind === 'groups' };
       }
       return runStories(config, inputs, { base: batch.base, parallel, pr: Boolean(flags.pr ?? batch.pr), extraSources: batch.extraSources ?? [], epicRun, delivery: batch.delivery ?? 'story' });
     }

@@ -1,0 +1,272 @@
+# Board snapshots: bug epic #64
+
+Lanes of the epic and its 21 tickets on the [story board](https://github.com/users/armandodollia-slalom/projects/1). Flags: `needs-human` label.
+
+## 04:14 (before the run)
+
+All 22 cards (epic + 21 bugs) in **Ready**.
+
+## 04:18 (run started, epic plan running)
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | In Progress | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | In Progress | - |
+| BUG-5 | #47 | In Progress | - |
+| BUG-6 | #48 | In Progress | - |
+| BUG-7 | #49 | In Progress | - |
+| BUG-8 | #50 | In Progress | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | In Progress | - |
+| BUG-17 | #39 | In Progress | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 22
+
+## 04:50 (BUG-4, BUG-5, BUG-7 in QE)
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | In Progress | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | Testing | - |
+| BUG-5 | #47 | Testing | - |
+| BUG-6 | #48 | In Progress | - |
+| BUG-7 | #49 | Testing | - |
+| BUG-8 | #50 | In Progress | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | In Progress | - |
+| BUG-17 | #39 | In Progress | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 19, Testing: 3
+
+## 05:40 (after D6-D8, fourth start)
+
+Group PRs: #70 (`catalog-write-auth`).
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | Testing | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | Pending Review | - |
+| BUG-5 | #47 | Testing | - |
+| BUG-6 | #48 | Testing | - |
+| BUG-7 | #49 | Testing | - |
+| BUG-8 | #50 | Testing | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | Testing | - |
+| BUG-17 | #39 | In Progress | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 15, Pending Review: 1, Testing: 6
+
+## 06:21 (BUG-4, BUG-5 and BUG-6 have PRs; BUG-1 escalated; BUG-17 running)
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | Testing | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | Pending Review | - |
+| BUG-5 | #47 | Pending Review | - |
+| BUG-6 | #48 | Pending Review | - |
+| BUG-7 | #49 | Testing | - |
+| BUG-8 | #50 | Testing | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | Testing | - |
+| BUG-17 | #39 | Testing | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 14, Pending Review: 3, Testing: 5
+
+## 08:27 (after the host slept; BUG-17 merged into its group, BUG-13 planning)
+
+| Ticket | Issue | Lane | Flags |
+| --- | --- | --- | --- |
+| EPIC #64 | #64 | In Progress | - |
+| BUG-1 | #31 | Testing | - |
+| BUG-2 | #42 | In Progress | - |
+| BUG-3 | #45 | In Progress | - |
+| BUG-4 | #46 | Pending Review | - |
+| BUG-5 | #47 | Pending Review | - |
+| BUG-6 | #48 | Pending Review | - |
+| BUG-7 | #49 | Testing | - |
+| BUG-8 | #50 | Testing | - |
+| BUG-9 | #51 | In Progress | - |
+| BUG-10 | #32 | In Progress | - |
+| BUG-11 | #33 | In Progress | - |
+| BUG-12 | #34 | In Progress | - |
+| BUG-13 | #35 | In Progress | - |
+| BUG-14 | #36 | In Progress | - |
+| BUG-15 | #37 | In Progress | - |
+| BUG-16 | #38 | Testing | - |
+| BUG-17 | #39 | Testing | - |
+| BUG-18 | #40 | In Progress | - |
+| BUG-19 | #41 | In Progress | - |
+| BUG-20 | #43 | In Progress | - |
+| BUG-21 | #44 | In Progress | - |
+
+Lane counts: In Progress: 14, Pending Review: 3, Testing: 5
+
+## 09:47 (after the Copilot quota outage; Claude Code run at parallel 3)
+
+Cards wrongly moved to Failed at 09:10 (D12) went back to In Progress when the 09:29 run claimed them.
+
+| Ticket | Issue | Lane |
+| --- | --- | --- |
+| EPIC #64 | #64 | In Progress |
+| BUG-1 | #31 | In Progress |
+| BUG-2 | #42 | In Progress |
+| BUG-3 | #45 | In Progress |
+| BUG-4 | #46 | Pending Review |
+| BUG-5 | #47 | Pending Review |
+| BUG-6 | #48 | Pending Review |
+| BUG-7 | #49 | Pending Review |
+| BUG-8 | #50 | Testing |
+| BUG-9 | #51 | In Progress |
+| BUG-10 | #32 | In Progress |
+| BUG-11 | #33 | Testing |
+| BUG-12 | #34 | In Progress |
+| BUG-13 | #35 | Pending Review |
+| BUG-14 | #36 | In Progress |
+| BUG-15 | #37 | In Progress |
+| BUG-16 | #38 | In Progress |
+| BUG-17 | #39 | Pending Review |
+| BUG-18 | #40 | Testing |
+| BUG-19 | #41 | Pending Review |
+| BUG-20 | #43 | In Progress |
+| BUG-21 | #44 | In Progress |
+
+Lane counts: In Progress: 12, Pending Review: 7, Testing: 3
+
+## 10:18 (11 verified; BUG-12/14 in QE; BUG-21 starting)
+
+| Ticket | Issue | Lane |
+| --- | --- | --- |
+| EPIC #64 | #64 | In Progress |
+| BUG-1 | #31 | In Progress |
+| BUG-2 | #42 | In Progress |
+| BUG-3 | #45 | In Progress |
+| BUG-4 | #46 | Pending Review |
+| BUG-5 | #47 | Pending Review |
+| BUG-6 | #48 | Pending Review |
+| BUG-7 | #49 | Pending Review |
+| BUG-8 | #50 | Testing |
+| BUG-9 | #51 | In Progress |
+| BUG-10 | #32 | In Progress |
+| BUG-11 | #33 | Testing |
+| BUG-12 | #34 | Testing |
+| BUG-13 | #35 | Pending Review |
+| BUG-14 | #36 | Testing |
+| BUG-15 | #37 | In Progress |
+| BUG-16 | #38 | In Progress |
+| BUG-17 | #39 | Pending Review |
+| BUG-18 | #40 | Testing |
+| BUG-19 | #41 | Pending Review |
+| BUG-20 | #43 | Testing |
+| BUG-21 | #44 | In Progress |
+
+Lane counts: In Progress: 9, Pending Review: 7, Testing: 6
+
+## 11:49 (end of the run)
+
+| Ticket | Issue | Lane |
+| --- | --- | --- |
+| EPIC #64 | #64 | Failed |
+| BUG-1 | #31 | Failed |
+| BUG-2 | #42 | Failed |
+| BUG-3 | #45 | Failed |
+| BUG-4 | #46 | Pending Review |
+| BUG-5 | #47 | Pending Review |
+| BUG-6 | #48 | Pending Review |
+| BUG-7 | #49 | Pending Review |
+| BUG-8 | #50 | Pending Review |
+| BUG-9 | #51 | Failed |
+| BUG-10 | #32 | Failed |
+| BUG-11 | #33 | Pending Review |
+| BUG-12 | #34 | Pending Review |
+| BUG-13 | #35 | Pending Review |
+| BUG-14 | #36 | Pending Review |
+| BUG-15 | #37 | Failed |
+| BUG-16 | #38 | Pending Review |
+| BUG-17 | #39 | Pending Review |
+| BUG-18 | #40 | Pending Review |
+| BUG-19 | #41 | Pending Review |
+| BUG-20 | #43 | Pending Review |
+| BUG-21 | #44 | Pending Review |
+
+Lane counts: Failed: 7, Pending Review: 15
+
+## 23:21 (end of the epic run: all 21 verified)
+
+| Ticket | Issue | Lane |
+| --- | --- | --- |
+| EPIC #64 | #64 | Pending Review |
+| BUG-1 | #31 | Pending Review |
+| BUG-2 | #42 | Pending Review |
+| BUG-3 | #45 | Pending Review |
+| BUG-4 | #46 | Pending Review |
+| BUG-5 | #47 | Pending Review |
+| BUG-6 | #48 | Pending Review |
+| BUG-7 | #49 | Pending Review |
+| BUG-8 | #50 | Pending Review |
+| BUG-9 | #51 | Pending Review |
+| BUG-10 | #32 | Pending Review |
+| BUG-11 | #33 | Pending Review |
+| BUG-12 | #34 | Pending Review |
+| BUG-13 | #35 | Pending Review |
+| BUG-14 | #36 | Pending Review |
+| BUG-15 | #37 | Pending Review |
+| BUG-16 | #38 | Pending Review |
+| BUG-17 | #39 | Pending Review |
+| BUG-18 | #40 | Pending Review |
+| BUG-19 | #41 | Pending Review |
+| BUG-20 | #43 | Pending Review |
+| BUG-21 | #44 | Pending Review |
+
+Lane counts: Pending Review: 22

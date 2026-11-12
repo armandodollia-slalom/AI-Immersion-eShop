@@ -12,6 +12,7 @@ import { activeStory } from './lib/stories.mjs';
 import { botSetup, botStatus } from './lib/bot-setup.mjs';
 import { mockupsDir } from './lib/tickets.mjs';
 import { denyOutput, storyGuard } from './lib/story-guard.mjs';
+import { loadUsageAcrossWorktrees } from './lib/usage.mjs';
 import { nowIso } from './lib/util.mjs';
 
 const CMD = 'node scripts/pipeline/pipeline.mjs';
@@ -50,7 +51,7 @@ Pipeline
                                 cost, tokens, wall clock, overhead, rework, shared tests, findings per arm
   stages                        list the stages and the events they handle
   metrics [--json] [--since <iso-date>]
-  costs [story] [--epic <epic>] [--since <iso-date>] [--json] [--markdown]
+  costs [story] [--epic <epic>] [--since <iso-date>] [--worktrees] [--json] [--markdown]
                                 agent tokens, cache hits and cost: one ticket itemized by stage, one
                                 epic itemized by ticket and stage, or (no story) the overview by epic,
                                 ticket, stage, model and month
@@ -130,7 +131,7 @@ async function main() {
     }
 
     case 'costs': {
-      const opts = { since: flags.since };
+      const opts = { since: flags.since, ...(flags.worktrees ? { rows: loadUsageAcrossWorktrees(config) } : {}) };
       let report;
       let format;
       if (flags.epic) {

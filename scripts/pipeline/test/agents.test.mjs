@@ -52,3 +52,33 @@ test('codex gets the lsp server inline (untrusted worktrees), read-only modes wi
   assert.ok(args('read').some((a) => a.startsWith('mcp_servers.lsp.disabled_tools=')));
   assert.ok(!args('implement').some((a) => a.startsWith('mcp_servers.lsp.disabled_tools=')));
 });
+
+test('copilot: the prompt file is written under the agent\'s cwd, which headless Copilot trusts', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { runAgentAsync } = await import('../lib/agents.mjs');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agents-prompt-'));
+  const root = path.join(tmp, 'story');
+  const cwd = path.join(tmp, 'story--sub');
+  const bin = path.join(tmp, 'bin');
+  for (const d of [root, cwd, bin]) fs.mkdirSync(d, { recursive: true });
+  // A fake copilot that reads the prompt file it was told about, the way the real one would (from cwd).
+  fs.writeFileSync(path.join(bin, 'copilot'), '#!/bin/sh\nf=$(printf "%s" "$2" | sed -E "s/^Read the file ([^ ]+) and.*/\\1/")\ncat "$f"\n', { mode: 0o755 });
+  const base = loadConfig();
+  const cfg = { ...base, root, agent: { ...base.agent, cli: 'copilot', cmd: null } };
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${oldPath}`;
+  try {
+    const [a, b] = await Promise.all([1, 2].map((n) => runAgentAsync(cfg, { name: 'pair-implementer', task: `TASK-${n}`, mode: 'implement', cwd, timeoutSec: 30 })));
+    assert.equal(a.status, 0);
+    assert.match(a.output, /TASK-1/, 'the agent can read its prompt relative to its own cwd');
+    assert.match(b.output, /TASK-2/, 'two agents started at once get distinct prompt files');
+    const files = fs.readdirSync(path.join(cwd, base.stateDir, 'prompts'));
+    assert.equal(files.length, 2);
+    assert.equal(fs.existsSync(path.join(root, base.stateDir, 'prompts')), false, 'nothing is written under another worktree');
+  } finally {
+    process.env.PATH = oldPath;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

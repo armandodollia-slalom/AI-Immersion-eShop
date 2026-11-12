@@ -132,6 +132,7 @@ export async function callAgent(ctx, { role, name, task, mode, modelClass = 'med
     const extraEnv = { PIPELINE_STORY_SOURCES: [process.env.PIPELINE_STORY_SOURCES, ctx.key].filter(Boolean).join(path.delimiter) };
     const res = await ctx.deps.runAgent(ctx.config, { name, task, mode, model, cli, noSubagents: true, cwd, timeoutSec: Math.max(1, Math.min(timeoutSec, left)), signal: ctx.abort.signal, extraEnv, usage: { stage: USAGE_STAGE[role] ?? 'implement', story: ctx.key, step, round } });
     if (ctx.abort.signal.aborted) throw new AbortedError('aborted');
+    if (res.outage) throw limit(ctx, 'agent-unavailable', `the agent provider is unavailable: ${res.outage}`);
     if (res.timedOut && Date.now() >= ctx.deadline) throw limit(ctx, 'limit-wall-clock', `the story ran past its ${ctx.s.storyWallClockSec}s wall clock while ${name} was running`);
     ctx.metrics.usage = addUsage(ctx.metrics.usage, res.usage ?? null);
     const calls = ctx.deps.lsp.calls(cwd, name, t0, Date.now());
@@ -422,7 +423,7 @@ async function pairLoop(ctx, st, { worktree, branch, base, rec, others = [], imp
       diagText = formatDiagnostics(diag);
       const checks = await runChecks(ctx, worktree, files);
       if (!checks.ok) {
-        verdict = { verdict: 'CHANGES_REQUESTED', findings: [...diagnosticFindings(diag), { severity: 'blocking', category: 'build', file: null, issue: 'the build or the existing unit tests failed', detail: checks.output }] };
+        verdict = { verdict: 'CHANGES_REQUESTED', findings: [...diagnosticFindings(diag), { severity: 'blocking', category: 'build', file: null, issue: 'a harness check (the build, or the generated test stack drift check) or the existing unit tests failed', detail: checks.output }] };
       } else {
         const disputes = formatDisputes(pending.open, pending.overruled) || null;
         const raw = st.verify === 'ui' ? await verifyUi(ctx, st, { worktree, base, round, checks, diagText, rec, disputes }) : await verifyCode(ctx, st, { worktree, base, round, checks, diagText, rec, disputes });

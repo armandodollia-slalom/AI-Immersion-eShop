@@ -24,7 +24,8 @@ export const TRANSITIONS = {
   claim: { from: [null, 'backlog', 'ready', 'failed', 'inProgress'], forceFrom: ['testing', 'review', 'done'], to: 'inProgress' },
   testing: { from: ['inProgress'], to: 'testing' },
   'product-bug': { from: ['testing', 'inProgress'], to: 'inProgress' },
-  verified: { from: ['inProgress', 'testing'], to: 'review' },
+  // From Failed too: a story that failed in one run and is verified (or only merged) by a later one.
+  verified: { from: ['inProgress', 'testing', 'failed'], to: 'review' },
   failed: { from: [null, 'backlog', 'ready', 'inProgress', 'testing'], to: 'failed' },
   closed: { from: [null, 'backlog', 'ready', 'inProgress', 'testing', 'review', 'failed'], to: 'done' },
   // A person reopened a triaged bug fix (card moved back, issue reopened, changes requested on its PR):

@@ -40,8 +40,9 @@ test('slotAware: specs with literal 18xxx ports stay on slot 0', () => {
   assert.equal(slotAware(["'http://host.docker.internal:18081/Account'"]), false);
 });
 
-test('wantsSlot: only when several tickets run at once and qe.useSlots is on', () => {
-  assert.equal(wantsSlot({}, { IMPLEMENT_PARALLEL: '1' }), false);
+test('wantsSlot: under implement (even one ticket at a time) and qe.useSlots is on', () => {
+  assert.equal(wantsSlot({}, {}), false, 'a developer\'s own checkout uses slot 0');
+  assert.equal(wantsSlot({}, { IMPLEMENT_PARALLEL: '1' }), true, 'slot 0 was not built from the ticket worktree');
   assert.equal(wantsSlot({}, { IMPLEMENT_PARALLEL: '4' }), true);
   assert.equal(wantsSlot({ useSlots: false }, { IMPLEMENT_PARALLEL: '4' }), false);
   assert.equal(wantsSlot({}, { QE_USE_SLOTS: '1' }), true);

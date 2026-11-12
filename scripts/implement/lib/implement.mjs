@@ -6,7 +6,7 @@ import { INSTALL_ROOT, loadConfig } from '../../pipeline/lib/config.mjs';
 import { formatBugs, normalizeBugs } from '../../pipeline/lib/decisions.mjs';
 import { git, implChanges, revExists } from '../../pipeline/lib/git.mjs';
 import { HUMAN_DECISIONS_FILE, decisionsBlock, readDecisions } from '../../pipeline/lib/human-decisions.mjs';
-import { loadState, metricsFile } from '../../pipeline/lib/state.mjs';
+import { loadState, metricsFile, updateState } from '../../pipeline/lib/state.mjs';
 import { prsDisabled, runTags } from '../../pipeline/lib/run-tags.mjs';
 import { addUsage } from '../../pipeline/lib/usage.mjs';
 import { activeStoryFile } from '../../pipeline/lib/stories.mjs';
@@ -23,23 +23,56 @@ import { formatDiagnostics, lspAdapter } from './lsp.mjs';
 import { LimitError, agentSettings, checkBudget, createContext, orchestrate } from './orchestrate.mjs';
 import { applyResources, resourcesFromEnv, waitForMemory } from './resources.mjs';
 import { newFeedbackLog } from './feedback.mjs';
+import { readOutage } from '../../pipeline/lib/outage.mjs';
 import { epicNoteBlock, integrationTask } from './tasks.mjs';
 import { isBugTicket } from './epic-plan.mjs';
 import { reviewGatePublish } from './post-publish.mjs';
 import { isReopened, openPrFor, placeReopened, syncFromRemote } from './reopen.mjs';
 
 const PIPELINE_CLI = path.join(INSTALL_ROOT, 'scripts/pipeline/pipeline.mjs');
+const QE_CLI = path.join(INSTALL_ROOT, 'scripts/qe/qe.mjs');
 const QE_TERMINAL = new Set(['verified', 'product-bug', 'escalated', 'blocked-on-plan', 'crashed', 'interrupted']);
 // Outcomes from a run that died rather than finished: the next run resumes them, and the batch retries
 // them itself a few times.
 const INTERRUPTED = new Set(['error', 'qe-crashed', 'qe-not-started', 'qe-timed-out']);
 const RETRYABLE = new Set(['error', 'qe-not-started']);
+// Outcomes that wait for a human, and the stage whose escalation note says so: while the note is still in
+// the story's worktree (.agent-state/escalations/<KEY>-<stage>.md), a later run keeps the outcome
+// instead of running the story again to the same end. Handling the escalation (a stage re-run that
+// passes clears its note, or a human deletes it) or --force runs it again.
+const ESCALATION_STAGE = { 'qe-escalated': 'automation', 'qe-blocked-on-plan': 'plan', 'review-escalated': 'review' };
+const escalationStands = (config, s, prev) => {
+  const stage = ESCALATION_STAGE[prev?.outcome];
+  const wt = prev?.worktree ?? worktreeFor(config, s);
+  return Boolean(stage) && fs.existsSync(path.join(wt, config.stateDir, 'escalations', `${s.key}-${stage}.md`));
+};
+// The outcome a story skipped by plan() reports: its standing escalation, or `skipped`.
+export const skippedOutcome = (s) => ({ outcome: s.escalatedBefore ?? 'skipped', reason: s.skip });
 
 export const runsDir = (config) => path.join(config.root, config.stateDir, 'implement');
 const runFile = (config, key) => path.join(runsDir(config), `${key}.json`);
 export const loadRun = (config, key) => readJson(runFile(config, key), null);
 export const batchFile = (config) => path.join(runsDir(config), 'batch.json');
 const saveRun = (config, key, patch) => writeJson(runFile(config, key), { ...(loadRun(config, key) ?? {}), key, ...patch, updatedAt: nowIso() });
+
+// The QE stages whose escalation a human resolved start over as well. A decision about the tests needs no
+// code change, so with the implementation hash unchanged the QE stop hook would take its escalated run as
+// current and the worker would read the old escalation back without QE ever seeing the decision.
+export function resetEscalatedQe(config, key, worktree) {
+  if (!worktree || !fs.existsSync(worktree)) return [];
+  const reset = [];
+  updateState({ root: worktree, stateDir: config.stateDir }, key, (st) => {
+    if (['escalated', 'blocked-on-plan'].includes(st.automation.status)) {
+      st.automation = { ...st.automation, status: 'idle', workingHash: null, requestedHash: null, verifiedHash: null, bugs: [], recoveries: 0, retryAt: null };
+      reset.push('automation');
+    }
+    if (st.plan.status === 'escalated') {
+      st.plan = { ...st.plan, status: 'idle', recoveries: 0, retryAt: null };
+      reset.push('plan');
+    }
+  });
+  return reset;
+}
 
 // A re-run of a ticket a human resolved starts clean: the escalation-resolved label comes off (a later
 // failure asks again) and the old escalation notes go, so the next failure comment only shows new ones.
@@ -52,8 +85,9 @@ export function startResolvedReruns(config, stories, { event = boardEvent } = {}
   }
   for (const s of stories.filter((x) => x.resolved && !x.skip)) {
     const removed = clearEscalationNotes(config, s.key, [s.worktree]);
+    const reset = resetEscalatedQe(config, s.key, s.worktree);
     event(config.root, s.key, ['clear-resolved', s.key]);
-    log(`${s.key}: re-run with the human decisions${removed.length ? `; ${removed.length} old escalation note(s) cleared` : ''}.`);
+    log(`${s.key}: re-run with the human decisions${removed.length ? `; ${removed.length} old escalation note(s) cleared` : ''}${reset.length ? `; QE ${reset.join(' and ')} start over` : ''}.`);
     started.push(s.key);
   }
   return started;
@@ -81,14 +115,21 @@ export function plan(config, inputs, { base = config.baseRef, force = false, pla
     if (prev?.outcome === 'done' && prev.branch && revExists(config.root, `refs/heads/${prev.branch}`)) {
       s.skip = `done in a previous run (--force to redo)`;
       s.doneBefore = true;
+    } else if (escalationStands(config, s, prev)) {
+      s.skip = `${prev.outcome} in a previous run: its escalation waits for a human (label the issue escalation-resolved, or --force, to retry)`;
+      s.escalatedBefore = prev.outcome;
     }
-    s.resume = Boolean(prev && !s.doneBefore && (prev.status === 'running' || INTERRUPTED.has(prev.outcome)) && prev.worktree && fs.existsSync(prev.worktree));
+    // A record without a worktree (an epic run's story that died before reporting one) resumes in the
+    // story's own worktree path.
+    const prevWorktree = prev?.worktree ?? (prev ? worktreeFor(config, s) : null);
+    s.resume = Boolean(prev && !s.doneBefore && (prev.status === 'running' || INTERRUPTED.has(prev.outcome)) && prevWorktree && fs.existsSync(prevWorktree));
   }
   // Blockers already implemented are on the base branch, so only the ones built in this run (or kept
   // from an earlier one, still on their branch) count.
   const ancestors = new Map();
   for (const s of stories) {
-    s.deps = s.deps.filter((k) => !byKey.get(k).skip || byKey.get(k).doneBefore);
+    // An escalated blocker stays a dependency, so its dependents are skipped as when it first ended.
+    s.deps = s.deps.filter((k) => !byKey.get(k).skip || byKey.get(k).doneBefore || byKey.get(k).escalatedBefore);
     ancestors.set(s.key, new Set(s.deps.flatMap((k) => [k, ...ancestors.get(k)])));
   }
   for (const s of stories) {
@@ -105,6 +146,16 @@ export function plan(config, inputs, { base = config.baseRef, force = false, pla
   return stories;
 }
 
+// A story the batch never ran (skipped because a blocker failed, in epic delivery) has no run record of
+// its own, so `board fail` would describe it as "no result" and, with no finish time, post a new failure
+// comment on every run. Its outcome is recorded, keeping the first time it ended that way.
+export function recordUnrun(config, r) {
+  const prev = loadRun(config, r.key);
+  if (prev && prev.outcome && prev.outcome !== 'skipped') return;
+  if (prev?.outcome === r.outcome && prev?.reason === (r.reason ?? null) && prev?.finishedAt) return;
+  saveRun(config, r.key, { outcome: r.outcome, reason: r.reason ?? null, status: 'finished', finishedAt: nowIso() });
+}
+
 export function describePlan(stories) {
   return stories
     .map((s, i) => `${String(i + 1).padStart(2)}. ${s.key.padEnd(10)} ${s.skip ? `skip: ${s.skip}` : `${s.branch} <- ${s.base}${s.merge.length ? ` + ${s.merge.join(', ')}` : ''}${s.resume ? '  (resume)' : ''}${s.resolved ? '  (re-run with human decisions)' : ''}`}${s.blockedBy.length ? `  (blocked by ${s.blockedBy.join(', ')})` : ''}`)
@@ -113,9 +164,9 @@ export function describePlan(stories) {
 
 export async function runBatch(config, stories, { parallel = 1, pr = false, script }) {
   fs.mkdirSync(runsDir(config), { recursive: true });
-  const outcome = new Map(stories.filter((s) => s.skip).map((s) => [s.key, { outcome: 'skipped', reason: s.skip }]));
+  const outcome = new Map(stories.filter((s) => s.skip).map((s) => [s.key, skippedOutcome(s)]));
   for (const s of stories) {
-    if (s.doneBefore) continue;
+    if (s.doneBefore || s.escalatedBefore) continue;
     saveRun(config, s.key, s.skip ? { outcome: 'skipped', reason: s.skip, status: 'finished' } : { status: 'queued', outcome: null, reason: null, branch: s.branch, worktree: s.worktree, base: s.base });
   }
   const retries = new Map();
@@ -126,8 +177,12 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
   const blockerFailed = (s) => s.deps.find((k) => outcome.has(k) && !['done', 'skipped'].includes(outcome.get(k).outcome));
   const ready = (s) => s.deps.every((k) => ['done', 'skipped'].includes(outcome.get(k)?.outcome));
 
+  const batchStarted = Date.now();
   while (pending.length || running.size) {
-    for (let i = 0; i < pending.length; i++) {
+    // An agent provider outage (outage.mjs): start nothing more, and skip no blocked story for it.
+    const outage = readOutage(batchStarted);
+    if (outage && !running.size) break;
+    for (let i = 0; !outage && i < pending.length; i++) {
       const s = pending[i];
       const failed = blockerFailed(s);
       if (failed) {
@@ -146,7 +201,7 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
     const [s, result] = await Promise.race(running.values());
     running.delete(s.key);
     const attempt = (retries.get(s.key) ?? 0) + 1;
-    if (RETRYABLE.has(result.outcome) && attempt <= maxWorkerRetries) {
+    if (RETRYABLE.has(result.outcome) && attempt <= maxWorkerRetries && !result.outage) {
       retries.set(s.key, attempt);
       s.resume = true;
       log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}; retrying (${attempt}/${maxWorkerRetries}).`);
@@ -156,6 +211,7 @@ export async function runBatch(config, stories, { parallel = 1, pr = false, scri
     outcome.set(s.key, result);
     log(`${s.key}: ${result.outcome}${result.reason ? ` (${result.reason})` : ''}`);
   }
+  for (const s of pending) outcome.set(s.key, { outcome: null, reason: 'not started: the agent provider is unavailable' });
   return stories.map((s) => ({ ...s, ...outcome.get(s.key) }));
 }
 
@@ -173,7 +229,11 @@ export function startWorker(config, story, { pr, script }) {
   if (pr) args.push('--pr');
   if (story.resume) args.push('--resume');
   if (story.fromRemote) args.push('--from-remote');
-  saveRun(config, story.key, { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) });
+  const running = { status: 'running', outcome: null, reason: null, startedAt: nowIso(), log: path.relative(config.root, logPath) };
+  // A fresh start drops the previous attempt's metrics and findings, which `implement status` and the
+  // board's failure comment would otherwise report as this run's; a resume keeps them.
+  if (story.resume) saveRun(config, story.key, running);
+  else writeJson(runFile(config, story.key), { key: story.key, branch: story.branch, worktree: story.worktree, base: story.base, ...running, updatedAt: nowIso() });
   log(`${story.key}: started on ${story.branch} (log: ${path.relative(config.root, logPath)})`);
   const fd = fs.openSync(logPath, 'a');
   const env = { ...process.env };
@@ -182,7 +242,11 @@ export function startWorker(config, story, { pr, script }) {
   fs.closeSync(fd);
   return new Promise((resolve) => {
     child.on('exit', (code) => {
-      const result = readJson(resultFile, null) ?? { outcome: 'error', reason: `worker exited ${code} without a result; see ${path.relative(config.root, logPath)}` };
+      let result = readJson(resultFile, null) ?? { outcome: 'error', reason: `worker exited ${code} without a result; see ${path.relative(config.root, logPath)}` };
+      // A story that failed during an agent provider outage was interrupted, not failed: `error` makes
+      // the next run resume it in its worktree.
+      const outage = result.outcome !== 'done' ? readOutage(Date.parse(running.startedAt)) : null;
+      if (outage) result = { ...result, outcome: 'error', reason: `interrupted: the agent provider is unavailable (${outage.reason}); was ${result.outcome}`, outage: true };
       saveRun(config, story.key, { ...result, status: 'finished', finishedAt: nowIso() });
       resolve(result);
     });
@@ -340,10 +404,22 @@ export async function cleanupSubtasks(config, key) {
 
 const lastReviewFindings = (wt, key) => readJsonl(metricsFile(wt, 'arch-reviews.jsonl')).filter((r) => r.story === key).at(-1)?.findings ?? [];
 
+// The code on disk is what the story's review approved. The review hook runs with PIPELINE_BASE_REF set
+// to the story's base (a group or epic branch in epic delivery), so the hash is taken against that base
+// too; against the worktree's default base ref the group's other tickets would always differ.
+export function approvedOnDisk(wt, prior, base) {
+  if (!prior?.done || prior.review?.lastVerdict !== 'APPROVED') return false;
+  const { hash } = implChanges({ ...wt, baseRef: base ?? wt.baseRef });
+  return Boolean(hash) && prior.review.approvedHash === hash;
+}
+
 async function implementStoryInner(config, opts, holder) {
   const { key, base, branch, worktree, pr } = opts;
   const settings = config.implement;
   const started = Date.now();
+  // Epic and bug-group delivery check every ticket once, in the unit's PR check; the Stop hook's
+  // per-story background check would run the whole critic panel again for each ticket.
+  if (opts.epicBranch) process.env.PR_CHECK_SKIP = '1';
   const metrics = { implementerRuns: 0, reviewBlocks: 0, bugFixCycles: 0, promptVersion: null };
   let ctx = null;
   // Usage of the implementer runs this function starts itself (the orchestrator's integration and fix
@@ -378,8 +454,7 @@ async function implementStoryInner(config, opts, holder) {
   // Resuming a story whose review already approved the code on disk goes straight to QE; otherwise the
   // implementer continues from the work left in the worktree.
   const prior = opts.resume ? loadState(wt, key) : null;
-  const hash = prior ? implChanges(wt).hash : null;
-  let skipImplementer = Boolean(hash && prior.done && prior.review.lastVerdict === 'APPROVED' && prior.review.approvedHash === hash);
+  let skipImplementer = approvedOnDisk(wt, prior, base);
   let feedback = null;
   if (skipImplementer) {
     log(`${key}: resuming after the approved review; (re)starting QE.`);
@@ -531,6 +606,8 @@ async function implementStoryInner(config, opts, holder) {
   const qeFindings = outcome === 'done' ? undefined : (qe.bugs ?? []).map((b) => (typeof b === 'string' ? b : b.title ?? b.issue ?? JSON.stringify(b)));
   const result = finish(outcome, qeReason, qeFindings?.length ? { findings: qeFindings } : {});
   recordOutcome(outcome, qeReason);
+  // Plans verified before the runner tidied their tables would fail the pre-commit markdownlint.
+  run(process.execPath, [QE_CLI, 'tidy', key], { cwd: worktree, env: { ...process.env, PIPELINE_ROOT: worktree } });
   commitAll(worktree, `${key}: Add verified test plan and automated tests`);
   result.finalSha = headSha(worktree);
 

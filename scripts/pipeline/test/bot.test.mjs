@@ -254,3 +254,22 @@ test('epic group PR: openPr pushes and runs gh pr create as the bot against the 
   assert.deepEqual(b.ghCalls[0].args.slice(0, 6), ['pr', 'create', '--base', 'main', '--head', 'epic/bugs-g1']);
   assert.equal(b.ghCalls[0].env.GH_TOKEN, TOKEN);
 });
+
+test('epic group PR: a re-delivered group refreshes the PR it already has, and a PR that already exists without a record is found, not duplicated', async () => {
+  const b = await botPublisher();
+  const known = await openPr({ worktree: '/wt/group', branch: 'epic/bugs-g1', prBase: 'origin/main' }, { title: 't', body: 'b2', existing: 'https://github.com/acme/shop/pull/12' }, { publisher: b.publisher, run: b.run });
+  assert.deepEqual(known, { url: 'https://github.com/acme/shop/pull/12', existing: true });
+  assert.ok(b.pushes.length > 0, 'the branch is pushed');
+  assert.deepEqual(b.ghCalls.map((c) => c.args.slice(0, 2)), [['pr', 'edit']], 'no gh pr create for a recorded PR');
+  // No record, but GitHub already has an open PR for the branch: it is looked up and refreshed.
+  const c = await botPublisher();
+  const run = (cmd, args, opts = {}) => {
+    c.ghCalls.push({ args, env: opts.env });
+    if (args[1] === 'create') return { status: 1, stdout: '', stderr: 'a pull request for branch "epic/bugs-g1" into branch "main" already exists:\nhttps://github.com/acme/shop/pull/12' };
+    return { status: 0, stdout: 'https://github.com/acme/shop/pull/12\n', stderr: '' };
+  };
+  const found = await openPr({ worktree: '/wt/group', branch: 'epic/bugs-g1', prBase: 'origin/main' }, { title: 't', body: 'b3' }, { publisher: c.publisher, run });
+  assert.deepEqual(found, { url: 'https://github.com/acme/shop/pull/12', existing: true });
+  assert.deepEqual(c.ghCalls.map((x) => x.args[1]), ['create', 'list', 'edit']);
+  assert.ok(c.ghCalls.every((x) => x.env?.GH_TOKEN), 'every gh call runs as the bot');
+});

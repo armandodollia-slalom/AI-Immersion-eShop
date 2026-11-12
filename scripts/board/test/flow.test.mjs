@@ -135,6 +135,12 @@ test('stale and replayed events are ignored', () => {
     // An event the table does not allow from the current lane changes nothing.
     assert.equal(applyEvent(f.config, 'DEMO-1', { type: 'testing', id: 'testing:h9', body: 'x' }).status, 'not-allowed');
     assert.equal(f.gh().issues[12].column, 'Pending Review');
+    // A story that failed in one run and is verified by a later one leaves Failed for Pending Review.
+    assert.equal(applyEvent(f.config, 'DEMO-1', { type: 'failed', id: 'failed:run1', body: 'failed' }).status, 'not-allowed', 'review -> failed is not a transition');
+    f.edit((st) => (st.issues[12].column = 'Failed'));
+    const later = applyEvent(f.config, 'DEMO-1', { type: 'verified', id: 'verified:h2', body: 'ok' });
+    assert.equal(later.status, 'applied');
+    assert.equal(f.gh().issues[12].column, 'Pending Review');
   } finally {
     f.cleanup();
   }

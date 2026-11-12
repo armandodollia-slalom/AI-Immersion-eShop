@@ -72,6 +72,10 @@
       {
         "name": "build",
         "cmd": "export PATH=$HOME/.dotnet:$PATH && dotnet build eShop.Web.slnf -nologo -v q -clp:ErrorsOnly"
+      },
+      {
+        "name": "generated test stack up to date (CI drift check; only when the AppHost or deploy/teststack changed)",
+        "cmd": "git diff --quiet origin/main -- src/eShop.AppHost deploy/teststack || (export PATH=$HOME/.dotnet:$PATH && testing/teststack publish --check)"
       }
     ],
     "unitTests": {

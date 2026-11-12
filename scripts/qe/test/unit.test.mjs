@@ -10,7 +10,7 @@ import { clip, decisionRecord, formatBugs, normalizeBugs } from '../../pipeline/
 import { computeMetrics } from '../lib/metrics.mjs';
 import { acquireLock, bootId, extractResult, isProcessAlive, lockHolder, parseFrontMatter, stringifyFrontMatter } from '../../pipeline/lib/util.mjs';
 import { attributedAgent, normalizeVerdict } from '../lib/verify.mjs';
-import { fixFiles, lintFiles } from '../lib/workflows.mjs';
+import { automationUpToDate, fixFiles, lintFiles } from '../lib/workflows.mjs';
 
 const config = {
   loops: { requiredScore: 10 },
@@ -275,6 +275,16 @@ test("lintFiles runs the commit hook's linters on the agent's files and skips li
   assert.equal(errors.length, 1, 'a linter that is not on PATH (127) is skipped');
   assert.match(errors[0], /bin\/mdlint.*failed on plans\/a\.md, plans\/b\.md:\n.*MD060/);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('automationUpToDate: an unchanged implementation is not automated again, unless the run stopped on a plan that is now verified', () => {
+  const a = (status) => ({ status, workingHash: 'h1' });
+  assert.equal(automationUpToDate(a('running'), 'h2'), true);
+  assert.equal(automationUpToDate(a('escalated'), 'h1'), true);
+  assert.equal(automationUpToDate(a('escalated'), 'h2'), false, 'a changed implementation is automated');
+  assert.equal(automationUpToDate(a('interrupted'), 'h1'), false);
+  assert.equal(automationUpToDate(a('blocked-on-plan'), 'h1', 'escalated'), true, 'still blocked: nothing to do');
+  assert.equal(automationUpToDate(a('blocked-on-plan'), 'h1', 'verified'), false, 'the plan was fixed: automate');
 });
 
 test('fixFiles auto-fixes the agent files by extension, ignores exit codes and skips fixers that are not installed', () => {
