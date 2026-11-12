@@ -14,7 +14,7 @@ checkpoint; `summary.md` gets the final version. Times are local (CST).
 | PR groups chosen by the supervisor | 9 (timeline 04:19) |
 | Group PRs opened | 7: #70, #71, #72, #97, #100 (6 bugs), #102 (3 bugs), #103; resubmitted as the GitHub App at 15:50: #119, #120, #121, #122, #123, #124, #118 (all gated; #118 Low) |
 | Group PR CI | #72 green; #70/#71/#97/#100 fail on BUG-4's compose drift and scopes test; #100 MD012; #102 a cross-ticket test assumption |
-| Tickets verified | **16**: BUG-1 (15:21, after the human decision), 4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
+| Tickets verified | **18**: BUG-1 (15:21, after the human decision), BUG-2, BUG-3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21 |
 | Escalated to a human | 1: BUG-1 (QE meta-test); 5 more wait behind it (BUG-2, 3, 9, 10, 15) |
 | Agent runs | 309 |
 | Token cost (list price) | **$75.63**: Copilot $38.08, Claude Code $37.56 |
@@ -49,7 +49,7 @@ the Resolved box, the Action that checks the answers, and `implement requeue`.
 | Merged into the run | 14:35 (`2a0d3ac`), 2 conflicted files, all checks green (367 tests) |
 | Defect found in the gate's integration | D23: a group PR finishing across restarts would be gated on part of its tickets (with auto-merge on) |
 | Group PRs opened before the gate | #70, #71, #72, #97, #100, #102, #103: resubmitted as the GitHub App with main merged in (#119, #120, #121, #122, #123, #124, #118) and gated by Armando's session |
-| Gated PRs opened by this run | 0 so far (nothing left to run until BUG-1 is answered) |
+| Gated PRs opened by this run | [#125](https://github.com/armandodollia-slalom/AI-Immersion-eShop/pull/125) `ordering-ownership` (BUG-1, 2, 3), 22:16, opened by the GitHub App: severity **Severe**, review with 1 approval, confidence 82/100 (CI unknown), CODEOWNERS reviewers requested |
 
 Slide idea: "Who merges a bug fix?": triage ratings → severity and confidence
 → auto-merge for Low, approvals for the rest; why a group's gate must see
