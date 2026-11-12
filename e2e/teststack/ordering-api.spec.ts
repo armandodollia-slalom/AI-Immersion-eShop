@@ -281,9 +281,6 @@ test.describe('create order', () => {
   });
 
   test('an invalid order is rejected with 400', async ({ request }) => {
-    // BUG: OrdersApi.CreateOrderAsync returns 200 OK even when CreateOrderCommand fails validation
-    // (the result of mediator.Send is only logged), so clients believe the order was placed.
-    test.fixme(true, 'create order returns 200 for an order that was not created');
     const response = await request.post(`${ORDERING_URL}?${V1}`, {
       headers: bearer(alice, { 'x-requestid': randomUUID() }),
       data: createOrderBody(ALICE_ID, 'alice', []),

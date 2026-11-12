@@ -8,7 +8,7 @@ until the bug is fixed.
 | Spec | Scenario | Tests |
 | --- | --- | --- |
 | `ordering-checkout.spec.ts` | `ordering-two-buyers` | 6 pass |
-| `ordering-api.spec.ts` | `ordering-two-buyers` | 17 pass, 2 fixme |
+| `ordering-api.spec.ts` | `ordering-two-buyers` | 18 pass, 1 fixme |
 | `ordering-pipeline.spec.ts` | `ordering-stock` | 5 pass |
 | `webhooks-subscriptions.spec.ts` | `webhooks-subscriptions` | 11 pass, 2 fixme |
 
@@ -114,7 +114,7 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 | Posting the same request id twice creates exactly one order | Positive | `ordering-api` › posting the same x-requestid twice creates exactly one Submitted order |
 | Missing, malformed or empty-GUID `x-requestid` returns 400 | Negative | `ordering-api` › creating an order requires x-requestid |
 | An order with no items, a malformed card number, an expired card or a blank city is not created | Negative | `ordering-api` › an order without items or with an invalid card is not created |
-| An invalid order returns 400 instead of 200 | Negative | `ordering-api` › an invalid order is rejected with 400 (**fixme**, bug 3) |
+| An invalid order returns 400 instead of 200 | Negative | `ordering-api` › an invalid order is rejected with 400 |
 | `userId` in the body cannot place an order for another buyer | Negative | `ordering-api` › an order is created for the signed-in buyer, not the userId in the body |
 
 ## Cancel and ship
@@ -226,6 +226,5 @@ Users are `alice` and `bob`, password `Pass123$`. Direct API calls use bearer to
 
 | # | Issue | Evidence |
 | --- | --- | --- |
-| 3 | `POST /api/orders` returns 200 when the command fails validation | An order with no items returns 200, and no order is created |
 | 5 | `POST /api/orders/draft` without a body returns 500 | The response is 500, where 400 is expected |
 | 7 | Webhooks.API accepts numeric event names | `event: "99"` returns 201 and stores subscription type 99 |
